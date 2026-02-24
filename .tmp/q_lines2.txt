@@ -1,0 +1,10 @@
+  120: const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+  178:   const monthName = jalaliMonthNames[month - 1] ?? "??? ???????";
+  187:       ...(init?.headers ?? {}),
+  693:       rows.set(key, (rows.get(key) ?? 0) + tx.amount);
+  729:       const curr = byProject.get(key) ?? { total: 0, done: 0 };
+  793:     const oldProjectName = projects.find((p) => p.id === editingProjectId)?.name ?? "";
+ 1210:       accountId: tx.accountId ?? "",
+ 1283:     const escapeCsv = (value: string | number) => `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
+ 1294:           accountNameById.get(tx.accountId) ?? "",
+ 2223:                             <Badge variant="outline">????: {accountNameById.get(tx.accountId) ?? "??????"}</Badge>
