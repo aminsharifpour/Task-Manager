@@ -1,6 +1,7 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { jalaaliMonthLength, toGregorian, toJalaali } from "jalaali-js";
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ErrorInfo, ReactNode, SetStateAction } from "react";
+import { io, type Socket } from "socket.io-client";
 import {
   BarChart3,
   CalendarDays,
@@ -8,12 +9,24 @@ import {
   LayoutDashboard,
   Pencil,
   Plus,
+  MessageSquare,
+  Bell,
+  CheckCheck,
+  AtSign,
+  Reply,
+  Forward,
+  Mic,
+  Square,
+  Paperclip,
+  SmilePlus,
   Settings,
   Trash2,
   UserSquare2,
   WalletCards,
   Download,
   FileText,
+  Inbox,
+  History,
   Moon,
   Sun,
   
@@ -37,10 +50,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-type ViewKey = "dashboard" | "tasks" | "projects" | "minutes" | "accounting" | "calendar" | "team" | "settings";
+type ViewKey = "inbox" | "dashboard" | "tasks" | "projects" | "minutes" | "accounting" | "calendar" | "chat" | "team" | "audit" | "settings";
 type DashboardRange = "weekly" | "monthly" | "custom";
 type AccountingType = "income" | "expense";
+type TaskStatus = "todo" | "doing" | "blocked" | "done";
 
 type Project = {
   id: string;
@@ -64,7 +79,11 @@ type Task = {
   projectName: string;
   announceDate: string;
   executionDate: string;
-  done: boolean;
+  status: TaskStatus;
+  blockedReason?: string;
+  done?: boolean;
+  updatedAt?: string;
+  lastStatusChangedAt?: string;
   createdAt: string;
 };
 
@@ -117,6 +136,62 @@ type MeetingMinute = {
   createdAt: string;
 };
 
+type ChatAttachment = {
+  id: string;
+  kind: "file" | "voice";
+  name: string;
+  mimeType: string;
+  size: number;
+  durationSec?: number;
+  dataUrl: string;
+};
+
+type ChatMessage = {
+  id: string;
+  conversationId: string;
+  text: string;
+  attachments: ChatAttachment[];
+  senderId: string;
+  senderName: string;
+  senderAvatarDataUrl?: string;
+  readByIds: string[];
+  replyToMessageId?: string;
+  forwardFromMessageId?: string;
+  forwardedFromSenderName?: string;
+  forwardedFromConversationId?: string;
+  mentionMemberIds?: string[];
+  receivedAt?: string;
+  createdAt: string;
+};
+
+type ChatConversation = {
+  id: string;
+  type: "direct" | "group";
+  title: string;
+  participantIds: string[];
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageText?: string;
+  lastMessageAt?: string;
+  unreadCount?: number;
+};
+
+type ChatTypingUser = {
+  userId: string;
+  fullName: string;
+  updatedAt: string;
+};
+
+type ChatSendPayload = {
+  conversationId: string;
+  text: string;
+  attachments: ChatAttachment[];
+  replyToMessageId?: string;
+  forwardFromMessageId?: string;
+  mentionMemberIds?: string[];
+};
+
 type BudgetHistoryItem = {
   id: string;
   month: string;
@@ -129,6 +204,29 @@ type ToastItem = {
   id: string;
   message: string;
   tone: "success" | "error";
+};
+
+type NotificationItem = {
+  id: string;
+  kind: "chat" | "task" | "project" | "system";
+  title: string;
+  description: string;
+  createdAt: string;
+  read: boolean;
+};
+type AuditLog = {
+  id: string;
+  createdAt: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  summary: string;
+  actor: {
+    userId: string;
+    fullName: string;
+    role: "admin" | "manager" | "member";
+  };
+  meta?: Record<string, unknown>;
 };
 
 type SmartReminder = {
@@ -144,7 +242,7 @@ type CalendarEvent = {
   dateIso: string;
   title: string;
   subtitle: string;
-  tone: "task" | "project";
+  tone: "task" | "project" | "minute" | "finance";
 };
 
 type AppSettings = {
@@ -161,6 +259,9 @@ type AppSettings = {
     enabledDueToday: boolean;
     enabledOverdue: boolean;
     reminderTime: string;
+    deadlineReminderHours: number;
+    escalationEnabled: boolean;
+    escalationAfterHours: number;
   };
   calendar: {
     showTasks: boolean;
@@ -181,6 +282,48 @@ type AuthUser = {
   appRole: "admin" | "manager" | "member";
   avatarDataUrl?: string;
 };
+type InboxUnreadConversation = {
+  conversationId: string;
+  title: string;
+  unreadCount: number;
+  lastMessageText: string;
+  lastMessageAt: string;
+};
+type InboxMention = {
+  id: string;
+  conversationId: string;
+  conversationTitle: string;
+  senderName: string;
+  text: string;
+  createdAt: string;
+};
+type InboxOverdueProject = {
+  projectName: string;
+  overdueTasks: number;
+  nearestExecutionDate: string;
+};
+type InboxPayload = {
+  today: string;
+  todayAssignedTasks: Task[];
+  unreadConversations: InboxUnreadConversation[];
+  mentionedMessages: InboxMention[];
+  overdueProjects: InboxOverdueProject[];
+  generatedAt: string;
+};
+type AuthResponse = {
+  token: string;
+  user: AuthUser;
+};
+const isAuthResponse = (value: unknown): value is AuthResponse => {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.token === "string" && !!row.user && typeof row.user === "object";
+};
+const isAuthUser = (value: unknown): value is AuthUser => {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.id === "string" && typeof row.fullName === "string" && typeof row.phone === "string";
+};
 
 const defaultSettings: AppSettings = {
   general: {
@@ -196,6 +339,9 @@ const defaultSettings: AppSettings = {
     enabledDueToday: true,
     enabledOverdue: true,
     reminderTime: "09:00",
+    deadlineReminderHours: 6,
+    escalationEnabled: true,
+    escalationAfterHours: 24,
   },
   calendar: {
     showTasks: true,
@@ -210,7 +356,34 @@ const defaultSettings: AppSettings = {
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+const SOCKET_BASE = API_BASE.endsWith("/api") ? API_BASE.slice(0, -4) : API_BASE;
 const AUTH_STORAGE_KEY = "task_app_auth_user_v1";
+const AUTH_TOKEN_STORAGE_KEY = "task_app_auth_token_v1";
+const CHAT_SELECTED_CONVERSATION_STORAGE_KEY = "task_app_selected_conversation_v1";
+const ACTIVE_VIEW_STORAGE_KEY = "task_app_active_view_v1";
+const NOTIFICATIONS_STORAGE_KEY = "task_app_notifications_v1";
+const CHAT_PAGE_SIZE = 60;
+const sendClientLog = async (level: "debug" | "info" | "warn" | "error", message: string, context: Record<string, unknown> = {}) => {
+  try {
+    const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+    await fetch(`${API_BASE}/api/client-logs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        level,
+        message: String(message || "").slice(0, 1200),
+        source: "web",
+        context,
+      }),
+      keepalive: true,
+    });
+  } catch {
+    // ignore logging failures on client
+  }
+};
 const roleLabel = (role: "admin" | "manager" | "member" | undefined) => {
   if (role === "admin") return "ادمین";
   if (role === "manager") return "مدیر";
@@ -218,43 +391,184 @@ const roleLabel = (role: "admin" | "manager" | "member" | undefined) => {
 };
 
 const navItems: Array<{ key: ViewKey; title: string; icon: React.ComponentType<{ className?: string }>; available: boolean }> = [
+  { key: "inbox", title: "صندوق کار من", icon: Inbox, available: true },
   { key: "dashboard", title: "داشبورد", icon: LayoutDashboard, available: true },
   { key: "tasks", title: "تسک‌ها", icon: FolderKanban, available: true },
   { key: "projects", title: "پروژه‌ها", icon: BarChart3, available: true },
   { key: "minutes", title: "صورتجلسات", icon: FileText, available: true },
   { key: "accounting", title: "حسابداری شخصی", icon: WalletCards, available: true },
   { key: "calendar", title: "تقویم", icon: CalendarDays, available: true },
+  { key: "chat", title: "گفتگو", icon: MessageSquare, available: true },
   { key: "team", title: "اعضای تیم", icon: UserSquare2, available: true },
+  { key: "audit", title: "لاگ فعالیت", icon: History, available: true },
   { key: "settings", title: "تنظیمات", icon: Settings, available: true },
 ];
+const isViewKey = (value: string | null): value is ViewKey =>
+  value === "inbox" ||
+  value === "dashboard" ||
+  value === "tasks" ||
+  value === "projects" ||
+  value === "minutes" ||
+  value === "accounting" ||
+  value === "calendar" ||
+  value === "chat" ||
+  value === "team" ||
+  value === "audit" ||
+  value === "settings";
+const buildMessagesPath = (conversationId: string, beforeMessageId = "", limit = CHAT_PAGE_SIZE) => {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  if (beforeMessageId) params.set("beforeMessageId", beforeMessageId);
+  const query = params.toString();
+  return `/api/chat/conversations/${conversationId}/messages${query ? `?${query}` : ""}`;
+};
+const CHAT_EMOJI_ITEMS = ["😀", "😂", "😍", "😎", "🤝", "👍", "🙏", "🔥", "🎉", "✅", "🚀", "💡", "❤️", "😅", "🤔"];
+const CHAT_STICKER_ITEMS = ["👏👏", "👌 عالیه", "🔥 خفن شد", "✅ انجام شد", "🙏 ممنون", "🎯 دقیقاً", "🚀 بزن بریم", "💪 می‌رسونیم", "🧠 ایده خوبیه", "🎉 تبریک"];
+const TASK_STATUS_ITEMS: Array<{ value: TaskStatus; label: string }> = [
+  { value: "todo", label: "To Do" },
+  { value: "doing", label: "Doing" },
+  { value: "blocked", label: "Blocked" },
+  { value: "done", label: "Done" },
+];
+const TASK_TEMPLATES: Array<{
+  id: string;
+  label: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  executionOffsetDays: number;
+}> = [
+  {
+    id: "daily-followup",
+    label: "پیگیری روزانه",
+    title: "پیگیری روزانه وضعیت کار",
+    description: "وضعیت فعلی کار، موانع و خروجی امروز را ثبت و ارسال کن.",
+    status: "todo",
+    executionOffsetDays: 1,
+  },
+  {
+    id: "bug-fix",
+    label: "رفع باگ",
+    title: "رفع باگ گزارش‌شده",
+    description: "بازآفرینی باگ، رفع ریشه‌ای، تست مجدد و اعلام نتیجه.",
+    status: "todo",
+    executionOffsetDays: 2,
+  },
+  {
+    id: "code-review",
+    label: "Code Review",
+    title: "بازبینی کد و ثبت بازخورد",
+    description: "MR را بازبینی کن، موارد بحرانی را ثبت کن و نتیجه را نهایی کن.",
+    status: "doing",
+    executionOffsetDays: 1,
+  },
+];
+const PROJECT_CHECKLIST_TEMPLATES: Array<{ id: string; label: string; items: string[] }> = [
+  {
+    id: "kickoff",
+    label: "شروع پروژه",
+    items: [
+      "تعریف هدف و خروجی نهایی",
+      "تعیین مالک و اعضای مسئول",
+      "تعیین محدوده و اولویت‌ها",
+      "تعریف milestoneها",
+      "ثبت ریسک‌های اولیه",
+    ],
+  },
+  {
+    id: "delivery",
+    label: "تحویل پروژه",
+    items: [
+      "تکمیل تسک‌های باز",
+      "تست نهایی و QA",
+      "آماده‌سازی مستندات",
+      "جلسه دمو/تحویل",
+      "جمع‌بندی درس‌آموخته‌ها",
+    ],
+  },
+];
+const MINUTE_TEMPLATES: Array<{
+  id: string;
+  label: string;
+  title: string;
+  attendees: string;
+  summary: string;
+  decisions: string;
+  followUps: string;
+}> = [
+  {
+    id: "daily-standup",
+    label: "Daily Standup",
+    title: "صورتجلسه استندآپ روزانه",
+    attendees: "مدیر پروژه، اعضای تیم",
+    summary: "گزارش کار دیروز، برنامه امروز، موانع جاری.",
+    decisions: "تصمیمات: تعیین اولویت تسک‌های فوری و رفع موانع.",
+    followUps: "اقدامات بعدی: پیگیری موانع و بروزرسانی وضعیت تا پایان روز.",
+  },
+  {
+    id: "weekly-review",
+    label: "مرور هفتگی",
+    title: "صورتجلسه مرور هفتگی",
+    attendees: "مدیر پروژه، لیدها، ذینفعان",
+    summary: "مرور KPIها، پیشرفت پروژه‌ها، ریسک‌ها و تاخیرها.",
+    decisions: "تصمیمات: بازتخصیص منابع و اولویت‌بندی هفته آینده.",
+    followUps: "اقدامات بعدی: ثبت تسک‌ها و تعیین مسئول/ددلاین هر مورد.",
+  },
+];
+const checklistToText = (items: string[]) => items.map((item) => `- [ ] ${item}`).join("\n");
+const normalizeTaskStatus = (status: unknown, doneFallback = false): TaskStatus => {
+  if (status === "todo" || status === "doing" || status === "blocked" || status === "done") return status;
+  return doneFallback ? "done" : "todo";
+};
+const taskIsDone = (task: Task) => normalizeTaskStatus(task.status, Boolean(task.done)) === "done";
+const taskIsOpen = (task: Task) => !taskIsDone(task);
+const isTaskAssignedToUser = (task: Task, userId: string) =>
+  String(task.assigneePrimaryId ?? "").trim() === userId || String(task.assigneeSecondaryId ?? "").trim() === userId;
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
-const dateToIso = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const dateToIso = (d: Date) => {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
 const addDays = (iso: string, offset: number) => {
   const d = isoToDate(iso);
   d.setDate(d.getDate() + offset);
   return dateToIso(d);
 };
 const isoToDate = (iso: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso ?? ""))) return new Date(NaN);
   const [y, m, d] = iso.split("-").map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return new Date(NaN);
   return new Date(y, m - 1, d);
 };
 const toFaNum = (v: string) => v.replace(/\d/g, (d) => String.fromCharCode(1776 + Number(d)));
 const formatMoney = (amount: number) => `${Math.round(amount).toLocaleString("fa-IR")} تومان`;
 const isYearMonth = (value: string) => /^\d{4}-\d{2}$/.test(value);
 const isoToJalali = (iso: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso ?? ""))) return "-";
   const [y, m, d] = iso.split("-").map(Number);
-  const j = toJalaali(y, m, d);
-  return toFaNum(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)}`);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return "-";
+  try {
+    const j = toJalaali(y, m, d);
+    return toFaNum(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)}`);
+  } catch {
+    return "-";
+  }
 };
 const isoToJalaliYearMonth = (iso: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso ?? ""))) return "";
   const [y, m, d] = iso.split("-").map(Number);
-  const j = toJalaali(y, m, d);
-  return `${j.jy}-${pad2(j.jm)}`;
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return "";
+  try {
+    const j = toJalaali(y, m, d);
+    return `${j.jy}-${pad2(j.jm)}`;
+  } catch {
+    return "";
+  }
 };
 const jalaliMonthNames = [
   "فروردین",
@@ -276,7 +590,17 @@ const jalaliYearMonthLabel = (yearMonth: string) => {
   const monthName = jalaliMonthNames[month - 1] ?? "ماه نامعتبر";
   return `${monthName} ${toFaNum(String(year))}`;
 };
-const isoDateTimeToJalali = (iso: string) => isoToJalali(dateToIso(new Date(iso)));
+const isoDateTimeToJalali = (iso: string) => {
+  const d = new Date(String(iso ?? ""));
+  if (Number.isNaN(d.getTime())) return "-";
+  const safeIso = dateToIso(d);
+  return safeIso ? isoToJalali(safeIso) : "-";
+};
+const isoToFaTime = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return toFaNum(`${pad2(d.getHours())}:${pad2(d.getMinutes())}`);
+};
 const jalaliDateToIso = (jy: number, jm: number, jd: number) => {
   const g = toGregorian(jy, jm, jd);
   return `${g.gy}-${pad2(g.gm)}-${pad2(g.gd)}`;
@@ -327,10 +651,27 @@ const currentTimeHHMM = () => {
   const now = new Date();
   return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
 };
+const deadlineEndOfDayMs = (iso: string) => {
+  const d = isoToDate(iso);
+  if (Number.isNaN(d.getTime())) return Number.NaN;
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+};
+const safeIsoMs = (iso: string) => {
+  const ts = new Date(String(iso ?? "")).getTime();
+  return Number.isFinite(ts) ? ts : Number.NaN;
+};
 const normalizeDigits = (value: string) =>
   value
     .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776))
     .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632));
+const normalizeAmountInput = (value: string) => {
+  const normalized = normalizeDigits(value).replace(/[^\d.,\u066C\u060C]/g, "").replace(/[,\u066C\u060C]/g, "");
+  const parts = normalized.split(".");
+  if (parts.length <= 1) return normalized;
+  return `${parts[0]}.${parts.slice(1).join("")}`;
+};
+const parseAmountInput = (value: string) => Number(normalizeAmountInput(value));
 const normalizePhone = (value: string) =>
   normalizeDigits(value)
     .replace(/\s+/g, "")
@@ -343,23 +684,143 @@ const normalizeUiMessage = (message: string, fallback: string) => {
   const questionMarks = text.match(/\?/g)?.length ?? 0;
   return questionMarks >= 3 ? fallback : message;
 };
+const createId = () => {
+  const cryptoObj = globalThis.crypto;
+  if (cryptoObj && typeof cryptoObj.randomUUID === "function") {
+    return cryptoObj.randomUUID();
+  }
+  if (cryptoObj && typeof cryptoObj.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    cryptoObj.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+};
+
+class AppErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; message: string }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: "" };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, message: String(error?.message ?? "Unknown error") };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // eslint-disable-next-line no-console
+    console.error("[ui/runtime] uncaught render error:", error, errorInfo);
+    void sendClientLog("error", "ui.runtime.error_boundary", {
+      message: String(error?.message ?? ""),
+      stack: String(error?.stack ?? ""),
+      componentStack: String(errorInfo?.componentStack ?? ""),
+    });
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-2xl items-center justify-center px-4 py-8">
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>خطای رابط کاربری</CardTitle>
+            <CardDescription>یک خطای غیرمنتظره رخ داده است. لطفا صفحه را رفرش کنید.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="rounded-md border bg-muted p-2 text-xs text-muted-foreground">{this.state.message || "Unknown UI error"}</p>
+            <Button type="button" onClick={() => window.location.reload()}>رفرش صفحه</Button>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+}
+const normalizeIdArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => String(item ?? "").trim()).filter(Boolean)));
+};
+const normalizeProject = (row: Partial<Project> | null | undefined): Project | null => {
+  const id = String(row?.id ?? "").trim();
+  const name = String(row?.name ?? "").trim();
+  if (!id || !name) return null;
+  const createdAtRaw = String(row?.createdAt ?? "").trim();
+  const createdAt = Number.isNaN(new Date(createdAtRaw).getTime()) ? new Date().toISOString() : createdAtRaw;
+  return {
+    id,
+    name,
+    description: String(row?.description ?? ""),
+    ownerId: String(row?.ownerId ?? "").trim(),
+    memberIds: normalizeIdArray(row?.memberIds),
+    createdAt,
+  };
+};
+const normalizeProjects = (rows: unknown): Project[] => {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => normalizeProject((row ?? {}) as Partial<Project>)).filter((row): row is Project => Boolean(row));
+};
+const normalizeChatConversation = (row: Partial<ChatConversation> | null | undefined): ChatConversation | null => {
+  const id = String(row?.id ?? "").trim();
+  if (!id) return null;
+  const createdAtRaw = String(row?.createdAt ?? "").trim();
+  const updatedAtRaw = String(row?.updatedAt ?? "").trim();
+  const nowIso = new Date().toISOString();
+  return {
+    id,
+    type: row?.type === "group" ? "group" : "direct",
+    title: String(row?.title ?? ""),
+    participantIds: normalizeIdArray(row?.participantIds),
+    createdById: String(row?.createdById ?? "").trim(),
+    createdAt: Number.isNaN(new Date(createdAtRaw).getTime()) ? nowIso : createdAtRaw,
+    updatedAt: Number.isNaN(new Date(updatedAtRaw).getTime()) ? (Number.isNaN(new Date(createdAtRaw).getTime()) ? nowIso : createdAtRaw) : updatedAtRaw,
+    lastMessageText: String(row?.lastMessageText ?? ""),
+    lastMessageAt: String(row?.lastMessageAt ?? ""),
+    unreadCount: Math.max(0, Number(row?.unreadCount ?? 0) || 0),
+  };
+};
+const normalizeChatConversations = (rows: unknown): ChatConversation[] => {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((row) => normalizeChatConversation((row ?? {}) as Partial<ChatConversation>))
+    .filter((row): row is ChatConversation => Boolean(row))
+    .sort((a, b) => String(b.lastMessageAt ?? b.updatedAt).localeCompare(String(a.lastMessageAt ?? a.updatedAt)));
+};
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
+    const raw = await res.text();
+    let message = raw;
+    try {
+      const payload = JSON.parse(raw) as { message?: unknown };
+      message = String(payload?.message ?? raw);
+    } catch {
+      message = raw;
+    }
+    throw new Error(message || `HTTP ${res.status}`);
   }
 
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const raw = await res.text();
+  if (!raw.trim()) return undefined as T;
+  const contentType = String(res.headers.get("content-type") ?? "").toLowerCase();
+  const looksJson = raw.trim().startsWith("{") || raw.trim().startsWith("[");
+  if (!contentType.includes("application/json") && !looksJson) {
+    throw new Error("پاسخ سرور JSON نیست. احتمالا بک‌اند ری‌استارت نشده یا مسیر API اشتباه است.");
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new Error("پاسخ JSON نامعتبر از سرور دریافت شد.");
+  }
 }
 
 function DatePickerField({
@@ -477,7 +938,10 @@ function ButtonGroup<T extends string>({
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<ViewKey>("dashboard");
+  const [activeView, setActiveView] = useState<ViewKey>(() => {
+    const saved = localStorage.getItem(ACTIVE_VIEW_STORAGE_KEY);
+    return isViewKey(saved) ? saved : "dashboard";
+  });
   const [tab, setTab] = useState("today");
   const [dashboardRange, setDashboardRange] = useState<DashboardRange>("weekly");
   const [customFrom, setCustomFrom] = useState(addDays(todayIso(), -6));
@@ -486,11 +950,40 @@ function App() {
   const [minutes, setMinutes] = useState<MeetingMinute[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatHasMore, setChatHasMore] = useState(false);
+  const [chatLoadingMore, setChatLoadingMore] = useState(false);
+  const [selectedConversationId, setSelectedConversationId] = useState<string>(() => localStorage.getItem(CHAT_SELECTED_CONVERSATION_STORAGE_KEY) ?? "");
   const [transactions, setTransactions] = useState<AccountingTransaction[]>([]);
   const [accounts, setAccounts] = useState<AccountingAccount[]>([]);
   const [budgetHistory, setBudgetHistory] = useState<BudgetHistoryItem[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
+    try {
+      const raw = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((x) => x && typeof x === "object").slice(0, 80) as NotificationItem[];
+    } catch {
+      return [];
+    }
+  });
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [auditBusy, setAuditBusy] = useState(false);
+  const [auditQuery, setAuditQuery] = useState("");
+  const [auditEntityFilter, setAuditEntityFilter] = useState("all");
+  const [inboxData, setInboxData] = useState<InboxPayload | null>(null);
+  const [inboxBusy, setInboxBusy] = useState(false);
   const announcedReminderIdsRef = useRef<Set<string>>(new Set());
+  const knownTaskIdsRef = useRef<Set<string>>(new Set());
+  const knownProjectIdsRef = useRef<Set<string>>(new Set());
+  const knownConversationIdsRef = useRef<Set<string>>(new Set());
+  const taskWatchReadyRef = useRef(false);
+  const projectWatchReadyRef = useRef(false);
+  const conversationWatchReadyRef = useRef(false);
 
   const [taskOpen, setTaskOpen] = useState(false);
   const [taskEditOpen, setTaskEditOpen] = useState(false);
@@ -513,6 +1006,7 @@ function App() {
       return null;
     }
   });
+  const [authToken, setAuthToken] = useState<string>(() => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ?? "");
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const [loginDraft, setLoginDraft] = useState({ phone: "", password: "" });
@@ -534,7 +1028,7 @@ function App() {
   const [projectSearch, setProjectSearch] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
   const [taskProjectFilter, setTaskProjectFilter] = useState("all");
-  const [taskStatusFilter, setTaskStatusFilter] = useState<"all" | "done" | "open">("all");
+  const [taskStatusFilter, setTaskStatusFilter] = useState<"all" | TaskStatus>("all");
   const [minuteSearch, setMinuteSearch] = useState("");
   const [minuteFrom, setMinuteFrom] = useState("");
   const [minuteTo, setMinuteTo] = useState("");
@@ -544,6 +1038,41 @@ function App() {
   const [transactionAccountFilter, setTransactionAccountFilter] = useState("all");
   const [transactionFrom, setTransactionFrom] = useState("");
   const [transactionTo, setTransactionTo] = useState("");
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatMemberSearch, setChatMemberSearch] = useState("");
+  const [typingUsers, setTypingUsers] = useState<ChatTypingUser[]>([]);
+  const [chatPickerOpen, setChatPickerOpen] = useState(false);
+  const [chatPickerTab, setChatPickerTab] = useState<"emoji" | "sticker">("emoji");
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [groupTitleDraft, setGroupTitleDraft] = useState("");
+  const [groupMembersDraft, setGroupMembersDraft] = useState<string[]>([]);
+  const [chatAttachmentDrafts, setChatAttachmentDrafts] = useState<ChatAttachment[]>([]);
+  const [chatMentionDraftIds, setChatMentionDraftIds] = useState<string[]>([]);
+  const [mentionPickerOpen, setMentionPickerOpen] = useState(false);
+  const [chatReplyTo, setChatReplyTo] = useState<ChatMessage | null>(null);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardSourceMessage, setForwardSourceMessage] = useState<ChatMessage | null>(null);
+  const [forwardTargetConversationId, setForwardTargetConversationId] = useState("");
+  const [recordingVoice, setRecordingVoice] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
+  const selectedConversationRef = useRef("");
+  const activeViewRef = useRef<ViewKey>("dashboard");
+  const authUserIdRef = useRef("");
+  const joinedConversationRef = useRef("");
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
+  const confirmResolverRef = useRef<((value: boolean) => void) | null>(null);
+  const seenIncomingMessageIdsRef = useRef<Set<string>>(new Set());
+  const isTypingRef = useRef(false);
+  const typingStopTimerRef = useRef<number | null>(null);
+  const typingPingIntervalRef = useRef<number | null>(null);
+  const incomingAudioCtxRef = useRef<AudioContext | null>(null);
+  const lastIncomingSoundAtRef = useRef(0);
+  const skipNextAutoScrollRef = useRef(false);
 
   const [taskDraft, setTaskDraft] = useState({
     title: "",
@@ -554,6 +1083,8 @@ function App() {
     projectName: "",
     announceDateIso: todayIso(),
     executionDateIso: todayIso(),
+    status: "todo" as TaskStatus,
+    blockedReason: "",
   });
   const [projectDraft, setProjectDraft] = useState({ name: "", description: "", ownerId: "", memberIds: [] as string[] });
   const [projectEditDraft, setProjectEditDraft] = useState({ name: "", description: "", ownerId: "", memberIds: [] as string[] });
@@ -610,7 +1141,8 @@ function App() {
     projectName: "",
     announceDateIso: todayIso(),
     executionDateIso: todayIso(),
-    done: false,
+    status: "todo" as TaskStatus,
+    blockedReason: "",
   });
   const [memberDraft, setMemberDraft] = useState({
     fullName: "",
@@ -669,29 +1201,111 @@ function App() {
   }, [authUser]);
 
   useEffect(() => {
+    if (!authToken) {
+      localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, authToken);
+  }, [authToken]);
+
+  useEffect(() => {
+    if (!authToken) {
+      localStorage.removeItem(ACTIVE_VIEW_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(ACTIVE_VIEW_STORAGE_KEY, activeView);
+  }, [activeView, authToken]);
+
+  useEffect(() => {
+    if (!authToken) {
+      localStorage.removeItem(CHAT_SELECTED_CONVERSATION_STORAGE_KEY);
+      return;
+    }
+    if (!selectedConversationId) {
+      localStorage.removeItem(CHAT_SELECTED_CONVERSATION_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(CHAT_SELECTED_CONVERSATION_STORAGE_KEY, selectedConversationId);
+  }, [authToken, selectedConversationId]);
+
+  useEffect(() => {
+    if (!authToken) {
+      localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications.slice(0, 80)));
+  }, [authToken, notifications]);
+
+  useEffect(() => {
+    if (!authToken && authUser) {
+      setAuthUser(null);
+    }
+  }, [authToken, authUser]);
+
+  useEffect(() => {
+    if (!authToken) return;
     let mounted = true;
     (async () => {
       try {
-        const [tasksData, minutesData, projectsData, teamMembersData, transactionsData, accountsData, budgetHistoryData, settingsData] = await Promise.all([
+        const [tasksData, minutesData, projectsData, teamMembersData, chatConversationsData, transactionsData, accountsData, budgetHistoryData, settingsData, inboxPayload] = await Promise.all([
           apiRequest<Task[]>("/api/tasks"),
           apiRequest<MeetingMinute[]>("/api/minutes"),
           apiRequest<Project[]>("/api/projects"),
           apiRequest<TeamMember[]>("/api/team-members"),
+          apiRequest<ChatConversation[]>("/api/chat/conversations"),
           apiRequest<AccountingTransaction[]>("/api/accounting/transactions"),
           apiRequest<AccountingAccount[]>("/api/accounting/accounts"),
           apiRequest<BudgetHistoryItem[]>("/api/accounting/budgets-history"),
           apiRequest<AppSettings>("/api/settings"),
+          apiRequest<InboxPayload>("/api/inbox"),
         ]);
         if (!mounted) return;
         setTasks(tasksData);
         setMinutes(minutesData);
-        setProjects(projectsData);
+        setProjects(normalizeProjects(projectsData));
         setTeamMembers(teamMembersData);
+        setChatConversations(normalizeChatConversations(chatConversationsData));
+        knownTaskIdsRef.current = new Set(tasksData.map((t) => t.id));
+        knownProjectIdsRef.current = new Set(projectsData.map((p) => p.id));
+        knownConversationIdsRef.current = new Set(chatConversationsData.map((c) => c.id));
+        taskWatchReadyRef.current = true;
+        projectWatchReadyRef.current = true;
+        conversationWatchReadyRef.current = true;
+        const normalizedConversations = normalizeChatConversations(chatConversationsData);
+        const latestConversationId = normalizedConversations[0]?.id ?? "";
+        const preferredConversationId =
+          selectedConversationId && normalizedConversations.some((conversation) => conversation.id === selectedConversationId)
+            ? selectedConversationId
+            : latestConversationId;
+        setSelectedConversationId(preferredConversationId);
+        if (preferredConversationId) {
+          const rows = await apiRequest<ChatMessage[]>(buildMessagesPath(preferredConversationId));
+          if (!mounted) return;
+          setChatMessages(rows.map((m) => (m.senderId === authUser?.id ? m : { ...m, receivedAt: m.receivedAt || m.createdAt })));
+          setChatHasMore(rows.length >= CHAT_PAGE_SIZE);
+        } else {
+          setChatMessages([]);
+          setChatHasMore(false);
+        }
         setTransactions(transactionsData);
         setAccounts(accountsData);
         setBudgetHistory(budgetHistoryData);
         setSettingsDraft(settingsData);
+        setInboxData(inboxPayload);
       } catch (error) {
+        const msg = String((error as Error)?.message ?? "");
+        if (
+          msg.includes("Missing bearer token") ||
+          msg.includes("Invalid or expired token") ||
+          msg.includes("Unauthorized") ||
+          msg.includes("Forbidden")
+        ) {
+          if (!mounted) return;
+          setAuthToken("");
+          setAuthUser(null);
+          setAuthError("نشست شما منقضی شده یا معتبر نیست. لطفا دوباره وارد شوید.");
+          return;
+        }
         // eslint-disable-next-line no-console
         console.error(error);
       }
@@ -699,7 +1313,7 @@ function App() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [authToken]);
 
   useEffect(() => {
     let mounted = true;
@@ -782,20 +1396,466 @@ function App() {
     root.style.colorScheme = resolved;
   }, [settingsDraft.general.theme]);
 
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversationId;
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    activeViewRef.current = activeView;
+  }, [activeView]);
+
+  useEffect(() => {
+    authUserIdRef.current = authUser?.id ?? "";
+  }, [authUser?.id]);
+
+  useEffect(() => {
+    if (!authToken) {
+      setInboxData(null);
+      return;
+    }
+    void refreshInbox(true);
+    const timer = window.setInterval(() => {
+      void refreshInbox(true);
+    }, 25000);
+    return () => window.clearInterval(timer);
+  }, [authToken]);
+
+  useEffect(() => {
+    if (!authToken) {
+      const existing = socketRef.current;
+      if (existing) {
+        existing.disconnect();
+        socketRef.current = null;
+      }
+      joinedConversationRef.current = "";
+      setTypingUsers([]);
+      return;
+    }
+    const socket = io(SOCKET_BASE || undefined, {
+      auth: { token: authToken },
+      transports: ["websocket", "polling"],
+    });
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      const activeConversationId = selectedConversationRef.current;
+      if (activeConversationId) {
+        socket.emit("chat:join", { conversationId: activeConversationId });
+      }
+    });
+    socket.on("connect_error", (error) => {
+      const msg = String(error?.message ?? "").trim();
+      if (msg.toLowerCase().includes("unauthorized")) {
+        pushToast("نشست شما منقضی شده است. لطفا دوباره وارد شوید.", "error");
+        setAuthToken("");
+        setAuthUser(null);
+        return;
+      }
+      pushToast("اتصال لحظه‌ای چت برقرار نشد.", "error");
+    });
+
+    socket.on("chat:message:new", (message: ChatMessage) => {
+      const messageId = String(message?.id ?? "").trim();
+      if (messageId) {
+        const seen = seenIncomingMessageIdsRef.current;
+        if (seen.has(messageId)) return;
+        seen.add(messageId);
+        if (seen.size > 3000) {
+          const trimmed = Array.from(seen).slice(-1200);
+          seenIncomingMessageIdsRef.current = new Set(trimmed);
+        }
+      }
+      const isActiveConversationVisible =
+        activeViewRef.current === "chat" &&
+        selectedConversationRef.current === message.conversationId &&
+        document.visibilityState === "visible";
+      if (message.senderId !== authUserIdRef.current) {
+        const now = Date.now();
+        if (now - lastIncomingSoundAtRef.current > 550) {
+          lastIncomingSoundAtRef.current = now;
+          try {
+            const Ctx = window.AudioContext || ((window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext ?? null);
+            if (Ctx) {
+              if (!incomingAudioCtxRef.current) incomingAudioCtxRef.current = new Ctx();
+              const ctx = incomingAudioCtxRef.current;
+              if (ctx.state === "suspended") void ctx.resume();
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = "sine";
+              osc.frequency.setValueAtTime(880, ctx.currentTime);
+              gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.01);
+              gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.14);
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start();
+              osc.stop(ctx.currentTime + 0.15);
+            }
+          } catch {
+            // ignore audio errors
+          }
+        }
+        const preview = message.text?.trim() || (message.attachments?.length ? "فایل/voice" : "پیام جدید");
+        pushNotification("chat", `پیام جدید از ${message.senderName}`, preview);
+        const isMentioned = Array.isArray(message.mentionMemberIds) && !!authUserIdRef.current && message.mentionMemberIds.includes(authUserIdRef.current);
+        const shouldToast = selectedConversationRef.current !== message.conversationId || document.visibilityState !== "visible" || isMentioned;
+        if (shouldToast) {
+          pushToast(isMentioned ? `منشن جدید از ${message.senderName}` : `پیام جدید از ${message.senderName}`, isMentioned ? "error" : "success");
+        }
+        setInboxData((prev) => {
+          if (!prev) return prev;
+          const previewText = message.text?.trim() || (message.attachments?.length ? "فایل/voice" : "پیام");
+          const unreadConversations = [...(prev.unreadConversations ?? [])];
+          if (!isActiveConversationVisible) {
+            const idx = unreadConversations.findIndex((row) => row.conversationId === message.conversationId);
+            if (idx >= 0) {
+              const row = unreadConversations[idx];
+              unreadConversations[idx] = {
+                ...row,
+                unreadCount: Math.max(0, Number(row.unreadCount ?? 0)) + 1,
+                lastMessageText: previewText,
+                lastMessageAt: message.createdAt,
+              };
+            } else {
+              unreadConversations.unshift({
+                conversationId: message.conversationId,
+                title: String(message.senderName ?? "").trim() || "گفتگو",
+                unreadCount: 1,
+                lastMessageText: previewText,
+                lastMessageAt: message.createdAt,
+              });
+            }
+            unreadConversations.sort((a, b) => String(b.lastMessageAt ?? "").localeCompare(String(a.lastMessageAt ?? "")));
+          }
+
+          const mentionedMessages = [...(prev.mentionedMessages ?? [])];
+          if (isMentioned) {
+            mentionedMessages.unshift({
+              id: message.id,
+              conversationId: message.conversationId,
+              conversationTitle: String(message.senderName ?? "").trim() || "گفتگو",
+              senderName: String(message.senderName ?? "").trim() || "کاربر",
+              text: previewText,
+              createdAt: message.createdAt,
+            });
+          }
+          return {
+            ...prev,
+            unreadConversations: unreadConversations.slice(0, 20),
+            mentionedMessages: mentionedMessages.slice(0, 20),
+            generatedAt: new Date().toISOString(),
+          };
+        });
+        void refreshInbox(true);
+      }
+      if (message.conversationId === selectedConversationRef.current) {
+        const incoming = message.senderId !== authUserIdRef.current ? { ...message, receivedAt: new Date().toISOString() } : message;
+        setChatMessages((prev) => (prev.some((m) => m.id === incoming.id) ? prev : [...prev, incoming]));
+        if (message.senderId !== authUserIdRef.current && isActiveConversationVisible) {
+          void apiRequest<{ ok: boolean }>(`/api/chat/conversations/${message.conversationId}/read`, { method: "POST", body: "{}" })
+            .then(() => socket.emit("chat:read", { conversationId: message.conversationId }))
+            .catch(() => undefined);
+        }
+      }
+      setChatConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === message.conversationId);
+        if (idx === -1) {
+          void apiRequest<ChatConversation[]>("/api/chat/conversations")
+            .then((rows) => setChatConversations(normalizeChatConversations(rows)))
+            .catch(() => undefined);
+          return prev;
+        }
+        const next = [...prev];
+        const row = next[idx];
+        const shouldIncUnread = !isActiveConversationVisible && message.senderId !== authUserIdRef.current;
+        next[idx] = {
+          ...row,
+          updatedAt: message.createdAt,
+          lastMessageText: message.text || (message.attachments?.length ? "فایل/voice" : ""),
+          lastMessageAt: message.createdAt,
+          unreadCount: (row.unreadCount ?? 0) + (shouldIncUnread ? 1 : 0),
+        };
+        next.sort((a, b) => String(a.lastMessageAt ?? a.updatedAt).localeCompare(String(b.lastMessageAt ?? b.updatedAt)) * -1);
+        return next;
+      });
+    });
+
+    socket.on("chat:conversation:updated", (payload: { id: string; updatedAt: string; lastMessageText: string; lastMessageAt: string }) => {
+      setChatConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === payload.id);
+        if (idx === -1) return prev;
+        const next = [...prev];
+        next[idx] = {
+          ...next[idx],
+          updatedAt: payload.updatedAt,
+          lastMessageText: payload.lastMessageText,
+          lastMessageAt: payload.lastMessageAt,
+        };
+        next.sort((a, b) => String(a.lastMessageAt ?? a.updatedAt).localeCompare(String(b.lastMessageAt ?? b.updatedAt)) * -1);
+        return next;
+      });
+    });
+
+    socket.on("chat:message:read", (payload: { conversationId: string; readerId: string; messageIds: string[] }) => {
+      if (payload.conversationId !== selectedConversationRef.current) return;
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          payload.messageIds.includes(m.id) && !m.readByIds.includes(payload.readerId)
+            ? { ...m, readByIds: [...m.readByIds, payload.readerId] }
+            : m,
+        ),
+      );
+    });
+
+    socket.on("chat:typing", (payload: { conversationId: string; users: ChatTypingUser[] }) => {
+      if (payload.conversationId !== selectedConversationRef.current) return;
+      setTypingUsers(payload.users ?? []);
+    });
+
+    socket.on("chat:conversation:deleted", (payload: { conversationId: string }) => {
+      const conversationId = String(payload?.conversationId ?? "");
+      if (!conversationId) return;
+      setChatConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      if (selectedConversationRef.current === conversationId) {
+        setSelectedConversationId("");
+        setChatMessages([]);
+        setTypingUsers([]);
+        setChatReplyTo(null);
+      }
+      pushNotification("system", "گفتگو حذف شد", "یک گفتگو از لیست شما حذف شد.");
+    });
+    socket.on("task:assigned", (payload: { task?: Task }) => {
+      const task = payload?.task;
+      if (!task || !task.id) return;
+      const currentUserId = authUserIdRef.current || authUser?.id || "";
+      if (currentUserId && !isTaskAssignedToUser(task, currentUserId)) return;
+      setTasks((prev) => {
+        const idx = prev.findIndex((row) => row.id === task.id);
+        if (idx === -1) return [task, ...prev];
+        const next = [...prev];
+        next[idx] = task;
+        return next;
+      });
+      pushNotification("task", "تسک جدید به شما ابلاغ شد", task.title || "تسک جدید ثبت شد.");
+      pushToast(`تسک جدید: ${task.title || "بدون عنوان"}`);
+      setInboxData((prev) => {
+        if (!prev) return prev;
+        const isForToday = String(task.executionDate ?? "") === todayIso();
+        if (!isForToday || taskIsDone(task)) return prev;
+        const exists = (prev.todayAssignedTasks ?? []).some((row) => row.id === task.id);
+        const nextTodayTasks = exists
+          ? (prev.todayAssignedTasks ?? []).map((row) => (row.id === task.id ? task : row))
+          : [task, ...(prev.todayAssignedTasks ?? [])];
+        return {
+          ...prev,
+          todayAssignedTasks: nextTodayTasks,
+          generatedAt: new Date().toISOString(),
+        };
+      });
+      void refreshInbox(true);
+    });
+
+    return () => {
+      socket.disconnect();
+      if (socketRef.current === socket) socketRef.current = null;
+    };
+  }, [authToken]);
+
+  useEffect(() => {
+    if (activeView === "chat" && selectedConversationId) return;
+    stopTypingSignal();
+    setTypingUsers([]);
+  }, [activeView, selectedConversationId]);
+
+  useEffect(() => {
+    if (activeView !== "tasks" && activeView !== "inbox") return;
+    setNotifications((prev) => prev.map((n) => (n.kind === "task" && !n.read ? { ...n, read: true } : n)));
+  }, [activeView]);
+
+  useEffect(() => {
+    if (!taskWatchReadyRef.current) return;
+    const currentUserId = authUser?.id || settingsDraft.general.currentMemberId || "";
+    const role = authUser?.appRole ?? "member";
+    const isPrivileged = role === "admin" || role === "manager";
+    for (const task of tasks) {
+      if (knownTaskIdsRef.current.has(task.id)) continue;
+      knownTaskIdsRef.current.add(task.id);
+      if (!isPrivileged && (!currentUserId || !isTaskAssignedToUser(task, currentUserId))) continue;
+      pushNotification("task", "تسک جدید", task.title || "تسک جدید ثبت شد.");
+    }
+    const next = new Set(tasks.map((t) => t.id));
+    knownTaskIdsRef.current = next;
+  }, [authUser?.appRole, authUser?.id, settingsDraft.general.currentMemberId, tasks]);
+
+  useEffect(() => {
+    if (!projectWatchReadyRef.current) return;
+    for (const project of projects) {
+      if (knownProjectIdsRef.current.has(project.id)) continue;
+      knownProjectIdsRef.current.add(project.id);
+      pushNotification("project", "پروژه جدید", project.name || "پروژه جدید ثبت شد.");
+    }
+    const next = new Set(projects.map((p) => p.id));
+    knownProjectIdsRef.current = next;
+  }, [projects]);
+
+  useEffect(() => {
+    if (!conversationWatchReadyRef.current) return;
+    for (const conversation of chatConversations) {
+      if (knownConversationIdsRef.current.has(conversation.id)) continue;
+      knownConversationIdsRef.current.add(conversation.id);
+      const title = conversation.type === "group" ? "گروه جدید" : "گفتگوی خصوصی جدید";
+      const description = conversation.type === "group" ? (conversation.title || "گروه جدید ایجاد شد.") : "گفتگوی جدید در دسترس است.";
+      pushNotification("system", title, description);
+    }
+    const next = new Set(chatConversations.map((c) => c.id));
+    knownConversationIdsRef.current = next;
+  }, [chatConversations]);
+
+  useEffect(() => {
+    if (!authToken) return;
+    const socket = socketRef.current;
+    if (!socket) return;
+    const previous = joinedConversationRef.current;
+    if (previous && previous !== selectedConversationId) {
+      socket.emit("chat:leave", { conversationId: previous });
+    }
+    if (!selectedConversationId || activeView !== "chat") {
+      joinedConversationRef.current = "";
+      setTypingUsers([]);
+      return;
+    }
+    joinedConversationRef.current = selectedConversationId;
+    socket.emit("chat:join", { conversationId: selectedConversationId });
+    void apiRequest<{ ok: boolean }>(`/api/chat/conversations/${selectedConversationId}/read`, { method: "POST", body: "{}" })
+      .then(() => socket.emit("chat:read", { conversationId: selectedConversationId }))
+      .catch(() => undefined);
+  }, [activeView, authToken, selectedConversationId]);
+
+  useEffect(() => {
+    if (activeView !== "chat" || !selectedConversationId) return;
+    if (skipNextAutoScrollRef.current) {
+      skipNextAutoScrollRef.current = false;
+      return;
+    }
+    const el = chatScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [activeView, chatMessages.length, selectedConversationId]);
+
+  useEffect(() => {
+    return () => {
+      stopTypingSignal();
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+      const stream = mediaStreamRef.current;
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      const audioCtx = incomingAudioCtxRef.current;
+      if (audioCtx) {
+        incomingAudioCtxRef.current = null;
+        void audioCtx.close().catch(() => undefined);
+      }
+    };
+  }, []);
+  useEffect(() => {
+    const onWindowError = (event: ErrorEvent) => {
+      void sendClientLog("error", "ui.window.error", {
+        message: String(event.message ?? ""),
+        filename: String(event.filename ?? ""),
+        lineno: Number(event.lineno ?? 0),
+        colno: Number(event.colno ?? 0),
+        error: String(event.error?.stack ?? event.error?.message ?? ""),
+      });
+    };
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      void sendClientLog("error", "ui.window.unhandledrejection", {
+        reason: String(event.reason?.stack ?? event.reason?.message ?? event.reason ?? ""),
+      });
+    };
+    window.addEventListener("error", onWindowError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    return () => {
+      window.removeEventListener("error", onWindowError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
+  }, []);
+
   const pushToast = (message: string, tone: "success" | "error" = "success") => {
-    const id = crypto.randomUUID();
+    const id = createId();
     setToasts((prev) => [...prev, { id, message, tone }]);
     window.setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 2600);
   };
+  const pushNotification = (kind: NotificationItem["kind"], title: string, description: string) => {
+    const item: NotificationItem = {
+      id: createId(),
+      kind,
+      title,
+      description,
+      createdAt: new Date().toISOString(),
+      read: false,
+    };
+    setNotifications((prev) => [item, ...prev].slice(0, 80));
+  };
+  const refreshInbox = async (silent = true) => {
+    if (!authToken) {
+      setInboxData(null);
+      return;
+    }
+    if (!silent) setInboxBusy(true);
+    try {
+      const payload = await apiRequest<InboxPayload>("/api/inbox");
+      setInboxData(payload);
+    } catch (error) {
+      if (!silent) {
+        const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "بارگذاری صندوق کار ناموفق بود.");
+        pushToast(msg || "بارگذاری صندوق کار ناموفق بود.", "error");
+      }
+    } finally {
+      if (!silent) setInboxBusy(false);
+    }
+  };
+  const refreshAuditLogs = async (silent = true) => {
+    if (!authToken || (currentAppRole !== "admin" && currentAppRole !== "manager")) {
+      setAuditLogs([]);
+      return;
+    }
+    if (!silent) setAuditBusy(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("limit", "300");
+      if (auditQuery.trim()) params.set("q", auditQuery.trim());
+      if (auditEntityFilter !== "all") params.set("entityType", auditEntityFilter);
+      const query = params.toString();
+      const rows = await apiRequest<AuditLog[]>(`/api/audit-logs${query ? `?${query}` : ""}`);
+      setAuditLogs(Array.isArray(rows) ? rows : []);
+    } catch (error) {
+      if (!silent) {
+        const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "بارگذاری لاگ فعالیت ناموفق بود.");
+        pushToast(msg || "بارگذاری لاگ فعالیت ناموفق بود.", "error");
+      }
+    } finally {
+      if (!silent) setAuditBusy(false);
+    }
+  };
+  const unreadChatCount = useMemo(
+    () => chatConversations.reduce((sum, conversation) => sum + Math.max(0, Number(conversation.unreadCount ?? 0)), 0),
+    [chatConversations],
+  );
+  const unreadTaskNotificationCount = notifications.filter((n) => !n.read && n.kind === "task").length;
+  const unreadChatNotificationCount = notifications.filter((n) => !n.read && n.kind === "chat").length;
+  const unreadSystemNotificationCount = notifications.filter((n) => !n.read && n.kind !== "chat").length;
+  const unreadNotificationCount = unreadSystemNotificationCount + Math.max(unreadChatCount, unreadChatNotificationCount);
 
   const today = todayIso();
+  const roleForDashboard = authUser?.appRole ?? "member";
+  const isTeamDashboard = roleForDashboard === "admin" || roleForDashboard === "manager";
+  const dashboardOwnerId = authUser?.id || settingsDraft.general.currentMemberId || "";
 
   const taskStats = useMemo(() => {
     const total = tasks.length;
-    const done = tasks.filter((t) => t.done).length;
-    const todayCount = tasks.filter((t) => t.executionDate === today && !t.done).length;
+    const done = tasks.filter(taskIsDone).length;
+    const todayCount = tasks.filter((t) => t.executionDate === today && taskIsOpen(t)).length;
     return { total, done, todayCount };
   }, [tasks, today]);
 
@@ -812,21 +1872,29 @@ function App() {
     const to = customFrom <= customTo ? customTo : customFrom;
     return tasks.filter((t) => t.executionDate >= from && t.executionDate <= to);
   }, [customFrom, customTo, dashboardRange, tasks, today]);
+  const dashboardScopeTasks = useMemo(() => {
+    if (isTeamDashboard) return dashboardTasks;
+    if (!dashboardOwnerId) return [];
+    return dashboardTasks.filter(
+      (t) => String(t.assigneePrimaryId ?? "").trim() === dashboardOwnerId || String(t.assigneeSecondaryId ?? "").trim() === dashboardOwnerId,
+    );
+  }, [dashboardOwnerId, dashboardTasks, isTeamDashboard]);
 
-  const dashboardStats = useMemo(() => {
-    const total = dashboardTasks.length;
-    const done = dashboardTasks.filter((t) => t.done).length;
+  const overallTaskStats = useMemo(() => {
+    const total = dashboardScopeTasks.length;
+    const done = dashboardScopeTasks.filter(taskIsDone).length;
     const open = total - done;
-    const overdue = dashboardTasks.filter((t) => !t.done && t.executionDate < today).length;
+    const overdue = dashboardScopeTasks.filter((t) => taskIsOpen(t) && t.executionDate < today).length;
+    const blocked = dashboardScopeTasks.filter((t) => normalizeTaskStatus(t.status, Boolean(t.done)) === "blocked").length;
     const completionRate = total === 0 ? 0 : Math.round((done / total) * 100);
-    const projectCount = new Set(dashboardTasks.map((t) => t.projectName).filter(Boolean)).size;
-    return { total, done, open, overdue, completionRate, projectCount };
-  }, [dashboardTasks, today]);
+    const projectCount = new Set(dashboardScopeTasks.map((t) => t.projectName).filter(Boolean)).size;
+    return { total, done, open, overdue, blocked, completionRate, projectCount };
+  }, [dashboardScopeTasks, today]);
 
   const visibleTasks = useMemo(() => {
-    if (tab === "done") return tasks.filter((t) => t.done);
+    if (tab === "done") return tasks.filter(taskIsDone);
     if (tab === "all") return tasks;
-    return tasks.filter((t) => t.executionDate === today && !t.done);
+    return tasks.filter((t) => t.executionDate === today && taskIsOpen(t));
   }, [tab, tasks, today]);
 
   const filteredProjects = useMemo(() => {
@@ -840,8 +1908,7 @@ function App() {
     return visibleTasks.filter((t) => {
       const matchSearch = !q || `${t.title} ${t.description} ${t.assigner} ${t.assigneePrimary} ${t.projectName}`.toLowerCase().includes(q);
       const matchProject = taskProjectFilter === "all" || t.projectName === taskProjectFilter;
-      const matchStatus =
-        taskStatusFilter === "all" || (taskStatusFilter === "done" ? t.done : !t.done);
+      const matchStatus = taskStatusFilter === "all" || normalizeTaskStatus(t.status, Boolean(t.done)) === taskStatusFilter;
       return matchSearch && matchProject && matchStatus;
     });
   }, [taskProjectFilter, taskSearch, taskStatusFilter, visibleTasks]);
@@ -881,41 +1948,51 @@ function App() {
     if (nowTime < settingsDraft.notifications.reminderTime) {
       return reminders;
     }
-    const openTasks = tasks.filter((t) => !t.done);
-    const overdue = openTasks.filter((t) => t.executionDate < today).sort((a, b) => (a.executionDate > b.executionDate ? 1 : -1));
-    const dueToday = openTasks.filter((t) => t.executionDate === today);
-    const tomorrow = addDays(today, 1);
-    const dueTomorrow = openTasks.filter((t) => t.executionDate === tomorrow);
+    const openTasks = tasks.filter(taskIsOpen);
+    const nowMs = Date.now();
+    const deadlineReminderHours = Math.max(1, Number(settingsDraft.notifications.deadlineReminderHours || 0));
+    const escalationAfterHours = Math.max(1, Number(settingsDraft.notifications.escalationAfterHours || 0));
+    const escalationAfterMs = escalationAfterHours * 60 * 60 * 1000;
 
-    if (settingsDraft.notifications.enabledOverdue && overdue.length > 0) {
-      const first = overdue[0];
-      reminders.push({
-        id: `task-overdue-${first.id}`,
-        title: `تسک معوق: ${first.title}`,
-        description: `${toFaNum(String(overdue.length))} تسک از موعد گذشته است. نزدیک‌ترین مورد: ${isoToJalali(first.executionDate)}`,
-        tone: "error",
-        targetView: "tasks",
-      });
-    }
+    for (const task of openTasks) {
+      const deadlineMs = deadlineEndOfDayMs(task.executionDate);
+      if (Number.isNaN(deadlineMs)) continue;
+      const untilDeadline = deadlineMs - nowMs;
+      const untilDeadlineHours = untilDeadline / (60 * 60 * 1000);
 
-    if (settingsDraft.notifications.enabledDueToday && dueToday.length > 0) {
-      reminders.push({
-        id: `task-due-today-${today}`,
-        title: "تسک‌های موعد امروز",
-        description: `${toFaNum(String(dueToday.length))} تسک باید امروز انجام شود.`,
-        tone: "success",
-        targetView: "tasks",
-      });
-    }
+      if (settingsDraft.notifications.enabledDueToday && untilDeadlineHours >= 0 && untilDeadlineHours <= deadlineReminderHours) {
+        reminders.push({
+          id: `task-deadline-${task.id}-${task.executionDate}`,
+          title: `نزدیک شدن ددلاین: ${task.title}`,
+          description: `کمتر از ${toFaNum(String(deadlineReminderHours))} ساعت تا مهلت (${isoToJalali(task.executionDate)}) باقی مانده است.`,
+          tone: "success",
+          targetView: "tasks",
+        });
+      }
 
-    if (dueTomorrow.length > 0) {
-      reminders.push({
-        id: `task-due-tomorrow-${tomorrow}`,
-        title: "یادآور فردا",
-        description: `${toFaNum(String(dueTomorrow.length))} تسک موعد فردا دارند.`,
-        tone: "success",
-        targetView: "tasks",
-      });
+      if (settingsDraft.notifications.enabledOverdue && untilDeadline < 0) {
+        reminders.push({
+          id: `task-overdue-${task.id}-${today}`,
+          title: `تاخیر تسک: ${task.title}`,
+          description: `ددلاین این تسک گذشته است (${isoToJalali(task.executionDate)}).`,
+          tone: "error",
+          targetView: "tasks",
+        });
+      }
+
+      if (settingsDraft.notifications.escalationEnabled) {
+        const lastChangeIso = task.lastStatusChangedAt || task.updatedAt || task.createdAt;
+        const lastChangeMs = safeIsoMs(lastChangeIso);
+        if (!Number.isNaN(lastChangeMs) && nowMs - lastChangeMs >= escalationAfterMs) {
+          reminders.push({
+            id: `task-escalation-${task.id}-${lastChangeIso}`,
+            title: `Escalation به مدیر: ${task.title}`,
+            description: `این تسک بیش از ${toFaNum(String(escalationAfterHours))} ساعت بدون تغییر مانده است.`,
+            tone: "error",
+            targetView: "tasks",
+          });
+        }
+      }
     }
 
     if (budgetStats.budgetAmount > 0) {
@@ -947,6 +2024,9 @@ function App() {
     settingsDraft.notifications.enabledDueToday,
     settingsDraft.notifications.enabledOverdue,
     settingsDraft.notifications.reminderTime,
+    settingsDraft.notifications.deadlineReminderHours,
+    settingsDraft.notifications.escalationEnabled,
+    settingsDraft.notifications.escalationAfterHours,
     tasks,
     today,
   ]);
@@ -958,6 +2038,9 @@ function App() {
       if (existing.has(reminder.id)) continue;
       existing.add(reminder.id);
       pushToast(reminder.title, reminder.tone);
+      if (reminder.targetView === "tasks") {
+        pushNotification("task", reminder.title, reminder.description);
+      }
     }
     for (const id of Array.from(existing)) {
       if (!currentIds.has(id)) existing.delete(id);
@@ -991,6 +2074,13 @@ function App() {
     }
     return map;
   }, [teamMembers]);
+  const teamMemberById = useMemo(() => {
+    const map = new Map<string, TeamMember>();
+    for (const member of teamMembers) {
+      map.set(member.id, member);
+    }
+    return map;
+  }, [teamMembers]);
 
   const selectedMember = useMemo(
     () => teamMembers.find((member) => member.id === selectedMemberId) ?? null,
@@ -1013,7 +2103,7 @@ function App() {
   const canAccessView = (view: ViewKey) => {
     if (currentAppRole === "admin") return true;
     if (currentAppRole === "manager") return view !== "settings";
-    return view !== "settings" && view !== "team";
+    return view !== "settings" && view !== "team" && view !== "audit";
   };
   const visibleNavItems = useMemo(() => navItems.filter((item) => item.available && canAccessView(item.key)), [currentAppRole]);
 
@@ -1021,6 +2111,10 @@ function App() {
     if (canAccessView(activeView)) return;
     setActiveView("dashboard");
   }, [activeView, currentAppRole]);
+  useEffect(() => {
+    if (activeView !== "audit") return;
+    void refreshAuditLogs(false);
+  }, [activeView, auditEntityFilter, auditQuery, authToken, currentAppRole]);
 
   const expenseByCategory = useMemo(() => {
     const rows = new Map<string, number>();
@@ -1058,21 +2152,69 @@ function App() {
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
       .slice(0, 8);
   }, [budgetHistory, budgetMonth]);
+  const selectedConversation = useMemo(
+    () => chatConversations.find((c) => c.id === selectedConversationId) ?? null,
+    [chatConversations, selectedConversationId],
+  );
+  const chatTimeline = useMemo(() => [...chatMessages].sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1)), [chatMessages]);
+  const chatMessageById = useMemo(() => new Map(chatTimeline.map((m) => [m.id, m])), [chatTimeline]);
+  const conversationTitle = (conversation: ChatConversation) => {
+    if (conversation.type === "group") return conversation.title || "گروه";
+    const otherId = conversation.participantIds.find((id) => id !== authUser?.id) ?? "";
+    return teamMemberNameById.get(otherId) ?? "گفتگوی خصوصی";
+  };
+  const canDeleteConversation = (conversation: ChatConversation) =>
+    currentAppRole === "admin" || conversation.createdById === authUser?.id;
+  const conversationOtherMember = (conversation: ChatConversation) => {
+    if (conversation.type !== "direct") return null;
+    const otherId = conversation.participantIds.find((id) => id !== authUser?.id) ?? "";
+    return teamMemberById.get(otherId) ?? null;
+  };
+  const forwardTargetConversations = useMemo(
+    () => chatConversations.filter((c) => c.id !== (forwardSourceMessage?.conversationId ?? "")),
+    [chatConversations, forwardSourceMessage?.conversationId],
+  );
+  const mentionableMembers = useMemo(() => {
+    if (!selectedConversation) return [];
+    return selectedConversation.participantIds
+      .filter((id) => id !== authUser?.id)
+      .map((id) => teamMemberById.get(id))
+      .filter((m): m is TeamMember => Boolean(m));
+  }, [authUser?.id, selectedConversation, teamMemberById]);
+  const directConversationByMemberId = useMemo(() => {
+    const map = new Map<string, ChatConversation>();
+    for (const conversation of chatConversations) {
+      if (conversation.type !== "direct") continue;
+      const otherId = conversation.participantIds.find((id) => id !== authUser?.id);
+      if (!otherId) continue;
+      map.set(otherId, conversation);
+    }
+    return map;
+  }, [authUser?.id, chatConversations]);
+  const chatMemberRows = useMemo(() => {
+    const q = chatMemberSearch.trim().toLowerCase();
+    return activeTeamMembers
+      .filter((m) => m.id !== authUser?.id)
+      .filter((m) => {
+        if (!q) return true;
+        return `${m.fullName} ${m.role} ${m.phone}`.toLowerCase().includes(q);
+      });
+  }, [activeTeamMembers, authUser?.id, chatMemberSearch]);
 
   const projectDistribution = useMemo(() => {
     const byProject = new Map<string, { total: number; done: number }>();
-    for (const t of dashboardTasks) {
+    for (const t of dashboardScopeTasks) {
       const key = t.projectName || "بدون پروژه";
       const curr = byProject.get(key) ?? { total: 0, done: 0 };
       curr.total += 1;
-      if (t.done) curr.done += 1;
+      if (taskIsDone(t)) curr.done += 1;
       byProject.set(key, curr);
     }
     return Array.from(byProject.entries())
       .map(([projectName, values]) => ({ projectName, ...values }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 8);
-  }, [dashboardTasks]);
+  }, [dashboardScopeTasks]);
 
   const weeklyTrend = useMemo(() => {
     const rows: Array<{ dateIso: string; label: string; count: number }> = [];
@@ -1083,12 +2225,12 @@ function App() {
       rows.push({ dateIso: cursor, label: isoToJalali(cursor), count: 0 });
       cursor = addDays(cursor, 1);
     }
-    for (const t of dashboardTasks) {
+    for (const t of dashboardScopeTasks) {
       const idx = rows.findIndex((r) => r.dateIso === t.executionDate);
       if (idx >= 0) rows[idx].count += 1;
     }
     return rows;
-  }, [customFrom, customTo, dashboardRange, dashboardTasks, today]);
+  }, [customFrom, customTo, dashboardRange, dashboardScopeTasks, today]);
 
   const maxProjectCount = Math.max(1, ...projectDistribution.map((x) => x.total));
   const maxWeeklyCount = Math.max(1, ...weeklyTrend.map((x) => x.count));
@@ -1124,8 +2266,26 @@ function App() {
         });
       }
     }
+    for (const minute of minutes) {
+      rows.push({
+        id: `minute-${minute.id}`,
+        dateIso: minute.date,
+        title: `جلسه: ${minute.title}`,
+        subtitle: "رویداد روزانه (صورتجلسه)",
+        tone: "minute",
+      });
+    }
+    for (const tx of transactions) {
+      rows.push({
+        id: `tx-${tx.id}`,
+        dateIso: tx.date,
+        title: `${tx.type === "expense" ? "هزینه" : "درآمد"}: ${tx.title}`,
+        subtitle: `${toFaNum(String(tx.amount))} تومان - ${tx.category || "بدون دسته"}`,
+        tone: "finance",
+      });
+    }
     return rows.sort((a, b) => (a.dateIso > b.dateIso ? 1 : -1));
-  }, [projects, settingsDraft.calendar.showProjects, settingsDraft.calendar.showTasks, tasks]);
+  }, [minutes, projects, settingsDraft.calendar.showProjects, settingsDraft.calendar.showTasks, tasks, transactions]);
 
   const calendarEventsByIso = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
@@ -1152,6 +2312,43 @@ function App() {
     };
   });
   const selectedDayEvents = calendarEventsByIso.get(calendarSelectedIso) ?? [];
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    confirmLabel: string;
+    destructive: boolean;
+  }>({
+    open: false,
+    title: "تایید عملیات",
+    message: "",
+    confirmLabel: "تایید",
+    destructive: false,
+  });
+  const closeConfirmDialog = (result: boolean) => {
+    if (confirmResolverRef.current) {
+      confirmResolverRef.current(result);
+      confirmResolverRef.current = null;
+    }
+    setConfirmDialog((prev) => ({ ...prev, open: false }));
+  };
+  const confirmAction = async (
+    message: string,
+    options?: { title?: string; confirmLabel?: string; destructive?: boolean },
+  ) =>
+    new Promise<boolean>((resolve) => {
+      if (confirmResolverRef.current) {
+        confirmResolverRef.current(false);
+      }
+      confirmResolverRef.current = resolve;
+      setConfirmDialog({
+        open: true,
+        title: options?.title ?? "تایید عملیات",
+        message,
+        confirmLabel: options?.confirmLabel ?? "تایید",
+        destructive: options?.destructive ?? false,
+      });
+    });
 
   const addProject = async () => {
     const name = projectDraft.name.trim();
@@ -1161,11 +2358,12 @@ function App() {
     if (!projectDraft.ownerId) next.ownerId = "مالک پروژه را انتخاب کن.";
     if (Object.keys(next).length) {
       setProjectErrors(next);
+      pushToast("اطلاعات پروژه کامل نیست.", "error");
       return;
     }
 
     try {
-      const created = await apiRequest<Project>("/api/projects", {
+      await apiRequest<Project>("/api/projects", {
         method: "POST",
         body: JSON.stringify({
           name,
@@ -1174,7 +2372,8 @@ function App() {
           memberIds: projectDraft.memberIds,
         }),
       });
-      setProjects((prev) => [created, ...prev]);
+      const refreshed = await apiRequest<Project[]>("/api/projects");
+      setProjects(normalizeProjects(refreshed));
       setProjectOpen(false);
       setProjectDraft({
         name: "",
@@ -1183,8 +2382,11 @@ function App() {
         memberIds: (activeTeamMembers[0]?.id ?? teamMembers[0]?.id) ? [activeTeamMembers[0]?.id ?? teamMembers[0]?.id ?? ""] : [],
       });
       setProjectErrors({});
-    } catch {
-      setProjectErrors({ name: "خطا در ثبت پروژه. دوباره تلاش کن." });
+      pushToast("پروژه با موفقیت ثبت شد.");
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "خطا در ثبت پروژه. دوباره تلاش کن.");
+      setProjectErrors({ name: msg || "خطا در ثبت پروژه. دوباره تلاش کن." });
+      pushToast(msg || "خطا در ثبت پروژه. دوباره تلاش کن.", "error");
     }
   };
 
@@ -1212,9 +2414,10 @@ function App() {
       setProjectEditErrors(next);
       return;
     }
+    if (!(await confirmAction("از اعمال تغییرات پروژه مطمئن هستید؟"))) return;
 
     try {
-      const updated = await apiRequest<Project>(`/api/projects/${editingProjectId}`, {
+      await apiRequest<Project>(`/api/projects/${editingProjectId}`, {
         method: "PATCH",
         body: JSON.stringify({
           name,
@@ -1223,8 +2426,11 @@ function App() {
           memberIds: projectEditDraft.memberIds,
         }),
       });
-      setProjects((prev) => prev.map((x) => (x.id === editingProjectId ? updated : x)));
-      if (oldProjectName && oldProjectName !== updated.name) {
+      const refreshed = await apiRequest<Project[]>("/api/projects");
+      const normalizedProjects = normalizeProjects(refreshed);
+      setProjects(normalizedProjects);
+      const updated = normalizedProjects.find((x) => x.id === editingProjectId);
+      if (updated && oldProjectName && oldProjectName !== updated.name) {
         setTasks((prev) => prev.map((t) => (t.projectName === oldProjectName ? { ...t, projectName: updated.name } : t)));
       }
       setProjectEditOpen(false);
@@ -1379,6 +2585,7 @@ function App() {
       setMemberEditErrors(next);
       return;
     }
+    if (!(await confirmAction("از اعمال تغییرات عضو تیم مطمئن هستید؟"))) return;
     try {
       const updated = await apiRequest<TeamMember>(`/api/team-members/${editingMemberId}`, {
         method: "PATCH",
@@ -1414,6 +2621,15 @@ function App() {
   };
 
   const removeMember = async (id: string) => {
+    const memberName = teamMemberNameById.get(id) ?? "این عضو";
+    if (
+      !(await confirmAction(`"${memberName}" حذف شود؟`, {
+        title: "حذف عضو",
+        confirmLabel: "حذف",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await apiRequest<void>(`/api/team-members/${id}`, { method: "DELETE" });
       setTeamMembers((prev) => prev.filter((m) => m.id !== id));
@@ -1423,6 +2639,73 @@ function App() {
       setMemberErrors({ fullName: "این عضو به پروژه/تسک متصل است و قابل حذف نیست." });
       pushToast("حذف عضو ناموفق بود.", "error");
     }
+  };
+  const applyTaskTemplate = (templateId: string, mode: "add" | "edit" = "add") => {
+    const template = TASK_TEMPLATES.find((t) => t.id === templateId);
+    if (!template) return;
+    const announce = todayIso();
+    const execution = addDays(announce, Math.max(0, template.executionOffsetDays));
+    if (mode === "add") {
+      setTaskDraft((prev) => ({
+        ...prev,
+        title: template.title,
+        description: template.description,
+        status: template.status,
+        blockedReason: template.status === "blocked" ? prev.blockedReason : "",
+        announceDateIso: announce,
+        executionDateIso: execution,
+      }));
+      return;
+    }
+    setTaskEditDraft((prev) => ({
+      ...prev,
+      title: template.title,
+      description: template.description,
+      status: template.status,
+      blockedReason: template.status === "blocked" ? prev.blockedReason : "",
+      announceDateIso: announce,
+      executionDateIso: execution,
+    }));
+  };
+  const applyProjectChecklistTemplate = (templateId: string, mode: "add" | "edit" = "add") => {
+    const template = PROJECT_CHECKLIST_TEMPLATES.find((t) => t.id === templateId);
+    if (!template) return;
+    const checklist = checklistToText(template.items);
+    const block = `چک‌لیست پروژه:\n${checklist}`;
+    if (mode === "add") {
+      setProjectDraft((prev) => ({
+        ...prev,
+        description: prev.description.trim() ? `${prev.description.trim()}\n\n${block}` : block,
+      }));
+      return;
+    }
+    setProjectEditDraft((prev) => ({
+      ...prev,
+      description: prev.description.trim() ? `${prev.description.trim()}\n\n${block}` : block,
+    }));
+  };
+  const applyMinuteTemplate = (templateId: string, mode: "add" | "edit" = "add") => {
+    const template = MINUTE_TEMPLATES.find((t) => t.id === templateId);
+    if (!template) return;
+    if (mode === "add") {
+      setMinuteDraft((prev) => ({
+        ...prev,
+        title: template.title,
+        attendees: template.attendees,
+        summary: template.summary,
+        decisions: template.decisions,
+        followUps: template.followUps,
+      }));
+      return;
+    }
+    setMinuteEditDraft((prev) => ({
+      ...prev,
+      title: template.title,
+      attendees: template.attendees,
+      summary: template.summary,
+      decisions: template.decisions,
+      followUps: template.followUps,
+    }));
   };
 
   const validateTaskDraft = (draft: {
@@ -1434,6 +2717,8 @@ function App() {
     projectName: string;
     announceDateIso: string;
     executionDateIso: string;
+    status: TaskStatus;
+    blockedReason: string;
   }) => {
     const next: Record<string, string> = {};
     if (!draft.title.trim()) next.title = "عنوان الزامی است.";
@@ -1441,6 +2726,14 @@ function App() {
     if (!draft.assignerId) next.assignerId = "ابلاغ‌کننده را انتخاب کن.";
     if (!draft.assigneePrimaryId) next.assigneePrimaryId = "انجام‌دهنده را انتخاب کن.";
     if (!draft.projectName) next.projectName = "پروژه را انتخاب کن.";
+    if (!draft.announceDateIso) next.announceDateIso = "تاریخ ابلاغ الزامی است.";
+    if (!draft.executionDateIso) next.executionDateIso = "تاریخ پایان الزامی است.";
+    if (draft.announceDateIso && draft.executionDateIso && draft.executionDateIso < draft.announceDateIso) {
+      next.executionDateIso = "تاریخ پایان باید بعد از تاریخ ابلاغ باشد.";
+    }
+    if (draft.status === "blocked" && !draft.blockedReason.trim()) {
+      next.blockedReason = "برای وضعیت Blocked دلیل را ثبت کن.";
+    }
     const assignerName = teamMemberNameById.get(draft.assignerId) ?? "";
     const assigneePrimaryName = teamMemberNameById.get(draft.assigneePrimaryId) ?? "";
     const assigneeSecondaryName = draft.assigneeSecondaryId ? teamMemberNameById.get(draft.assigneeSecondaryId) ?? "" : "";
@@ -1458,6 +2751,8 @@ function App() {
         projectName: draft.projectName,
         announceDate: draft.announceDateIso,
         executionDate: draft.executionDateIso,
+        status: draft.status,
+        blockedReason: draft.status === "blocked" ? draft.blockedReason.trim() : "",
       },
     };
   };
@@ -1466,6 +2761,7 @@ function App() {
     const { errors, payload } = validateTaskDraft(taskDraft);
     if (Object.keys(errors).length) {
       setTaskErrors(errors);
+      pushToast("اطلاعات تسک کامل نیست.", "error");
       return;
     }
 
@@ -1485,10 +2781,15 @@ function App() {
         projectName: "",
         announceDateIso: todayIso(),
         executionDateIso: todayIso(),
+        status: "todo",
+        blockedReason: "",
       });
       setTaskErrors({});
-    } catch {
-      setTaskErrors({ title: "خطا در ثبت تسک. دوباره تلاش کن." });
+      pushToast("تسک با موفقیت ثبت شد.");
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "خطا در ثبت تسک. دوباره تلاش کن.");
+      setTaskErrors({ form: msg || "خطا در ثبت تسک. دوباره تلاش کن." });
+      pushToast(msg || "خطا در ثبت تسک. دوباره تلاش کن.", "error");
     }
   };
 
@@ -1506,7 +2807,8 @@ function App() {
       projectName: task.projectName,
       announceDateIso: task.announceDate,
       executionDateIso: task.executionDate,
-      done: task.done,
+      status: normalizeTaskStatus(task.status, Boolean(task.done)),
+      blockedReason: task.blockedReason ?? "",
     });
     setTaskEditErrors({});
     setTaskEditOpen(true);
@@ -1519,11 +2821,12 @@ function App() {
       setTaskEditErrors(errors);
       return;
     }
+    if (!(await confirmAction("از اعمال تغییرات تسک مطمئن هستید؟"))) return;
 
     try {
       const updated = await apiRequest<Task>(`/api/tasks/${editingTaskId}`, {
         method: "PATCH",
-        body: JSON.stringify({ ...payload, done: taskEditDraft.done }),
+        body: JSON.stringify(payload),
       });
       setTasks((prev) => prev.map((x) => (x.id === editingTaskId ? updated : x)));
       setTaskEditOpen(false);
@@ -1539,6 +2842,14 @@ function App() {
   const removeProject = async (projectId: string) => {
     const projectName = projects.find((p) => p.id === projectId)?.name;
     if (!projectName) return;
+    if (
+      !(await confirmAction(`پروژه "${projectName}" حذف شود؟`, {
+        title: "حذف پروژه",
+        confirmLabel: "حذف",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await apiRequest<void>(`/api/projects/${projectId}`, { method: "DELETE" });
       setProjects((prev) => prev.filter((x) => x.id !== projectId));
@@ -1549,20 +2860,34 @@ function App() {
     }
   };
 
-  const toggleTask = async (taskId: string, done: boolean) => {
+  const updateTaskStatus = async (taskId: string, status: TaskStatus, blockedReason = "") => {
+    if (status === "blocked" && !blockedReason.trim()) {
+      pushToast("برای بلاک شدن تسک دلیل وارد کن.", "error");
+      return;
+    }
+    if (!(await confirmAction("وضعیت تسک تغییر کند؟"))) return;
     try {
       const updated = await apiRequest<Task>(`/api/tasks/${taskId}`, {
         method: "PATCH",
-        body: JSON.stringify({ done }),
+        body: JSON.stringify({ status, blockedReason: status === "blocked" ? blockedReason.trim() : "" }),
       });
-      setTasks((prev) => prev.map((x) => (x.id === taskId ? updated : x)));
-    } catch {
-      // eslint-disable-next-line no-console
-      console.error("failed to toggle task");
+      setTasks((prev) => prev.map((task) => (task.id === taskId ? updated : task)));
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "تغییر وضعیت تسک ناموفق بود.");
+      pushToast(msg || "تغییر وضعیت تسک ناموفق بود.", "error");
     }
   };
 
   const removeTask = async (taskId: string) => {
+    const taskTitle = tasks.find((x) => x.id === taskId)?.title ?? "این تسک";
+    if (
+      !(await confirmAction(`"${taskTitle}" حذف شود؟`, {
+        title: "حذف تسک",
+        confirmLabel: "حذف",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await apiRequest<void>(`/api/tasks/${taskId}`, { method: "DELETE" });
       setTasks((prev) => prev.filter((x) => x.id !== taskId));
@@ -1633,6 +2958,7 @@ function App() {
       setMinuteEditErrors(next);
       return;
     }
+    if (!(await confirmAction("از اعمال تغییرات صورتجلسه مطمئن هستید؟"))) return;
 
     try {
       const updated = await apiRequest<MeetingMinute>(`/api/minutes/${editingMinuteId}`, {
@@ -1658,6 +2984,15 @@ function App() {
   };
 
   const removeMinute = async (id: string) => {
+    const minuteTitle = minutes.find((m) => m.id === id)?.title ?? "این صورتجلسه";
+    if (
+      !(await confirmAction(`"${minuteTitle}" حذف شود؟`, {
+        title: "حذف صورتجلسه",
+        confirmLabel: "حذف",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await apiRequest<void>(`/api/minutes/${id}`, { method: "DELETE" });
       setMinutes((prev) => prev.filter((m) => m.id !== id));
@@ -1722,6 +3057,7 @@ function App() {
       setAccountEditErrors(next);
       return;
     }
+    if (!(await confirmAction("از اعمال تغییرات حساب بانکی مطمئن هستید؟"))) return;
 
     try {
       const updated = await apiRequest<AccountingAccount>(`/api/accounting/accounts/${editingAccountId}`, {
@@ -1744,6 +3080,15 @@ function App() {
   };
 
   const removeAccount = async (id: string) => {
+    const accountName = accountNameById.get(id) ?? "این حساب";
+    if (
+      !(await confirmAction(`"${accountName}" حذف شود؟`, {
+        title: "حذف حساب بانکی",
+        confirmLabel: "حذف",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await apiRequest<void>(`/api/accounting/accounts/${id}`, { method: "DELETE" });
       setAccounts((prev) => prev.filter((x) => x.id !== id));
@@ -1764,7 +3109,7 @@ function App() {
     accountId: string;
   }) => {
     const next: Record<string, string> = {};
-    const parsedAmount = Number(draft.amount);
+    const parsedAmount = parseAmountInput(draft.amount);
     if (!draft.title.trim()) next.title = "عنوان تراکنش الزامی است.";
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) next.amount = "مبلغ باید مثبت باشد.";
     if (!draft.category.trim()) next.category = "دسته‌بندی الزامی است.";
@@ -1835,6 +3180,7 @@ function App() {
       setTransactionEditErrors(errors);
       return;
     }
+    if (!(await confirmAction("از اعمال تغییرات تراکنش مطمئن هستید؟"))) return;
 
     try {
       const updated = await apiRequest<AccountingTransaction>(`/api/accounting/transactions/${editingTransactionId}`, {
@@ -1853,6 +3199,15 @@ function App() {
   };
 
   const removeTransaction = async (id: string) => {
+    const txTitle = transactions.find((x) => x.id === id)?.title ?? "این تراکنش";
+    if (
+      !(await confirmAction(`"${txTitle}" حذف شود؟`, {
+        title: "حذف تراکنش",
+        confirmLabel: "حذف",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await apiRequest<void>(`/api/accounting/transactions/${id}`, { method: "DELETE" });
       setTransactions((prev) => prev.filter((x) => x.id !== id));
@@ -1867,11 +3222,12 @@ function App() {
       setBudgetErrors({ amount: "ماه معتبر انتخاب کن." });
       return;
     }
-    const parsedAmount = Number(budgetAmountInput);
+    const parsedAmount = parseAmountInput(budgetAmountInput);
     if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
       setBudgetErrors({ amount: "بودجه باید عدد مثبت یا صفر باشد." });
       return;
     }
+    if (!(await confirmAction("بودجه ماهانه ذخیره شود؟", { title: "ذخیره بودجه" }))) return;
 
     try {
       const saved = await apiRequest<AccountingBudget>(`/api/accounting/budgets/${budgetMonth}`, {
@@ -1946,6 +3302,7 @@ function App() {
   };
 
   const saveSettings = async () => {
+    if (!(await confirmAction("تنظیمات ذخیره شود؟", { title: "ذخیره تنظیمات" }))) return;
     setSettingsBusy(true);
     setSettingsErrors({});
     try {
@@ -1993,6 +3350,7 @@ function App() {
       setProfileErrors(next);
       return;
     }
+    if (!(await confirmAction("تغییرات پروفایل ذخیره شود؟", { title: "ذخیره پروفایل" }))) return;
     try {
       const updated = await apiRequest<TeamMember>(`/api/team-members/${currentMember.id}`, {
         method: "PATCH",
@@ -2042,6 +3400,13 @@ function App() {
       setSettingsErrors({ backup: "متن JSON بکاپ را وارد کن." });
       return;
     }
+    if (
+      !(await confirmAction("بکاپ وارد شود؟ داده‌های فعلی بازنویسی می‌شوند.", {
+        title: "ایمپورت بکاپ",
+        confirmLabel: "ایمپورت",
+      }))
+    )
+      return;
     try {
       const parsed = JSON.parse(raw);
       await apiRequest<{ ok: boolean }>("/api/backup/import", {
@@ -2056,11 +3421,383 @@ function App() {
   };
 
   const resetAllData = async () => {
+    if (
+      !(await confirmAction("تمام داده‌ها ریست شود؟ این عمل قابل بازگشت نیست.", {
+        title: "ریست کامل داده‌ها",
+        confirmLabel: "ریست",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await apiRequest<{ ok: boolean }>("/api/backup/reset", { method: "POST" });
       window.location.reload();
     } catch {
       pushToast("ریست داده‌ها ناموفق بود.", "error");
+    }
+  };
+
+  const announceTyping = async (isTyping: boolean) => {
+    if (!selectedConversationId) return;
+    const socket = socketRef.current;
+    if (!socket?.connected) return;
+    socket.emit("chat:typing", { conversationId: selectedConversationId, isTyping });
+  };
+
+  const stopTypingSignal = () => {
+    if (typingStopTimerRef.current) {
+      window.clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+    if (typingPingIntervalRef.current) {
+      window.clearInterval(typingPingIntervalRef.current);
+      typingPingIntervalRef.current = null;
+    }
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      void announceTyping(false);
+    }
+  };
+
+  const startTypingSignal = () => {
+    if (!selectedConversationId) return;
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      void announceTyping(true);
+    }
+    if (!typingPingIntervalRef.current) {
+      typingPingIntervalRef.current = window.setInterval(() => {
+        if (!isTypingRef.current) return;
+        void announceTyping(true);
+      }, 4000);
+    }
+    if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
+    typingStopTimerRef.current = window.setTimeout(() => {
+      stopTypingSignal();
+    }, 1600);
+  };
+
+  const selectConversation = async (conversationId: string) => {
+    stopTypingSignal();
+    setChatReplyTo(null);
+    setChatMentionDraftIds([]);
+    setMentionPickerOpen(false);
+    setChatLoadingMore(false);
+    setSelectedConversationId(conversationId);
+    try {
+      const rows = await apiRequest<ChatMessage[]>(buildMessagesPath(conversationId));
+      setChatMessages(rows.map((m) => (m.senderId === authUser?.id ? m : { ...m, receivedAt: m.receivedAt || m.createdAt })));
+      setChatHasMore(rows.length >= CHAT_PAGE_SIZE);
+      await apiRequest<{ ok: boolean }>(`/api/chat/conversations/${conversationId}/read`, { method: "POST", body: "{}" });
+      socketRef.current?.emit("chat:read", { conversationId });
+      const refreshed = await apiRequest<ChatConversation[]>("/api/chat/conversations");
+      setChatConversations(normalizeChatConversations(refreshed));
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "بارگذاری گفتگو ناموفق بود.");
+      pushToast(msg || "بارگذاری گفتگو ناموفق بود.", "error");
+    }
+  };
+
+  const loadOlderMessages = async () => {
+    if (!selectedConversationId || chatLoadingMore || !chatHasMore || chatMessages.length === 0) return;
+    const oldest = [...chatMessages].sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1))[0];
+    if (!oldest?.id) {
+      setChatHasMore(false);
+      return;
+    }
+    const el = chatScrollRef.current;
+    const prevScrollHeight = el?.scrollHeight ?? 0;
+    const prevScrollTop = el?.scrollTop ?? 0;
+    setChatLoadingMore(true);
+    try {
+      const rows = await apiRequest<ChatMessage[]>(buildMessagesPath(selectedConversationId, oldest.id));
+      const normalized = rows.map((m) => (m.senderId === authUser?.id ? m : { ...m, receivedAt: m.receivedAt || m.createdAt }));
+      if (normalized.length === 0) {
+        setChatHasMore(false);
+        return;
+      }
+      skipNextAutoScrollRef.current = true;
+      setChatMessages((prev) => {
+        const existing = new Set(prev.map((m) => m.id));
+        const older = normalized.filter((m) => !existing.has(m.id));
+        return older.length > 0 ? [...older, ...prev] : prev;
+      });
+      setChatHasMore(normalized.length >= CHAT_PAGE_SIZE);
+      window.requestAnimationFrame(() => {
+        const node = chatScrollRef.current;
+        if (!node) return;
+        const newScrollHeight = node.scrollHeight;
+        node.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+      });
+    } catch {
+      pushToast("بارگذاری پیام‌های قدیمی ناموفق بود.", "error");
+    } finally {
+      setChatLoadingMore(false);
+    }
+  };
+
+  const handleChatScroll = () => {
+    const el = chatScrollRef.current;
+    if (!el || chatLoadingMore || !chatHasMore) return;
+    if (el.scrollTop <= 80) {
+      void loadOlderMessages();
+    }
+  };
+
+  const openForwardDialog = (message: ChatMessage) => {
+    setForwardSourceMessage(message);
+    const fallback = chatConversations.find((c) => c.id !== message.conversationId)?.id ?? "";
+    setForwardTargetConversationId(fallback);
+    setForwardOpen(true);
+  };
+
+  const addMentionToDraft = (member: TeamMember) => {
+    const token = `@${member.fullName}`;
+    setChatDraft((prev) => {
+      if (prev.includes(token)) return prev;
+      return `${prev}${prev.trim() ? " " : ""}${token}`;
+    });
+    setChatMentionDraftIds((prev) => (prev.includes(member.id) ? prev : [...prev, member.id]));
+    setMentionPickerOpen(false);
+    startTypingSignal();
+  };
+
+  const submitForwardMessage = async () => {
+    if (!forwardSourceMessage || !forwardTargetConversationId) return;
+    setChatBusy(true);
+    try {
+      const socket = socketRef.current;
+      const payload: ChatSendPayload = {
+        conversationId: forwardTargetConversationId,
+        text: "",
+        attachments: [],
+        forwardFromMessageId: forwardSourceMessage.id,
+      };
+      if (socket?.connected) {
+        await new Promise<void>((resolve, reject) => {
+          socket.emit("chat:send", payload, (ack: { ok: boolean; message?: string }) => {
+            if (ack?.ok) {
+              resolve();
+            } else {
+              reject(new Error(ack?.message || "فوروارد پیام ناموفق بود."));
+            }
+          });
+        });
+      } else {
+        await apiRequest<ChatMessage>(`/api/chat/conversations/${forwardTargetConversationId}/messages`, {
+          method: "POST",
+          body: JSON.stringify({ text: "", attachments: [], forwardFromMessageId: forwardSourceMessage.id }),
+        });
+      }
+      const refreshed = await apiRequest<ChatConversation[]>("/api/chat/conversations");
+      setChatConversations(normalizeChatConversations(refreshed));
+      setForwardOpen(false);
+      setForwardSourceMessage(null);
+      setForwardTargetConversationId("");
+      pushToast("پیام فوروارد شد.");
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "فوروارد پیام ناموفق بود.");
+      pushToast(msg || "فوروارد پیام ناموفق بود.", "error");
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
+  const removeConversation = async (conversation: ChatConversation) => {
+    if (
+      !(await confirmAction(`گفتگو "${conversationTitle(conversation)}" حذف شود؟ این عمل قابل بازگشت نیست.`, {
+        title: "حذف گفتگو",
+        confirmLabel: "حذف",
+        destructive: true,
+      }))
+    )
+      return;
+    setChatBusy(true);
+    try {
+      await apiRequest<{ ok: boolean }>(`/api/chat/conversations/${conversation.id}`, { method: "DELETE" });
+      setChatConversations((prev) => prev.filter((c) => c.id !== conversation.id));
+      if (selectedConversationId === conversation.id) {
+        setSelectedConversationId("");
+        setChatMessages([]);
+        setTypingUsers([]);
+        setChatReplyTo(null);
+      }
+      pushToast("گفتگو حذف شد.");
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "حذف گفتگو ناموفق بود.");
+      pushToast(msg || "حذف گفتگو ناموفق بود.", "error");
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
+  const openDirectConversation = async (memberId: string) => {
+    setActiveView("chat");
+    try {
+      const createdRaw = await apiRequest<ChatConversation>("/api/chat/conversations/direct", {
+        method: "POST",
+        body: JSON.stringify({ memberId }),
+      });
+      const created = normalizeChatConversation(createdRaw);
+      if (!created) throw new Error("Invalid conversation payload.");
+      const refreshed = await apiRequest<ChatConversation[]>("/api/chat/conversations");
+      setChatConversations(normalizeChatConversations(refreshed));
+      await selectConversation(created.id);
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "شروع گفتگوی خصوصی ناموفق بود.");
+      pushToast(msg || "شروع گفتگوی خصوصی ناموفق بود.", "error");
+    }
+  };
+
+  const createGroupConversation = async () => {
+    const title = groupTitleDraft.trim();
+    const participantIds = groupMembersDraft.filter(Boolean);
+    if (title.length < 2) {
+      pushToast("نام گروه باید حداقل ۲ کاراکتر باشد.", "error");
+      return;
+    }
+    setChatBusy(true);
+    try {
+      const createdRaw = await apiRequest<ChatConversation>("/api/chat/conversations/group", {
+        method: "POST",
+        body: JSON.stringify({ title, participantIds }),
+      });
+      const created = normalizeChatConversation(createdRaw);
+      if (!created) throw new Error("Invalid conversation payload.");
+      const refreshed = await apiRequest<ChatConversation[]>("/api/chat/conversations");
+      setChatConversations(normalizeChatConversations(refreshed));
+      setGroupOpen(false);
+      setGroupTitleDraft("");
+      setGroupMembersDraft([]);
+      await selectConversation(created.id);
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "ساخت گروه ناموفق بود.");
+      pushToast(msg || "ساخت گروه ناموفق بود.", "error");
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
+  const pickChatFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const accepted = Array.from(files).slice(0, 3);
+    const rows: ChatAttachment[] = [];
+    for (const file of accepted) {
+      if (file.size > 1_600_000) {
+        pushToast(`فایل ${file.name} بزرگ‌تر از حد مجاز است.`, "error");
+        continue;
+      }
+      try {
+        const dataUrl = await fileToDataUrl(file);
+        rows.push({
+          id: createId(),
+          kind: "file",
+          name: file.name,
+          mimeType: file.type || "application/octet-stream",
+          size: file.size,
+          dataUrl,
+        });
+      } catch {
+        pushToast(`خواندن فایل ${file.name} ناموفق بود.`, "error");
+      }
+    }
+    if (rows.length > 0) setChatAttachmentDrafts((prev) => [...prev, ...rows].slice(0, 4));
+  };
+
+  const startVoiceRecording = async () => {
+    if (recordingVoice) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      voiceChunksRef.current = [];
+      recorder.ondataavailable = (evt) => {
+        if (evt.data.size > 0) voiceChunksRef.current.push(evt.data);
+      };
+      recorder.onstop = async () => {
+        try {
+          const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+          const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type || "audio/webm" });
+          const dataUrl = await fileToDataUrl(file);
+          const voiceAttachment: ChatAttachment = {
+            id: createId(),
+            kind: "voice",
+            name: file.name,
+            mimeType: file.type || "audio/webm",
+            size: file.size,
+            durationSec: 0,
+            dataUrl,
+          };
+          setChatAttachmentDrafts((prev) => [...prev, voiceAttachment].slice(0, 4));
+        } catch {
+          pushToast("ذخیره پیام صوتی ناموفق بود.", "error");
+        }
+      };
+      recorder.start();
+      setRecordingVoice(true);
+    } catch {
+      pushToast("دسترسی میکروفون رد شد.", "error");
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    const stream = mediaStreamRef.current;
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    setRecordingVoice(false);
+  };
+
+  const sendChatMessage = async () => {
+    if (!selectedConversationId) {
+      pushToast("ابتدا یک گفتگو را انتخاب کن.", "error");
+      return;
+    }
+    const text = chatDraft.trim();
+    if (!text && chatAttachmentDrafts.length === 0) return;
+    stopTypingSignal();
+    setChatBusy(true);
+    try {
+      const payload: ChatSendPayload = {
+        conversationId: selectedConversationId,
+        text,
+        attachments: chatAttachmentDrafts,
+        replyToMessageId: chatReplyTo?.id || undefined,
+        mentionMemberIds: chatMentionDraftIds,
+      };
+      const socket = socketRef.current;
+      if (socket?.connected) {
+        await new Promise<void>((resolve, reject) => {
+          socket.emit("chat:send", payload, (ack: { ok: boolean; message?: string; data?: ChatMessage }) => {
+            if (ack?.ok) {
+              resolve();
+            } else {
+              reject(new Error(ack?.message || "ارسال پیام ناموفق بود."));
+            }
+          });
+        });
+      } else {
+        const created = await apiRequest<ChatMessage>(`/api/chat/conversations/${selectedConversationId}/messages`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setChatMessages((prev) => [...prev, created]);
+      }
+      setChatDraft("");
+      setChatAttachmentDrafts([]);
+      setChatMentionDraftIds([]);
+      setChatReplyTo(null);
+      const refreshed = await apiRequest<ChatConversation[]>("/api/chat/conversations");
+      setChatConversations(normalizeChatConversations(refreshed));
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "ارسال پیام ناموفق بود.");
+      pushToast(msg || "ارسال پیام ناموفق بود.", "error");
+    } finally {
+      setChatBusy(false);
     }
   };
 
@@ -2074,24 +3811,67 @@ function App() {
     setAuthBusy(true);
     setAuthError("");
     try {
-      const user = await apiRequest<AuthUser>("/api/auth/login", {
+      const auth = await apiRequest<AuthResponse | AuthUser>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ phone, password }),
       });
-      setAuthUser(user);
-      setSettingsDraft((prev) => ({ ...prev, general: { ...prev.general, currentMemberId: user.id } }));
+
+      if (isAuthResponse(auth)) {
+        setAuthToken(auth.token);
+        setAuthUser(auth.user);
+        setSettingsDraft((prev) => ({ ...prev, general: { ...prev.general, currentMemberId: auth.user.id } }));
+      } else if (isAuthUser(auth)) {
+        setAuthToken("");
+        setAuthUser(auth);
+        setSettingsDraft((prev) => ({ ...prev, general: { ...prev.general, currentMemberId: auth.id } }));
+        setAuthError("نسخه بک‌اند قدیمی است. لطفا سرور را ری‌استارت کن تا امنیت جدید فعال شود.");
+      } else {
+        throw new Error("Invalid login response shape.");
+      }
+
       setLoginDraft((prev) => ({ ...prev, password: "" }));
       setActiveView("dashboard");
-    } catch {
-      setAuthError("ورود ناموفق بود. شماره/رمز نادرست است یا برای این کاربر شماره تماس ثبت نشده است.");
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "");
+      setAuthError(msg || "ورود ناموفق بود. شماره/رمز نادرست است یا برای این کاربر شماره تماس ثبت نشده است.");
     } finally {
       setAuthBusy(false);
     }
   };
 
   const logout = () => {
+    stopVoiceRecording();
+    stopTypingSignal();
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    joinedConversationRef.current = "";
     setAuthUser(null);
+    setAuthToken("");
     setProfileOpen(false);
+    setChatConversations([]);
+    setChatMessages([]);
+    setChatHasMore(false);
+    setChatLoadingMore(false);
+    setNotifications([]);
+    setNotificationOpen(false);
+    knownTaskIdsRef.current = new Set();
+    knownProjectIdsRef.current = new Set();
+    knownConversationIdsRef.current = new Set();
+    taskWatchReadyRef.current = false;
+    projectWatchReadyRef.current = false;
+    conversationWatchReadyRef.current = false;
+    setSelectedConversationId("");
+    localStorage.removeItem(CHAT_SELECTED_CONVERSATION_STORAGE_KEY);
+    localStorage.removeItem(ACTIVE_VIEW_STORAGE_KEY);
+    setChatAttachmentDrafts([]);
+    setChatMentionDraftIds([]);
+    setMentionPickerOpen(false);
+    setChatReplyTo(null);
+    setForwardOpen(false);
+    setForwardSourceMessage(null);
+    setForwardTargetConversationId("");
     setActiveView("dashboard");
     setAuthError("");
     setLoginDraft((prev) => ({ ...prev, password: "" }));
@@ -2144,12 +3924,6 @@ function App() {
 
   return (
     <main className="app-shell mx-auto w-full max-w-7xl px-4 py-8 md:px-6">
-      <div className="scene-decor" aria-hidden="true">
-        <div className="scene-orb scene-orb-a" />
-        <div className="scene-orb scene-orb-b" />
-        <div className="scene-orb scene-orb-c" />
-        <div className="scene-grid" />
-      </div>
       <header className="animate-fade-up mb-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -2182,6 +3956,73 @@ function App() {
             >
               {settingsDraft.general.theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
+            <Popover open={notificationOpen} onOpenChange={setNotificationOpen}>
+              <PopoverTrigger asChild>
+                <Button type="button" variant="outline" size="icon" className="relative" title="اعلان‌ها">
+                  <Bell className="h-4 w-4" />
+                  {unreadNotificationCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">
+                      {toFaNum(String(Math.min(99, unreadNotificationCount)))}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-[340px] p-0">
+                <div className="border-b p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">اعلان‌ها</p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))}
+                      >
+                        <CheckCheck className="ml-1 h-3.5 w-3.5" />
+                        خواندن همه
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setNotifications([])}>
+                        پاک‌سازی
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <div className="max-h-[360px] space-y-1 overflow-y-auto p-2">
+                  {unreadChatCount > 0 && (
+                    <button
+                      type="button"
+                      className="mb-1 w-full rounded-lg border border-primary/40 bg-primary/5 p-2 text-right hover:bg-primary/10"
+                      onClick={() => {
+                        setNotificationOpen(false);
+                        setActiveView("chat");
+                      }}
+                    >
+                      <p className="text-xs font-semibold">پیام خوانده‌نشده</p>
+                      <p className="text-[11px] text-muted-foreground">{toFaNum(String(unreadChatCount))} پیام جدید در گفتگوها</p>
+                    </button>
+                  )}
+                  {notifications.length === 0 && unreadChatCount === 0 ? (
+                    <p className="px-2 py-6 text-center text-xs text-muted-foreground">اعلان جدیدی وجود ندارد.</p>
+                  ) : (
+                    notifications.map((n) => (
+                      <button
+                        key={n.id}
+                        type="button"
+                        className={`w-full rounded-lg border p-2 text-right hover:bg-muted/40 ${n.read ? "opacity-70" : "bg-primary/5"}`}
+                        onClick={() => setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)))}
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <p className="truncate text-xs font-semibold">{n.title}</p>
+                          <span className="text-[10px] text-muted-foreground">{isoDateTimeToJalali(n.createdAt)}</span>
+                        </div>
+                        <p className="truncate text-[11px] text-muted-foreground">{n.description}</p>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
             <Button type="button" variant="outline" className="gap-2 px-2" onClick={openProfilePanel}>
               {currentMember?.avatarDataUrl ? (
                 <img src={currentMember.avatarDataUrl} alt={currentMember.fullName} className="h-7 w-7 rounded-full border object-cover" />
@@ -2202,6 +4043,18 @@ function App() {
         <aside className="animate-fade-side liquid-glass h-fit rounded-2xl p-3 lg:sticky lg:top-6">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
+            const inboxUnreadCount =
+              (inboxData?.todayAssignedTasks?.length ?? 0) +
+              (inboxData?.mentionedMessages?.length ?? 0) +
+              (inboxData?.unreadConversations?.length ?? 0);
+            const itemUnreadCount =
+              item.key === "chat"
+                ? unreadChatCount
+                : item.key === "tasks"
+                  ? unreadTaskNotificationCount
+                  : item.key === "inbox"
+                    ? inboxUnreadCount
+                    : 0;
             return (
               <button
                 key={item.key}
@@ -2213,9 +4066,12 @@ function App() {
                   activeView === item.key ? "bg-primary text-primary-foreground" : ""
                 }`}
               >
-                <div className="flex items-center gap-2">
-                  <Icon className="h-4 w-4" />
-                  <span>{item.title}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-4 w-4" />
+                    <span>{item.title}</span>
+                  </div>
+                  {itemUnreadCount > 0 && <Badge className="h-5 min-w-5 px-1 text-[10px]">{toFaNum(String(Math.min(99, itemUnreadCount)))}</Badge>}
                 </div>
               </button>
             );
@@ -2259,12 +4115,159 @@ function App() {
             </Card>
           )}
 
+          {activeView === "inbox" && (
+            <>
+              <Card className="liquid-glass lift-on-hover">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle>صندوق کار من</CardTitle>
+                    <CardDescription>
+                      نمای یک‌جا از کارهای امروز، منشن‌ها، پیام‌های خوانده‌نشده و پروژه‌های عقب‌افتاده
+                    </CardDescription>
+                  </div>
+                  <Button type="button" variant="outline" onClick={() => void refreshInbox(false)} disabled={inboxBusy}>
+                    {inboxBusy ? "در حال بروزرسانی..." : "بروزرسانی"}
+                  </Button>
+                </CardHeader>
+                <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">تسک‌های امروز من</p>
+                    <p className="mt-1 text-2xl font-bold">{toFaNum(String(inboxData?.todayAssignedTasks?.length ?? 0))}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">منشن‌های خوانده‌نشده</p>
+                    <p className="mt-1 text-2xl font-bold">{toFaNum(String(inboxData?.mentionedMessages?.length ?? 0))}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">گفتگوهای unread</p>
+                    <p className="mt-1 text-2xl font-bold">{toFaNum(String(inboxData?.unreadConversations?.length ?? 0))}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">پروژه‌های عقب‌افتاده</p>
+                    <p className="mt-1 text-2xl font-bold">{toFaNum(String(inboxData?.overdueProjects?.length ?? 0))}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <section className="grid gap-4 lg:grid-cols-2">
+                <Card className="liquid-glass lift-on-hover">
+                  <CardHeader>
+                    <CardTitle>کارهای امروز من</CardTitle>
+                    <CardDescription>{isoToJalali(inboxData?.today || todayIso())}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {(inboxData?.todayAssignedTasks?.length ?? 0) === 0 ? (
+                      <p className="text-sm text-muted-foreground">برای امروز کار فعالی نداری.</p>
+                    ) : (
+                      inboxData!.todayAssignedTasks.map((task) => (
+                        <div key={task.id} className="rounded-lg border p-3">
+                          <p className="text-sm font-semibold">{task.title}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{task.description || "بدون شرح"}</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Badge variant="secondary">پروژه: {task.projectName}</Badge>
+                            <Badge variant="outline">پایان: {isoToJalali(task.executionDate)}</Badge>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="liquid-glass lift-on-hover">
+                  <CardHeader>
+                    <CardTitle>منشن‌های جدید</CardTitle>
+                    <CardDescription>پیام‌هایی که در آن‌ها منشن شدی</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {(inboxData?.mentionedMessages?.length ?? 0) === 0 ? (
+                      <p className="text-sm text-muted-foreground">منشن جدیدی نداری.</p>
+                    ) : (
+                      inboxData!.mentionedMessages.map((mention) => (
+                        <button
+                          key={mention.id}
+                          type="button"
+                          className="w-full rounded-lg border p-3 text-right hover:bg-muted/40"
+                          onClick={() => {
+                            setActiveView("chat");
+                            void selectConversation(mention.conversationId);
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-sm font-semibold">{mention.senderName}</p>
+                            <span className="text-[10px] text-muted-foreground">{isoDateTimeToJalali(mention.createdAt)}</span>
+                          </div>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">{mention.conversationTitle}</p>
+                          <p className="mt-1 truncate text-xs">{mention.text}</p>
+                        </button>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              </section>
+
+              <section className="grid gap-4 lg:grid-cols-2">
+                <Card className="liquid-glass lift-on-hover">
+                  <CardHeader>
+                    <CardTitle>گفتگوهای خوانده‌نشده</CardTitle>
+                    <CardDescription>پیام‌هایی که هنوز نخواندی</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {(inboxData?.unreadConversations?.length ?? 0) === 0 ? (
+                      <p className="text-sm text-muted-foreground">پیام خوانده‌نشده‌ای وجود ندارد.</p>
+                    ) : (
+                      inboxData!.unreadConversations.map((row) => (
+                        <button
+                          key={row.conversationId}
+                          type="button"
+                          className="w-full rounded-lg border p-3 text-right hover:bg-muted/40"
+                          onClick={() => {
+                            setActiveView("chat");
+                            void selectConversation(row.conversationId);
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-sm font-semibold">{row.title}</p>
+                            <Badge>{toFaNum(String(row.unreadCount))}</Badge>
+                          </div>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">{row.lastMessageText}</p>
+                        </button>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="liquid-glass lift-on-hover">
+                  <CardHeader>
+                    <CardTitle>پروژه‌های عقب‌افتاده</CardTitle>
+                    <CardDescription>پروژه‌هایی که در آن‌ها کار معوق داری</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {(inboxData?.overdueProjects?.length ?? 0) === 0 ? (
+                      <p className="text-sm text-muted-foreground">پروژه عقب‌افتاده‌ای وجود ندارد.</p>
+                    ) : (
+                      inboxData!.overdueProjects.map((project) => (
+                        <div key={project.projectName} className="rounded-lg border p-3">
+                          <p className="text-sm font-semibold">{project.projectName}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {toFaNum(String(project.overdueTasks))} تسک معوق - نزدیک‌ترین موعد: {isoToJalali(project.nearestExecutionDate)}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              </section>
+            </>
+          )}
+
           {activeView === "dashboard" && (
             <>
               <Card className="liquid-glass lift-on-hover">
                 <CardHeader className="space-y-3">
-                  <CardTitle>فیلتر زمانی گزارش‌ها</CardTitle>
-                  <CardDescription>بازه زمانی تحلیل داشبورد را انتخاب کن.</CardDescription>
+                  <CardTitle>{isTeamDashboard ? "داشبورد تیمی" : "داشبورد شخصی"}</CardTitle>
+                  <CardDescription>
+                    {isTeamDashboard ? "KPIهای تیم در بازه زمانی انتخابی" : "KPIهای شخصی شما در بازه زمانی انتخابی"}
+                  </CardDescription>
                   <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr]">
                     <ButtonGroup
                       value={dashboardRange}
@@ -2292,26 +4295,26 @@ function App() {
               <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Card className="liquid-glass lift-on-hover">
                   <CardHeader className="pb-2">
-                    <CardDescription>کل تسک‌ها</CardDescription>
-                    <CardTitle className="text-3xl">{toFaNum(String(dashboardStats.total))}</CardTitle>
+                    <CardDescription>{isTeamDashboard ? "کل تسک‌ها" : "کل تسک‌های من"}</CardDescription>
+                    <CardTitle className="text-3xl">{toFaNum(String(overallTaskStats.total))}</CardTitle>
                   </CardHeader>
                 </Card>
                 <Card className="liquid-glass lift-on-hover">
                   <CardHeader className="pb-2">
-                    <CardDescription>درصد انجام</CardDescription>
-                    <CardTitle className="text-3xl">{toFaNum(String(dashboardStats.completionRate))}%</CardTitle>
+                    <CardDescription>{isTeamDashboard ? "درصد انجام تیم" : "درصد انجام من"}</CardDescription>
+                    <CardTitle className="text-3xl">{toFaNum(String(overallTaskStats.completionRate))}%</CardTitle>
                   </CardHeader>
                 </Card>
                 <Card className="liquid-glass lift-on-hover">
                   <CardHeader className="pb-2">
-                    <CardDescription>تسک‌های معوق</CardDescription>
-                    <CardTitle className="text-3xl text-destructive">{toFaNum(String(dashboardStats.overdue))}</CardTitle>
+                    <CardDescription>{isTeamDashboard ? "تسک‌های معوق تیم" : "تسک‌های معوق من"}</CardDescription>
+                    <CardTitle className="text-3xl text-destructive">{toFaNum(String(overallTaskStats.overdue))}</CardTitle>
                   </CardHeader>
                 </Card>
                 <Card className="liquid-glass lift-on-hover">
                   <CardHeader className="pb-2">
-                    <CardDescription>تعداد پروژه‌ها</CardDescription>
-                    <CardTitle className="text-3xl">{toFaNum(String(dashboardStats.projectCount))}</CardTitle>
+                    <CardDescription>{isTeamDashboard ? "تعداد پروژه‌ها" : "تسک‌های Blocked من"}</CardDescription>
+                    <CardTitle className="text-3xl">{toFaNum(String(isTeamDashboard ? overallTaskStats.projectCount : overallTaskStats.blocked))}</CardTitle>
                   </CardHeader>
                 </Card>
               </section>
@@ -2319,16 +4322,16 @@ function App() {
               <section className="grid gap-4 lg:grid-cols-2">
                 <Card className="liquid-glass lift-on-hover">
                   <CardHeader>
-                    <CardTitle>تحلیل وضعیت تسک‌ها</CardTitle>
+                    <CardTitle>{isTeamDashboard ? "تحلیل وضعیت تسک‌های تیم" : "تحلیل وضعیت تسک‌های من"}</CardTitle>
                     <CardDescription>توزیع باز، انجام‌شده و معوق</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {[
-                      { label: "انجام‌شده", value: dashboardStats.done, color: "bg-emerald-500" },
-                      { label: "باز", value: dashboardStats.open, color: "bg-amber-500" },
-                      { label: "معوق", value: dashboardStats.overdue, color: "bg-rose-500" },
+                      { label: "انجام‌شده", value: overallTaskStats.done, color: "bg-emerald-500" },
+                      { label: "باز", value: overallTaskStats.open, color: "bg-amber-500" },
+                      { label: "معوق", value: overallTaskStats.overdue, color: "bg-rose-500" },
                     ].map((row) => {
-                      const width = dashboardStats.total === 0 ? 0 : (row.value / dashboardStats.total) * 100;
+                      const width = overallTaskStats.total === 0 ? 0 : (row.value / overallTaskStats.total) * 100;
                       return (
                         <div key={row.label} className="space-y-1">
                           <div className="flex items-center justify-between text-sm">
@@ -2346,8 +4349,8 @@ function App() {
 
                 <Card className="liquid-glass lift-on-hover">
                   <CardHeader>
-                    <CardTitle>تعداد کار در طول زمان</CardTitle>
-                    <CardDescription>روند فعالیت روزانه</CardDescription>
+                    <CardTitle>{isTeamDashboard ? "تعداد کار تیم به تفکیک پروژه" : "تعداد کار من به تفکیک پروژه"}</CardTitle>
+                    <CardDescription>روند فعالیت در بازه انتخابی</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {projectDistribution.length === 0 ? (
@@ -2440,6 +4443,22 @@ function App() {
                           </SelectContent>
                         </Select>
                         {projectErrors.ownerId && <p className="text-xs text-destructive">{projectErrors.ownerId}</p>}
+                      </div>
+                      <div className="space-y-2 rounded-lg border p-3">
+                        <p className="text-xs text-muted-foreground">قالب چک‌لیست پروژه</p>
+                        <div className="flex flex-wrap gap-2">
+                          {PROJECT_CHECKLIST_TEMPLATES.map((template) => (
+                            <Button
+                              key={template.id}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => applyProjectChecklistTemplate(template.id, "add")}
+                            >
+                              {template.label}
+                            </Button>
+                          ))}
+                        </div>
                       </div>
                       <Textarea
                         placeholder="شرح پروژه"
@@ -2543,6 +4562,22 @@ function App() {
                     </Select>
                     {projectEditErrors.ownerId && <p className="text-xs text-destructive">{projectEditErrors.ownerId}</p>}
                   </div>
+                  <div className="space-y-2 rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">قالب چک‌لیست پروژه</p>
+                    <div className="flex flex-wrap gap-2">
+                      {PROJECT_CHECKLIST_TEMPLATES.map((template) => (
+                        <Button
+                          key={template.id}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => applyProjectChecklistTemplate(template.id, "edit")}
+                        >
+                          {template.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
                   <Textarea
                     placeholder="شرح پروژه"
                     value={projectEditDraft.description}
@@ -2582,6 +4617,22 @@ function App() {
                   <CardDescription>صورتجلسه را ثبت کن تا همه اعضا به تصمیمات دسترسی داشته باشند.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <div className="space-y-2 rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">قالب آماده صورتجلسه</p>
+                    <div className="flex flex-wrap gap-2">
+                      {MINUTE_TEMPLATES.map((template) => (
+                        <Button
+                          key={template.id}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => applyMinuteTemplate(template.id, "add")}
+                        >
+                          {template.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Input
@@ -2692,6 +4743,22 @@ function App() {
                     <DialogTitle>ویرایش صورتجلسه</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-3">
+                    <div className="space-y-2 rounded-lg border p-3">
+                      <p className="text-xs text-muted-foreground">قالب آماده صورتجلسه</p>
+                      <div className="flex flex-wrap gap-2">
+                        {MINUTE_TEMPLATES.map((template) => (
+                          <Button
+                            key={template.id}
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => applyMinuteTemplate(template.id, "edit")}
+                          >
+                            {template.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
                     <Input
                       placeholder="عنوان جلسه"
                       value={minuteEditDraft.title}
@@ -2779,11 +4846,11 @@ function App() {
                   <div className="grid gap-3 md:grid-cols-[1.2fr_1fr_auto]">
                     <JalaliMonthPickerField label="ماه بودجه (شمسی)" valueYearMonth={budgetMonth} onChange={setBudgetMonth} />
                     <Input
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       placeholder="بودجه ماه (تومان)"
                       value={budgetAmountInput}
-                      onChange={(e) => setBudgetAmountInput(e.target.value)}
+                      onChange={(e) => setBudgetAmountInput(normalizeAmountInput(e.target.value))}
                     />
                     <Button type="button" onClick={saveMonthlyBudget}>
                       ذخیره بودجه
@@ -3065,11 +5132,11 @@ function App() {
                             />
                             {transactionErrors.title && <p className="text-xs text-destructive">{transactionErrors.title}</p>}
                             <Input
-                              type="number"
-                              min="0"
+                              type="text"
+                              inputMode="decimal"
                               placeholder="مبلغ (تومان)"
                               value={transactionDraft.amount}
-                              onChange={(e) => setTransactionDraft((p) => ({ ...p, amount: e.target.value }))}
+                              onChange={(e) => setTransactionDraft((p) => ({ ...p, amount: normalizeAmountInput(e.target.value) }))}
                             />
                             {transactionErrors.amount && <p className="text-xs text-destructive">{transactionErrors.amount}</p>}
                             <Input
@@ -3244,11 +5311,11 @@ function App() {
                     />
                     {transactionEditErrors.title && <p className="text-xs text-destructive">{transactionEditErrors.title}</p>}
                     <Input
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       placeholder="مبلغ (تومان)"
                       value={transactionEditDraft.amount}
-                      onChange={(e) => setTransactionEditDraft((p) => ({ ...p, amount: e.target.value }))}
+                      onChange={(e) => setTransactionEditDraft((p) => ({ ...p, amount: normalizeAmountInput(e.target.value) }))}
                     />
                     {transactionEditErrors.amount && <p className="text-xs text-destructive">{transactionEditErrors.amount}</p>}
                     <Input
@@ -3331,6 +5398,47 @@ function App() {
                             value={taskDraft.description}
                             onChange={(e) => setTaskDraft((p) => ({ ...p, description: e.target.value }))}
                           />
+                          {taskErrors.description && <p className="text-xs text-destructive">{taskErrors.description}</p>}
+                          <div className="space-y-2 rounded-lg border p-3">
+                            <p className="text-xs text-muted-foreground">قالب آماده تسک</p>
+                            <div className="flex flex-wrap gap-2">
+                              {TASK_TEMPLATES.map((template) => (
+                                <Button
+                                  key={template.id}
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => applyTaskTemplate(template.id, "add")}
+                                >
+                                  {template.label}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Select value={taskDraft.status} onValueChange={(v) => setTaskDraft((p) => ({ ...p, status: v as TaskStatus }))}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="وضعیت تسک" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {TASK_STATUS_ITEMS.map((item) => (
+                                  <SelectItem key={item.value} value={item.value}>
+                                    {item.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {taskDraft.status === "blocked" && (
+                            <div className="space-y-2">
+                              <Textarea
+                                placeholder="دلیل بلاک شدن"
+                                value={taskDraft.blockedReason}
+                                onChange={(e) => setTaskDraft((p) => ({ ...p, blockedReason: e.target.value }))}
+                              />
+                              {taskErrors.blockedReason && <p className="text-xs text-destructive">{taskErrors.blockedReason}</p>}
+                            </div>
+                          )}
                           <div className="space-y-2">
                             <Select value={taskDraft.assignerId} onValueChange={(v) => setTaskDraft((p) => ({ ...p, assignerId: v }))}>
                               <SelectTrigger>
@@ -3400,12 +5508,15 @@ function App() {
                               valueIso={taskDraft.announceDateIso}
                               onChange={(v) => setTaskDraft((p) => ({ ...p, announceDateIso: v }))}
                             />
+                            {taskErrors.announceDateIso && <p className="text-xs text-destructive sm:col-span-2">{taskErrors.announceDateIso}</p>}
                             <DatePickerField
                               label="تاریخ پایان"
                               valueIso={taskDraft.executionDateIso}
                               onChange={(v) => setTaskDraft((p) => ({ ...p, executionDateIso: v }))}
                             />
+                            {taskErrors.executionDateIso && <p className="text-xs text-destructive sm:col-span-2">{taskErrors.executionDateIso}</p>}
                           </div>
+                          {taskErrors.form && <p className="text-xs text-destructive">{taskErrors.form}</p>}
                         </div>
                         <DialogFooter>
                           <Button variant="secondary" onClick={() => setTaskOpen(false)}>
@@ -3445,14 +5556,17 @@ function App() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Select value={taskStatusFilter} onValueChange={(v) => setTaskStatusFilter(v as "all" | "done" | "open")}>
+                    <Select value={taskStatusFilter} onValueChange={(v) => setTaskStatusFilter(v as "all" | TaskStatus)}>
                       <SelectTrigger>
                         <SelectValue placeholder="وضعیت" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">همه وضعیت‌ها</SelectItem>
-                        <SelectItem value="open">باز</SelectItem>
-                        <SelectItem value="done">انجام‌شده</SelectItem>
+                        {TASK_STATUS_ITEMS.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -3467,11 +5581,13 @@ function App() {
                     filteredTasks.map((t) => (
                       <article key={t.id} className="liquid-glass lift-on-hover flex items-start justify-between gap-4 rounded-xl p-4">
                         <div className="flex items-start gap-3">
-                          <Checkbox className="mt-1" checked={t.done} onCheckedChange={(c) => toggleTask(t.id, c === true)} />
                           <div>
-                            <p className={`font-semibold ${t.done ? "line-through text-muted-foreground" : ""}`}>{t.title}</p>
+                            <p className={`font-semibold ${taskIsDone(t) ? "line-through text-muted-foreground" : ""}`}>{t.title}</p>
                             <p className="text-sm text-muted-foreground">{t.description}</p>
                             <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                              <Badge variant={normalizeTaskStatus(t.status, Boolean(t.done)) === "blocked" ? "destructive" : "outline"}>
+                                {TASK_STATUS_ITEMS.find((x) => x.value === normalizeTaskStatus(t.status, Boolean(t.done)))?.label ?? "To Do"}
+                              </Badge>
                               <Badge variant="secondary">پروژه: {t.projectName}</Badge>
                               <Badge variant="outline">ابلاغ: {teamMemberNameById.get(t.assignerId ?? "") ?? t.assigner}</Badge>
                               <Badge variant="outline">مسئول: {teamMemberNameById.get(t.assigneePrimaryId ?? "") ?? t.assigneePrimary}</Badge>
@@ -3481,9 +5597,33 @@ function App() {
                               <Badge variant="outline">تاریخ ابلاغ: {isoToJalali(t.announceDate)}</Badge>
                               <Badge variant="outline">پایان: {isoToJalali(t.executionDate)}</Badge>
                             </div>
+                            {normalizeTaskStatus(t.status, Boolean(t.done)) === "blocked" && (
+                              <p className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">
+                                دلیل بلاک: {t.blockedReason || "ثبت نشده"}
+                              </p>
+                            )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={normalizeTaskStatus(t.status, Boolean(t.done))}
+                            onValueChange={(value) => {
+                              const nextStatus = value as TaskStatus;
+                              const reason = nextStatus === "blocked" ? (t.blockedReason ?? "") : "";
+                              void updateTaskStatus(t.id, nextStatus, reason);
+                            }}
+                          >
+                            <SelectTrigger className="h-8 w-[110px] text-xs">
+                              <SelectValue placeholder="Status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TASK_STATUS_ITEMS.map((item) => (
+                                <SelectItem key={item.value} value={item.value}>
+                                  {item.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <Button size="icon" variant="ghost" onClick={() => openEditTask(t)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -3520,6 +5660,36 @@ function App() {
                       value={taskEditDraft.description}
                       onChange={(e) => setTaskEditDraft((p) => ({ ...p, description: e.target.value }))}
                     />
+                    <div className="space-y-2 rounded-lg border p-3">
+                      <p className="text-xs text-muted-foreground">قالب آماده تسک</p>
+                      <div className="flex flex-wrap gap-2">
+                        {TASK_TEMPLATES.map((template) => (
+                          <Button
+                            key={template.id}
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => applyTaskTemplate(template.id, "edit")}
+                          >
+                            {template.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Select value={taskEditDraft.status} onValueChange={(v) => setTaskEditDraft((p) => ({ ...p, status: v as TaskStatus }))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="وضعیت تسک" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TASK_STATUS_ITEMS.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>
+                              {item.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="space-y-2">
                       <Select value={taskEditDraft.assignerId} onValueChange={(v) => setTaskEditDraft((p) => ({ ...p, assignerId: v }))}>
                         <SelectTrigger>
@@ -3589,10 +5759,16 @@ function App() {
                         onChange={(v) => setTaskEditDraft((p) => ({ ...p, executionDateIso: v }))}
                       />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Checkbox checked={taskEditDraft.done} onCheckedChange={(c) => setTaskEditDraft((p) => ({ ...p, done: c === true }))} />
-                      <span className="text-sm">انجام شده</span>
-                    </div>
+                    {taskEditDraft.status === "blocked" && (
+                      <div className="space-y-2">
+                        <Textarea
+                          placeholder="دلیل بلاک شدن"
+                          value={taskEditDraft.blockedReason}
+                          onChange={(e) => setTaskEditDraft((p) => ({ ...p, blockedReason: e.target.value }))}
+                        />
+                        {taskEditErrors.blockedReason && <p className="text-xs text-destructive">{taskEditErrors.blockedReason}</p>}
+                      </div>
+                    )}
                   </div>
                   <DialogFooter>
                     <Button variant="secondary" onClick={() => setTaskEditOpen(false)}>
@@ -3605,13 +5781,480 @@ function App() {
             </>
           )}
 
+          {activeView === "chat" && (
+            <>
+              <Card className="liquid-glass lift-on-hover overflow-hidden">
+                <CardHeader className="border-b bg-muted/20 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <CardTitle>گفتگوی تیم</CardTitle>
+                      <CardDescription>الهام از پیام‌رسان با چت سریع، فایل، voice و پاسخ</CardDescription>
+                    </div>
+                    <Badge variant="secondary">{toFaNum(String(chatConversations.length))} گفتگو</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="grid h-[78vh] min-h-[560px] max-h-[820px] gap-0 overflow-hidden p-0 lg:grid-cols-[320px_1fr]">
+                  <aside className="flex h-full min-h-0 flex-col space-y-3 border-l bg-background/60 p-3">
+                    <Dialog open={groupOpen} onOpenChange={setGroupOpen}>
+                      <DialogTrigger asChild>
+                        <Button className="w-full" type="button">ایجاد گروه</Button>
+                      </DialogTrigger>
+                      <DialogContent className="liquid-glass">
+                        <DialogHeader>
+                          <DialogTitle>گروه جدید</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                          <Input placeholder="نام گروه" value={groupTitleDraft} onChange={(e) => setGroupTitleDraft(e.target.value)} />
+                          <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border p-3">
+                            {activeTeamMembers
+                              .filter((m) => m.id !== authUser?.id)
+                              .map((m) => (
+                                <label key={m.id} className="flex items-center gap-2 text-sm">
+                                  <Checkbox
+                                    checked={groupMembersDraft.includes(m.id)}
+                                    onCheckedChange={() =>
+                                      setGroupMembersDraft((prev) =>
+                                        prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id],
+                                      )
+                                    }
+                                  />
+                                  <span>{m.fullName}</span>
+                                </label>
+                              ))}
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="secondary" onClick={() => setGroupOpen(false)}>بستن</Button>
+                          <Button onClick={createGroupConversation} disabled={chatBusy}>ساخت گروه</Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                    <Dialog open={forwardOpen} onOpenChange={setForwardOpen}>
+                      <DialogContent className="liquid-glass">
+                        <DialogHeader>
+                          <DialogTitle>فوروارد پیام</DialogTitle>
+                          <DialogDescription>گفتگوی مقصد را انتخاب کن.</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                          <Select value={forwardTargetConversationId} onValueChange={setForwardTargetConversationId}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="انتخاب گفتگو" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {forwardTargetConversations.map((c) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  {conversationTitle(c)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="secondary" onClick={() => setForwardOpen(false)}>بستن</Button>
+                          <Button onClick={submitForwardMessage} disabled={chatBusy || !forwardTargetConversationId || !forwardSourceMessage}>
+                            فوروارد
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+
+                    <div className="rounded-xl border bg-card/60 p-2">
+                      <p className="mb-2 text-xs font-semibold text-muted-foreground">شروع گفتگوی خصوصی</p>
+                      <Input
+                        placeholder="جستجوی عضو..."
+                        value={chatMemberSearch}
+                        onChange={(e) => setChatMemberSearch(e.target.value)}
+                        className="mb-2 h-8 text-xs"
+                      />
+                      <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+                        {chatMemberRows.length === 0 ? (
+                          <p className="px-2 py-2 text-xs text-muted-foreground">عضوی پیدا نشد.</p>
+                        ) : (
+                          chatMemberRows.map((m) => {
+                            const direct = directConversationByMemberId.get(m.id);
+                            return (
+                              <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => (direct ? void selectConversation(direct.id) : void openDirectConversation(m.id))}
+                                className="w-full rounded-xl border border-transparent px-2 py-2 text-right hover:border-border hover:bg-muted/40"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold">{m.fullName}</p>
+                                    <p className="truncate text-[11px] text-muted-foreground">{m.role || m.phone}</p>
+                                  </div>
+                                  {direct ? (
+                                    <Badge variant="secondary">گفتگو دارد</Badge>
+                                  ) : (
+                                    <Badge variant="outline">شروع گفتگو</Badge>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-xl border bg-card/40 p-2">
+                      {chatConversations.length === 0 ? (
+                        <p className="px-2 py-3 text-xs text-muted-foreground">گفتگویی وجود ندارد.</p>
+                      ) : (
+                        chatConversations.map((c) => {
+                          const other = conversationOtherMember(c);
+                          return (
+                            <div
+                              key={c.id}
+                              className={`w-full rounded-xl border p-2 transition ${
+                                selectedConversationId === c.id ? "border-primary bg-primary/10 shadow-sm" : "border-transparent hover:border-border hover:bg-muted/30"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <button type="button" onClick={() => void selectConversation(c.id)} className="flex min-w-0 flex-1 items-center gap-2 text-right">
+                                  {c.type === "direct" && other?.avatarDataUrl ? (
+                                    <img src={other.avatarDataUrl} alt={other.fullName} className="h-10 w-10 rounded-full border object-cover" />
+                                  ) : (
+                                    <span className="flex h-10 w-10 items-center justify-center rounded-full border bg-muted text-xs font-bold">
+                                      {c.type === "group" ? "GR" : memberInitials(conversationTitle(c))}
+                                    </span>
+                                  )}
+                                  <div className="min-w-0 flex-1">
+                                    <div className="mb-0.5 flex items-center justify-between gap-2">
+                                      <p className="truncate text-sm font-semibold">{conversationTitle(c)}</p>
+                                      <span className="text-[10px] text-muted-foreground">{isoDateTimeToJalali(c.lastMessageAt ?? c.updatedAt)}</span>
+                                    </div>
+                                    <p className="truncate text-xs text-muted-foreground">{c.lastMessageText || "بدون پیام"}</p>
+                                  </div>
+                                </button>
+                                <div className="flex items-center gap-1">
+                                  {(c.unreadCount ?? 0) > 0 && <Badge>{toFaNum(String(c.unreadCount ?? 0))}</Badge>}
+                                  {canDeleteConversation(c) && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-destructive"
+                                      onClick={() => void removeConversation(c)}
+                                      disabled={chatBusy}
+                                      aria-label="حذف گفتگو"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </aside>
+
+                  <div className="flex h-full min-h-0 min-w-0 flex-col bg-background">
+                    <div className="flex items-center justify-between gap-3 border-b bg-background/80 px-4 py-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        {selectedConversation ? (
+                          selectedConversation.type === "direct" && conversationOtherMember(selectedConversation)?.avatarDataUrl ? (
+                            <img
+                              src={conversationOtherMember(selectedConversation)!.avatarDataUrl}
+                              alt={conversationTitle(selectedConversation)}
+                              className="h-9 w-9 rounded-full border object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-9 w-9 items-center justify-center rounded-full border bg-muted text-xs font-bold">
+                              {selectedConversation.type === "group" ? "GR" : memberInitials(conversationTitle(selectedConversation))}
+                            </span>
+                          )
+                        ) : null}
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">{selectedConversation ? conversationTitle(selectedConversation) : "یک گفتگو را انتخاب کن"}</p>
+                          <p className="truncate text-[11px] text-muted-foreground">
+                            {selectedConversation ? (selectedConversation.type === "group" ? "گفتگوی گروهی" : "گفتگوی خصوصی") : "برای شروع، یک گفتگو را انتخاب کن"}
+                          </p>
+                        </div>
+                      </div>
+                      {selectedConversation && (
+                        <Badge variant="outline">{toFaNum(String(selectedConversation.participantIds?.length ?? 0))} عضو</Badge>
+                      )}
+                    </div>
+                    {typingUsers.length > 0 && (
+                      <p className="px-4 py-1 text-xs text-muted-foreground">
+                        {typingUsers.map((u) => u.fullName).join("، ")} در حال تایپ...
+                      </p>
+                    )}
+
+                    <div
+                      ref={chatScrollRef}
+                      onScroll={handleChatScroll}
+                      className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[radial-gradient(circle_at_25%_20%,hsl(var(--muted)/0.18),transparent_42%),radial-gradient(circle_at_80%_10%,hsl(var(--primary)/0.08),transparent_38%)] p-3"
+                    >
+                      {selectedConversation && chatLoadingMore && (
+                        <p className="text-center text-[11px] text-muted-foreground">در حال بارگذاری پیام‌های قبلی...</p>
+                      )}
+                      {selectedConversation && !chatHasMore && chatTimeline.length > 0 && (
+                        <p className="text-center text-[11px] text-muted-foreground">ابتدای گفتگو</p>
+                      )}
+                      {!selectedConversation ? (
+                        <p className="text-sm text-muted-foreground">برای شروع، یک گفتگوی خصوصی یا گروه ایجاد کن.</p>
+                      ) : chatTimeline.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">هنوز پیامی ثبت نشده است.</p>
+                      ) : (
+                        chatTimeline.map((row) => {
+                          const mine = row.senderId === authUser?.id;
+                          const avatarUrl = String(row.senderAvatarDataUrl ?? "").trim();
+                          const mentionForMe = Array.isArray(row.mentionMemberIds) && !!authUser?.id && row.mentionMemberIds.includes(authUser.id);
+                          const repliedMessage = row.replyToMessageId ? chatMessageById.get(row.replyToMessageId) ?? null : null;
+                          const otherReadCount = Math.max(0, (row.readByIds?.length ?? 0) - 1);
+                          const totalOthers = Math.max(0, (selectedConversation?.participantIds?.length ?? 1) - 1);
+                          const readLabel =
+                            selectedConversation?.type === "direct"
+                              ? otherReadCount > 0 ? "خوانده شد" : "ارسال شد"
+                              : `خوانده توسط ${toFaNum(String(otherReadCount))} از ${toFaNum(String(totalOthers))}`;
+                          return (
+                            <article
+                              key={row.id}
+                              className={`max-w-[72%] rounded-xl border px-2 py-1.5 ${mine ? "mr-auto border-primary/30 bg-primary/5" : "ml-auto border-border/80 bg-card/80"}`}
+                            >
+                              <div className={`mb-1 flex items-center gap-1.5 ${mine ? "flex-row-reverse" : ""}`}>
+                                {avatarUrl ? (
+                                  <img src={avatarUrl} alt={row.senderName} className="h-6 w-6 rounded-full border object-cover" />
+                                ) : (
+                                  <span className="flex h-6 w-6 items-center justify-center rounded-full border bg-muted text-[9px] font-semibold">
+                                    {memberInitials(row.senderName)}
+                                  </span>
+                                )}
+                                <div className={`min-w-0 flex-1 text-[11px] text-muted-foreground ${mine ? "text-left" : "text-right"}`}>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold">{mine ? "من" : row.senderName}</span>
+                                    <span>{isoDateTimeToJalali(row.createdAt)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              {row.forwardFromMessageId && (
+                                <p className="mb-1 text-[10px] text-muted-foreground">
+                                  فوروارد شده {row.forwardedFromSenderName ? `از ${row.forwardedFromSenderName}` : ""}
+                                </p>
+                              )}
+                              {mentionForMe && !mine && <Badge className="mb-1">منشن شما</Badge>}
+                              {repliedMessage && (
+                                <div className="mb-1 rounded-md border border-dashed px-1.5 py-1 text-[10px] text-muted-foreground">
+                                  پاسخ به {repliedMessage.senderId === authUser?.id ? "من" : repliedMessage.senderName}:{" "}
+                                  {repliedMessage.text || (repliedMessage.attachments?.length ? "فایل/voice" : "پیام")}
+                                </div>
+                              )}
+                              {row.text && <p className="whitespace-pre-wrap text-sm leading-6">{row.text}</p>}
+                              {Array.isArray(row.attachments) && row.attachments.length > 0 && (
+                                <div className="mt-1.5 space-y-1.5">
+                                  {row.attachments.map((att) => (
+                                    <div key={att.id} className="rounded-md border p-1.5">
+                                      {att.kind === "voice" ? (
+                                        <audio controls src={att.dataUrl} className="w-full" />
+                                      ) : (
+                                        <a className="text-xs underline" href={att.dataUrl} download={att.name}>
+                                          دانلود {att.name}
+                                        </a>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="mt-1.5 flex items-center gap-1">
+                                <TooltipProvider delayDuration={150}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label="پاسخ" onClick={() => setChatReplyTo(row)}>
+                                        <Reply className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>پاسخ</TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label="فوروارد" onClick={() => openForwardDialog(row)}>
+                                        <Forward className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>فوروارد</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </div>
+                              {!mine && (
+                                <p className="mt-1 text-[10px] text-muted-foreground">
+                                  دریافت: {isoToFaTime(row.receivedAt || row.createdAt)}
+                                </p>
+                              )}
+                              {mine && <p className="mt-1 text-[10px] text-muted-foreground">{readLabel}</p>}
+                            </article>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {chatReplyTo && (
+                      <div className="mx-3 rounded-lg border border-dashed bg-muted/20 px-3 py-2 text-xs">
+                        پاسخ به {chatReplyTo.senderId === authUser?.id ? "من" : chatReplyTo.senderName}:{" "}
+                        {chatReplyTo.text || (chatReplyTo.attachments?.length ? "فایل/voice" : "پیام")}
+                        <button type="button" className="mr-2 underline" onClick={() => setChatReplyTo(null)}>
+                          لغو
+                        </button>
+                      </div>
+                    )}
+
+                    {chatAttachmentDrafts.length > 0 && (
+                      <div className="mx-3 flex flex-wrap gap-2">
+                        {chatAttachmentDrafts.map((att) => (
+                          <Badge key={att.id} variant="secondary" className="gap-2">
+                            <span className="max-w-40 truncate">{att.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => setChatAttachmentDrafts((prev) => prev.filter((x) => x.id !== att.id))}
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    {chatMentionDraftIds.length > 0 && (
+                      <div className="mx-3 flex flex-wrap gap-2">
+                        {chatMentionDraftIds.map((memberId) => {
+                          const member = teamMemberById.get(memberId);
+                          if (!member) return null;
+                          return (
+                            <Badge key={memberId} variant="outline" className="gap-2">
+                              <span>@{member.fullName}</span>
+                              <button type="button" onClick={() => setChatMentionDraftIds((prev) => prev.filter((id) => id !== memberId))}>
+                                ×
+                              </button>
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className="space-y-2 border-t bg-background/95 px-3 py-3">
+                      <Textarea
+                        placeholder="پیام خودت را بنویس..."
+                        value={chatDraft}
+                        className="min-h-[84px] rounded-2xl border-2 bg-background/90"
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setChatDraft(value);
+                          if (!selectedConversation) return;
+                          if (value.trim()) {
+                            startTypingSignal();
+                          } else {
+                            stopTypingSignal();
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            void sendChatMessage();
+                          }
+                        }}
+                      />
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          void pickChatFiles(e.target.files);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Popover open={mentionPickerOpen} onOpenChange={setMentionPickerOpen}>
+                            <PopoverTrigger asChild>
+                              <Button type="button" variant="outline" disabled={!selectedConversation || mentionableMembers.length === 0}>
+                                <AtSign className="mr-1 h-4 w-4" /> منشن
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" className="w-64 p-2">
+                              <div className="max-h-56 space-y-1 overflow-y-auto">
+                                {mentionableMembers.length === 0 ? (
+                                  <p className="px-2 py-2 text-xs text-muted-foreground">عضوی برای منشن وجود ندارد.</p>
+                                ) : (
+                                  mentionableMembers.map((member) => (
+                                    <button
+                                      key={member.id}
+                                      type="button"
+                                      onClick={() => addMentionToDraft(member)}
+                                      className="w-full rounded-md px-2 py-2 text-right text-sm hover:bg-muted"
+                                    >
+                                      @{member.fullName}
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                          <Button type="button" variant="outline" onClick={() => setChatPickerOpen((v) => !v)}>
+                            <SmilePlus className="mr-1 h-4 w-4" /> ایموجی/استیکر
+                          </Button>
+                          <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                            <Paperclip className="mr-1 h-4 w-4" /> فایل
+                          </Button>
+                          {!recordingVoice ? (
+                            <Button type="button" variant="outline" onClick={() => void startVoiceRecording()}>
+                              <Mic className="mr-1 h-4 w-4" /> voice
+                            </Button>
+                          ) : (
+                            <Button type="button" variant="destructive" onClick={stopVoiceRecording}>
+                              <Square className="mr-1 h-4 w-4" /> توقف ضبط
+                            </Button>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          disabled={chatBusy || (!chatDraft.trim() && chatAttachmentDrafts.length === 0) || !selectedConversation}
+                          onClick={sendChatMessage}
+                        >
+                          {chatBusy ? "در حال ارسال..." : "ارسال پیام"}
+                        </Button>
+                      </div>
+                      {chatPickerOpen && (
+                        <div className="rounded-lg border p-2">
+                          <Tabs value={chatPickerTab} onValueChange={(v) => setChatPickerTab(v as "emoji" | "sticker")}>
+                            <TabsList className="grid w-full grid-cols-2">
+                              <TabsTrigger value="emoji">ایموجی</TabsTrigger>
+                              <TabsTrigger value="sticker">استیکر</TabsTrigger>
+                            </TabsList>
+                          </Tabs>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {(chatPickerTab === "emoji" ? CHAT_EMOJI_ITEMS : CHAT_STICKER_ITEMS).map((item) => (
+                              <button
+                                key={item}
+                                type="button"
+                                className="rounded-md border px-2 py-1 text-sm hover:bg-muted"
+                                onClick={() => {
+                                  setChatDraft((prev) => `${prev}${prev ? " " : ""}${item}`);
+                                  if (selectedConversation) startTypingSignal();
+                                }}
+                              >
+                                {item}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
+
           {activeView === "calendar" && (
             <>
               <Card className="liquid-glass lift-on-hover">
                 <CardHeader className="flex flex-row items-center justify-between">
                   <div>
                     <CardTitle>تقویم شمسی</CardTitle>
-                    <CardDescription>تمام تاریخ‌های پروژه‌ها و تسک‌ها در تقویم نمایش داده می‌شوند.</CardDescription>
+                    <CardDescription>تسک‌ها، پروژه‌ها و رویدادهای روزانه در تقویم نمایش داده می‌شوند.</CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button type="button" variant="outline" size="sm" onClick={goToPrevCalendarMonth}>
@@ -3659,7 +6302,13 @@ function App() {
                               <p
                                 key={event.id}
                                 className={`truncate text-[11px] ${
-                                  event.tone === "task" ? "text-amber-700" : "text-emerald-700"
+                                  event.tone === "task"
+                                    ? "text-amber-700"
+                                    : event.tone === "project"
+                                      ? "text-emerald-700"
+                                      : event.tone === "minute"
+                                        ? "text-sky-700"
+                                        : "text-violet-700"
                                 }`}
                               >
                                 {event.title}
@@ -3691,8 +6340,22 @@ function App() {
                       <div key={event.id} className="rounded-lg border p-3">
                         <div className="flex items-center justify-between gap-2">
                           <p className="font-semibold">{event.title}</p>
-                          <Badge variant={event.tone === "task" ? "secondary" : "default"}>
-                            {event.tone === "task" ? "تسک" : "پروژه"}
+                          <Badge
+                            variant={
+                              event.tone === "task"
+                                ? "secondary"
+                                : event.tone === "minute"
+                                  ? "outline"
+                                  : "default"
+                            }
+                          >
+                            {event.tone === "task"
+                              ? "تسک"
+                              : event.tone === "project"
+                                ? "پروژه"
+                                : event.tone === "minute"
+                                  ? "جلسه"
+                                  : "مالی"}
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">{event.subtitle}</p>
@@ -3827,6 +6490,48 @@ function App() {
                         setSettingsDraft((prev) => ({
                           ...prev,
                           notifications: { ...prev.notifications, reminderTime: e.target.value },
+                        }))
+                      }
+                    />
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder="هشدار قبل از deadline (ساعت)"
+                      value={String(settingsDraft.notifications.deadlineReminderHours)}
+                      onChange={(e) =>
+                        setSettingsDraft((prev) => ({
+                          ...prev,
+                          notifications: {
+                            ...prev.notifications,
+                            deadlineReminderHours: Math.max(1, Number(e.target.value || 1)),
+                          },
+                        }))
+                      }
+                    />
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={settingsDraft.notifications.escalationEnabled}
+                        onCheckedChange={(c) =>
+                          setSettingsDraft((prev) => ({
+                            ...prev,
+                            notifications: { ...prev.notifications, escalationEnabled: c === true },
+                          }))
+                        }
+                      />
+                      <span>فعال‌سازی escalation به مدیر</span>
+                    </label>
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder="Escalation اگر X ساعت بدون تغییر ماند"
+                      value={String(settingsDraft.notifications.escalationAfterHours)}
+                      onChange={(e) =>
+                        setSettingsDraft((prev) => ({
+                          ...prev,
+                          notifications: {
+                            ...prev.notifications,
+                            escalationAfterHours: Math.max(1, Number(e.target.value || 1)),
+                          },
                         }))
                       }
                     />
@@ -4251,12 +6956,79 @@ function App() {
             </>
           )}
 
+          {activeView === "audit" && (
+            <>
+              <Card className="liquid-glass lift-on-hover">
+                <CardHeader className="space-y-3">
+                  <CardTitle>Audit Trail</CardTitle>
+                  <CardDescription>ثبت تغییرات مهم: چه کسی، چه زمانی، چه چیزی را تغییر داده است</CardDescription>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <Input
+                      placeholder="جستجو (عملیات/کاربر/خلاصه)"
+                      value={auditQuery}
+                      onChange={(e) => setAuditQuery(e.target.value)}
+                    />
+                    <Select value={auditEntityFilter} onValueChange={setAuditEntityFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="نوع موجودیت" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">همه</SelectItem>
+                        <SelectItem value="task">Task</SelectItem>
+                        <SelectItem value="project">Project</SelectItem>
+                        <SelectItem value="team-member">Team Member</SelectItem>
+                        <SelectItem value="minute">Minute</SelectItem>
+                        <SelectItem value="settings">Settings</SelectItem>
+                        <SelectItem value="chat-conversation">Chat Conversation</SelectItem>
+                        <SelectItem value="chat-message">Chat Message</SelectItem>
+                        <SelectItem value="accounting-account">Accounting Account</SelectItem>
+                        <SelectItem value="accounting-transaction">Accounting Transaction</SelectItem>
+                        <SelectItem value="accounting-budget">Accounting Budget</SelectItem>
+                        <SelectItem value="backup">Backup</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" onClick={() => void refreshAuditLogs(false)} disabled={auditBusy}>
+                      {auditBusy ? "در حال بارگذاری..." : "بروزرسانی"}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {auditLogs.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      لاگ فعالیتی برای نمایش وجود ندارد.
+                    </div>
+                  ) : (
+                    auditLogs.map((row) => (
+                      <article key={row.id} className="rounded-lg border p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">{row.entityType || "-"}</Badge>
+                            <Badge variant="secondary">{row.action || "-"}</Badge>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground">{isoDateTimeToJalali(row.createdAt)}</span>
+                        </div>
+                        <p className="mt-2 text-sm font-semibold">{row.summary || "-"}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          کاربر: {row.actor?.fullName || "-"} ({roleLabel(row.actor?.role)})
+                          {row.entityId ? ` - شناسه: ${row.entityId}` : ""}
+                        </p>
+                      </article>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
+
           {activeView !== "tasks" &&
+            activeView !== "inbox" &&
             activeView !== "dashboard" &&
             activeView !== "projects" &&
             activeView !== "minutes" &&
             activeView !== "calendar" &&
+            activeView !== "chat" &&
             activeView !== "team" &&
+            activeView !== "audit" &&
             activeView !== "settings" &&
             activeView !== "accounting" && (
             <Card className="liquid-glass">
@@ -4344,6 +7116,30 @@ function App() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          <Dialog
+            open={confirmDialog.open}
+            onOpenChange={(open) => {
+              if (!open) closeConfirmDialog(false);
+            }}
+          >
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{confirmDialog.title}</DialogTitle>
+                <DialogDescription>{confirmDialog.message}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="secondary" onClick={() => closeConfirmDialog(false)}>
+                  انصراف
+                </Button>
+                <Button
+                  variant={confirmDialog.destructive ? "destructive" : "default"}
+                  onClick={() => closeConfirmDialog(true)}
+                >
+                  {confirmDialog.confirmLabel}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </section>
       </div>
       <div className="fixed bottom-4 right-4 z-50 flex w-[320px] flex-col gap-2">
@@ -4360,9 +7156,12 @@ function App() {
   );
 }
 
-export default App;
+export function AppWithBoundary() {
+  return (
+    <AppErrorBoundary>
+      <App />
+    </AppErrorBoundary>
+  );
+}
 
-
-
-
-
+export default AppWithBoundary;
