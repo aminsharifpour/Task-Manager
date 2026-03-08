@@ -63,6 +63,7 @@ import AppGlobalOverlays from "@/components/app/app-global-overlays";
 import AccountingView from "@/components/app/accounting-view";
 import TeamHrView from "@/components/app/team-hr-view";
 import SmartRemindersCard from "@/components/app/smart-reminders-card";
+import WorkflowStepConfigDialog from "@/components/app/workflow-step-config-dialog";
 import { BufferedInput, BufferedTextarea } from "@/components/ui/buffered-fields";
 import { requestJson, normalizeUiMessage } from "@/lib/api-client";
 import { useVirtualRows, type VirtualWindow } from "@/hooks/use-virtual-rows";
@@ -78,6 +79,45 @@ type ViewKey = "inbox" | "dashboard" | "tasks" | "projects" | "minutes" | "accou
 type DashboardRange = "weekly" | "monthly" | "custom";
 type AccountingType = "income" | "expense";
 type TaskStatus = "todo" | "doing" | "blocked" | "done";
+type WorkflowStepComment = {
+  id: string;
+  stepId: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+};
+type WorkflowStep = {
+  id: string;
+  title: string;
+  assigneeType:
+    | "task_assigner"
+    | "task_assignee_primary"
+    | "task_assignee_secondary"
+    | "project_owner"
+    | "project_members"
+    | "role"
+    | "member"
+    | "all_participants";
+  assigneeRole?: "admin" | "manager" | "member" | "";
+  assigneeMemberId?: string;
+  requiresApproval?: boolean;
+  approvalAssigneeType?:
+    | "task_assigner"
+    | "task_assignee_primary"
+    | "task_assignee_secondary"
+    | "project_owner"
+    | "project_members"
+    | "role"
+    | "member"
+    | "all_participants";
+  approvalAssigneeRole?: "admin" | "manager" | "member" | "";
+  approvalAssigneeMemberId?: string;
+  onApprove?: string;
+  onReject?: string;
+  canvasX?: number;
+  canvasY?: number;
+};
 type GlobalSearchResult = {
   id: string;
   kind: "task" | "project" | "minute" | "chat" | "member" | "transaction";
@@ -115,6 +155,7 @@ type Project = {
   description: string;
   ownerId?: string;
   memberIds?: string[];
+  workflowTemplateSteps?: WorkflowStep[];
   createdAt: string;
 };
 
@@ -133,6 +174,11 @@ type Task = {
   executionDate: string;
   status: TaskStatus;
   blockedReason?: string;
+  workflowSteps?: WorkflowStep[];
+  workflowCurrentStep?: number;
+  workflowPendingAssigneeIds?: string[];
+  workflowStepComments?: WorkflowStepComment[];
+  workflowCompletedAt?: string;
   done?: boolean;
   updatedAt?: string;
   lastStatusChangedAt?: string;
@@ -1184,6 +1230,99 @@ const normalizeIdArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return Array.from(new Set(value.map((item) => String(item ?? "").trim()).filter(Boolean)));
 };
+const normalizeWorkflowStepsUi = (value: unknown): WorkflowStep[] => {
+  if (!Array.isArray(value)) return [];
+  const rows: WorkflowStep[] = [];
+  for (let i = 0; i < value.length && rows.length < 12; i += 1) {
+    const raw = value[i];
+    if (typeof raw === "string") {
+      const title = raw.trim().slice(0, 120);
+      if (!title) continue;
+      rows.push({
+        id: `step-${rows.length + 1}`,
+        title,
+        assigneeType: "task_assignee_primary",
+        assigneeRole: "",
+        assigneeMemberId: "",
+        requiresApproval: false,
+        approvalAssigneeType: "task_assigner",
+        approvalAssigneeRole: "",
+        approvalAssigneeMemberId: "",
+        onApprove: "next",
+        onReject: "stay",
+        canvasX: 32 + (rows.length % 3) * 280,
+        canvasY: 28 + Math.floor(rows.length / 3) * 140,
+      });
+      continue;
+    }
+    if (!raw || typeof raw !== "object") continue;
+    const obj = raw as Record<string, unknown>;
+    const title = String(obj.title ?? "").trim().slice(0, 120);
+    if (!title) continue;
+    rows.push({
+      id: String(obj.id ?? `step-${rows.length + 1}`).trim().slice(0, 64),
+      title,
+      assigneeType: (String(obj.assigneeType ?? "task_assignee_primary").trim() as WorkflowStep["assigneeType"]),
+      assigneeRole: (String(obj.assigneeRole ?? "").trim() as WorkflowStep["assigneeRole"]),
+      assigneeMemberId: String(obj.assigneeMemberId ?? "").trim(),
+      requiresApproval: Boolean(obj.requiresApproval),
+      approvalAssigneeType: (String(obj.approvalAssigneeType ?? (Boolean(obj.requiresApproval) ? "task_assigner" : "")).trim() as WorkflowStep["approvalAssigneeType"]),
+      approvalAssigneeRole: (String(obj.approvalAssigneeRole ?? "").trim() as WorkflowStep["approvalAssigneeRole"]),
+      approvalAssigneeMemberId: String(obj.approvalAssigneeMemberId ?? "").trim(),
+      onApprove: String(obj.onApprove ?? "next").trim(),
+      onReject: String(obj.onReject ?? "stay").trim(),
+      canvasX: Number.isFinite(Number(obj.canvasX)) ? Number(obj.canvasX) : undefined,
+      canvasY: Number.isFinite(Number(obj.canvasY)) ? Number(obj.canvasY) : undefined,
+    });
+  }
+  return rows;
+};
+const parseWorkflowStepsText = (value: string): WorkflowStep[] => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return [];
+  if (raw.startsWith("[") || raw.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      const rows = normalizeWorkflowStepsUi(Array.isArray(parsed) ? parsed : []);
+      if (rows.length > 0) return rows;
+    } catch {
+      // fallback to simple comma-separated parser
+    }
+  }
+  const clean = raw
+    .replace(/[\n\r|]+/g, ",")
+    .split(",")
+    .map((step) => step.trim())
+    .filter(Boolean)
+    .map((step) => step.slice(0, 120));
+  return Array.from(new Set(clean)).slice(0, 12).map((title, idx) => ({
+    id: `step-${idx + 1}`,
+    title,
+    assigneeType: "task_assignee_primary",
+    assigneeRole: "",
+    assigneeMemberId: "",
+    requiresApproval: false,
+    approvalAssigneeType: "task_assigner",
+    approvalAssigneeRole: "",
+    approvalAssigneeMemberId: "",
+    onApprove: "next",
+    onReject: "stay",
+    canvasX: 32 + (idx % 3) * 280,
+    canvasY: 28 + Math.floor(idx / 3) * 140,
+  }));
+};
+const workflowStepsToDraftText = (steps: WorkflowStep[]): string => {
+  const normalized = normalizeWorkflowStepsUi(steps);
+  if (normalized.length === 0) return "";
+  return JSON.stringify(normalized);
+};
+const workflowStepsToSummaryText = (steps: WorkflowStep[]) =>
+  steps
+    .map((step) => {
+      const route = step.requiresApproval ? ` (تایید: ${step.onApprove || "next"} / رد: ${step.onReject || "stay"})` : "";
+      return `${step.title}${route}`;
+    })
+    .join("، ");
 const normalizeProject = (row: Partial<Project> | null | undefined): Project | null => {
   const id = String(row?.id ?? "").trim();
   const name = String(row?.name ?? "").trim();
@@ -1196,6 +1335,7 @@ const normalizeProject = (row: Partial<Project> | null | undefined): Project | n
     description: String(row?.description ?? ""),
     ownerId: String(row?.ownerId ?? "").trim(),
     memberIds: normalizeIdArray(row?.memberIds),
+    workflowTemplateSteps: normalizeWorkflowStepsUi((row as { workflowTemplateSteps?: unknown })?.workflowTemplateSteps),
     createdAt,
   };
 };
@@ -1543,7 +1683,8 @@ function App() {
   const [chatHasText, setChatHasText] = useState(false);
   const [chatBusy, setChatBusy] = useState(false);
   const [chatMemberSearch, setChatMemberSearch] = useState("");
-  const [chatSearchQuery, setChatSearchQuery] = useState("");
+  const [chatDetailsOpen, setChatDetailsOpen] = useState(false);
+  const [chatDetailsSearchQuery, setChatDetailsSearchQuery] = useState("");
   const [typingUsers, setTypingUsers] = useState<ChatTypingUser[]>([]);
   const [chatPickerOpen, setChatPickerOpen] = useState(false);
   const [chatPickerTab, setChatPickerTab] = useState<"emoji" | "sticker">("emoji");
@@ -1624,9 +1765,10 @@ function App() {
     executionDateIso: todayIso(),
     status: "todo" as TaskStatus,
     blockedReason: "",
+    workflowStepsText: "",
   });
-  const [projectDraft, setProjectDraft] = useState({ name: "", description: "", ownerId: "", memberIds: [] as string[] });
-  const [projectEditDraft, setProjectEditDraft] = useState({ name: "", description: "", ownerId: "", memberIds: [] as string[] });
+  const [projectDraft, setProjectDraft] = useState({ name: "", description: "", ownerId: "", memberIds: [] as string[], workflowTemplateText: "" });
+  const [projectEditDraft, setProjectEditDraft] = useState({ name: "", description: "", ownerId: "", memberIds: [] as string[], workflowTemplateText: "" });
   const [transactionDraft, setTransactionDraft] = useState({
     type: "expense" as AccountingType,
     title: "",
@@ -1684,6 +1826,7 @@ function App() {
     executionDateIso: todayIso(),
     status: "todo" as TaskStatus,
     blockedReason: "",
+    workflowStepsText: "",
   });
   const [memberDraft, setMemberDraft] = useState({
     fullName: "",
@@ -3724,20 +3867,42 @@ function App() {
     () => chatConversations.find((c) => c.id === selectedConversationId) ?? null,
     [chatConversations, selectedConversationId],
   );
+  const selectedConversationOtherMember = useMemo(() => {
+    if (!selectedConversation || selectedConversation.type !== "direct") return null;
+    const otherId = selectedConversation.participantIds.find((id) => id !== authUser?.id) ?? "";
+    return teamMemberById.get(otherId) ?? null;
+  }, [authUser?.id, selectedConversation, teamMemberById]);
   const chatTimeline = useMemo(() => [...chatMessages].sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1)), [chatMessages]);
-  const filteredChatTimeline = useMemo(() => {
-    const q = chatSearchQuery.trim().toLowerCase();
-    if (!q) return chatTimeline;
-    return chatTimeline.filter((message) => {
-      const attachmentNames = Array.isArray(message.attachments) ? message.attachments.map((att) => att.name).join(" ") : "";
-      const text = `${message.senderName} ${message.text} ${attachmentNames}`.toLowerCase();
-      return text.includes(q);
-    });
-  }, [chatSearchQuery, chatTimeline]);
+  const chatSharedMediaItems = useMemo(() => {
+    const rows: Array<{ id: string; createdAt: string; senderName: string; attachment: ChatAttachment }> = [];
+    for (const message of chatTimeline) {
+      for (const attachment of message.attachments ?? []) {
+        rows.push({
+          id: `${message.id}:${attachment.id}`,
+          createdAt: message.createdAt,
+          senderName: message.senderName,
+          attachment,
+        });
+      }
+    }
+    rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    return rows;
+  }, [chatTimeline]);
+  const chatDetailsSearchResults = useMemo(() => {
+    const q = chatDetailsSearchQuery.trim().toLowerCase();
+    if (!q) return [] as ChatMessage[];
+    return chatTimeline
+      .filter((message) => {
+        const text = `${message.senderName} ${message.text}`.toLowerCase();
+        return text.includes(q);
+      })
+      .slice(-80)
+      .reverse();
+  }, [chatDetailsSearchQuery, chatTimeline]);
   const chatTimelineRows = useMemo<ChatTimelineRow[]>(() => {
     const rows: ChatTimelineRow[] = [];
     let previousDayIso = "";
-    for (const message of filteredChatTimeline) {
+    for (const message of chatTimeline) {
       const dayIso = dateToIso(new Date(message.createdAt)) || "";
       if (dayIso && dayIso !== previousDayIso) {
         rows.push({ id: `divider:${dayIso}`, kind: "divider", dayIso });
@@ -3746,7 +3911,7 @@ function App() {
       rows.push({ id: `message:${message.id}`, kind: "message", message });
     }
     return rows;
-  }, [filteredChatTimeline]);
+  }, [chatTimeline]);
   const visibleChatTimelineRows = useMemo(
     () => chatTimelineRows.slice(chatVirtualWindow.start, chatVirtualWindow.end),
     [chatTimelineRows, chatVirtualWindow.end, chatVirtualWindow.start],
@@ -4293,6 +4458,7 @@ function App() {
           description: projectDraft.description.trim(),
           ownerId: projectDraft.ownerId,
           memberIds: projectDraft.memberIds,
+          workflowTemplateSteps: parseWorkflowStepsText(projectDraft.workflowTemplateText),
         }),
       });
       const refreshed = await apiRequest<Project[]>("/api/projects");
@@ -4303,6 +4469,7 @@ function App() {
         description: "",
         ownerId: (activeTeamMembers[0]?.id ?? teamMembers[0]?.id ?? ""),
         memberIds: (activeTeamMembers[0]?.id ?? teamMembers[0]?.id) ? [activeTeamMembers[0]?.id ?? teamMembers[0]?.id ?? ""] : [],
+        workflowTemplateText: "",
       });
       setProjectErrors({});
       pushToast("پروژه با موفقیت ثبت شد.");
@@ -4320,6 +4487,7 @@ function App() {
       description: project.description,
       ownerId: project.ownerId ?? "",
       memberIds: project.memberIds ?? [],
+      workflowTemplateText: workflowStepsToDraftText(project.workflowTemplateSteps ?? []),
     });
     setProjectEditErrors({});
     setProjectEditOpen(true);
@@ -4351,6 +4519,7 @@ function App() {
           description: projectEditDraft.description.trim(),
           ownerId: projectEditDraft.ownerId,
           memberIds: projectEditDraft.memberIds,
+          workflowTemplateSteps: parseWorkflowStepsText(projectEditDraft.workflowTemplateText),
         }),
       });
       const refreshed = await apiRequest<Project[]>("/api/projects");
@@ -4371,7 +4540,7 @@ function App() {
   };
 
   const toggleProjectMember = (
-    setDraft: Dispatch<SetStateAction<{ name: string; description: string; ownerId: string; memberIds: string[] }>>,
+    setDraft: Dispatch<SetStateAction<{ name: string; description: string; ownerId: string; memberIds: string[]; workflowTemplateText: string }>>,
     memberId: string,
   ) => {
     setDraft((prev) => {
@@ -4952,6 +5121,7 @@ function App() {
     executionDateIso: string;
     status: TaskStatus;
     blockedReason: string;
+    workflowStepsText: string;
   }) => {
     const next: Record<string, string> = {};
     if (!draft.title.trim()) next.title = "عنوان الزامی است.";
@@ -4986,6 +5156,7 @@ function App() {
         executionDate: draft.executionDateIso,
         status: draft.status,
         blockedReason: draft.status === "blocked" ? draft.blockedReason.trim() : "",
+        workflowSteps: parseWorkflowStepsText(draft.workflowStepsText),
       },
     };
   };
@@ -5033,6 +5204,7 @@ function App() {
         executionDateIso: todayIso(),
         status: "todo",
         blockedReason: "",
+        workflowStepsText: "",
       });
       setTaskErrors({});
       pushToast("تسک با موفقیت ثبت شد.");
@@ -5062,6 +5234,7 @@ function App() {
       executionDateIso: task.executionDate,
       status: normalizeTaskStatus(task.status, Boolean(task.done)),
       blockedReason: task.blockedReason ?? "",
+      workflowStepsText: workflowStepsToDraftText(task.workflowSteps ?? []),
     });
     setTaskEditErrors({});
     setTaskEditOpen(true);
@@ -5154,6 +5327,58 @@ function App() {
     } catch (error) {
       const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "تغییر وضعیت تسک ناموفق بود.");
       pushToast(msg || "تغییر وضعیت تسک ناموفق بود.", "error");
+    }
+  };
+  const advanceTaskWorkflow = async (taskId: string) => {
+    if (!canPerform("taskChangeStatus")) {
+      pushToast("دسترسی اجرای مرحله ورکفلو را ندارید.", "error");
+      return;
+    }
+    try {
+      const updated = await apiRequest<Task>(`/api/tasks/${taskId}/workflow/advance`, {
+        method: "POST",
+        body: "{}",
+      });
+      setTasks((prev) => prev.map((task) => (task.id === taskId ? updated : task)));
+      const stepsCount = Array.isArray(updated.workflowSteps) ? updated.workflowSteps.length : 0;
+      const currentStep = Number(updated.workflowCurrentStep ?? -1);
+      const completed = Boolean(updated.done) && stepsCount > 0 && currentStep >= stepsCount - 1;
+      pushToast(completed ? "ورکفلو تسک تکمیل شد." : "تسک به مرحله بعد رفت.");
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "اجرای مرحله ورکفلو ناموفق بود.");
+      pushToast(msg || "اجرای مرحله ورکفلو ناموفق بود.", "error");
+    }
+  };
+  const decideTaskWorkflow = async (taskId: string, decision: "approve" | "reject") => {
+    if (!canPerform("taskChangeStatus")) {
+      pushToast("دسترسی تصمیم‌گیری ورکفلو را ندارید.", "error");
+      return;
+    }
+    try {
+      const updated = await apiRequest<Task>(`/api/tasks/${taskId}/workflow/decision`, {
+        method: "POST",
+        body: JSON.stringify({ decision }),
+      });
+      setTasks((prev) => prev.map((task) => (task.id === taskId ? updated : task)));
+      pushToast(decision === "approve" ? "مرحله تایید شد." : "مرحله رد شد.");
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "ثبت تصمیم ورکفلو ناموفق بود.");
+      pushToast(msg || "ثبت تصمیم ورکفلو ناموفق بود.", "error");
+    }
+  };
+  const addTaskWorkflowComment = async (taskId: string, stepId: string, text: string) => {
+    if (!stepId || !text.trim()) return;
+    try {
+      const updated = await apiRequest<Task>(`/api/tasks/${taskId}/workflow/comments`, {
+        method: "POST",
+        body: JSON.stringify({ stepId, text: text.trim() }),
+      });
+      setTasks((prev) => prev.map((task) => (task.id === taskId ? updated : task)));
+      pushToast("کامنت مرحله ثبت شد.");
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "ثبت کامنت مرحله ناموفق بود.");
+      pushToast(msg || "ثبت کامنت مرحله ناموفق بود.", "error");
+      throw error;
     }
   };
 
@@ -5960,7 +6185,8 @@ function App() {
     stopTypingSignal();
     setChatReplyTo(null);
     cancelEditChatMessage();
-    setChatSearchQuery("");
+    setChatDetailsOpen(false);
+    setChatDetailsSearchQuery("");
     setChatMentionDraftIds([]);
     setMentionPickerOpen(false);
     setChatLoadingMore(false);
@@ -7562,6 +7788,17 @@ function App() {
                         value={projectDraft.description}
                         onCommit={(next) => setProjectDraft((p) => ({ ...p, description: next }))}
                       />
+                      <WorkflowStepConfigDialog
+                        title="ورکفلو پیش‌فرض پروژه"
+                        rows={parseWorkflowStepsText(projectDraft.workflowTemplateText)}
+                        summary={
+                          parseWorkflowStepsText(projectDraft.workflowTemplateText).length > 0
+                            ? `${toFaNum(String(parseWorkflowStepsText(projectDraft.workflowTemplateText).length))} مرحله تعریف شده`
+                            : "بدون ورک‌فلو"
+                        }
+                        onSave={(next) => setProjectDraft((p) => ({ ...p, workflowTemplateText: workflowStepsToDraftText(next) }))}
+                        members={activeTeamMembers}
+                      />
                       <div className="space-y-2 rounded-lg border p-3">
                         <p className="text-xs text-muted-foreground">اعضای پروژه</p>
                         <div className="grid gap-2">
@@ -7612,6 +7849,7 @@ function App() {
                           <th className="px-3 py-2 text-right font-medium">مالک</th>
                           <th className="px-3 py-2 text-right font-medium">تعداد اعضا</th>
                           <th className="px-3 py-2 text-right font-medium">تاریخ ثبت</th>
+                          <th className="px-3 py-2 text-right font-medium">ورکفلو پیش‌فرض</th>
                           <th className="px-3 py-2 text-right font-medium">شرح</th>
                           <th className="px-3 py-2 text-right font-medium">عملیات</th>
                         </tr>
@@ -7619,7 +7857,7 @@ function App() {
                       <tbody>
                         {projectsVirtual.windowState.paddingTop > 0 && (
                           <tr aria-hidden="true">
-                            <td colSpan={6} style={{ height: projectsVirtual.windowState.paddingTop }} />
+                            <td colSpan={7} style={{ height: projectsVirtual.windowState.paddingTop }} />
                           </tr>
                         )}
                         {visibleProjectsRows.map((p) => (
@@ -7662,6 +7900,9 @@ function App() {
                             <td className="px-3 py-2">{teamMemberNameById.get(p.ownerId ?? "") ?? "نامشخص"}</td>
                             <td className="px-3 py-2">{toFaNum(String(p.memberIds?.length ?? 0))}</td>
                             <td className="px-3 py-2">{isoDateTimeToJalali(p.createdAt)}</td>
+                            <td className="px-3 py-2">
+                              {(p.workflowTemplateSteps ?? []).length > 0 ? workflowStepsToSummaryText(p.workflowTemplateSteps ?? []) : "—"}
+                            </td>
                             <td className="max-w-[340px] truncate px-3 py-2 text-muted-foreground">{p.description || "بدون شرح"}</td>
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-1">
@@ -7677,7 +7918,7 @@ function App() {
                         ))}
                         {projectsVirtual.windowState.paddingBottom > 0 && (
                           <tr aria-hidden="true">
-                            <td colSpan={6} style={{ height: projectsVirtual.windowState.paddingBottom }} />
+                            <td colSpan={7} style={{ height: projectsVirtual.windowState.paddingBottom }} />
                           </tr>
                         )}
                       </tbody>
@@ -7742,6 +7983,17 @@ function App() {
                     placeholder="شرح پروژه"
                     value={projectEditDraft.description}
                     onCommit={(next) => setProjectEditDraft((p) => ({ ...p, description: next }))}
+                  />
+                  <WorkflowStepConfigDialog
+                    title="ورکفلو پیش‌فرض پروژه"
+                    rows={parseWorkflowStepsText(projectEditDraft.workflowTemplateText)}
+                    summary={
+                      parseWorkflowStepsText(projectEditDraft.workflowTemplateText).length > 0
+                        ? `${toFaNum(String(parseWorkflowStepsText(projectEditDraft.workflowTemplateText).length))} مرحله تعریف شده`
+                        : "بدون ورک‌فلو"
+                    }
+                    onSave={(next) => setProjectEditDraft((p) => ({ ...p, workflowTemplateText: workflowStepsToDraftText(next) }))}
+                    members={activeTeamMembers}
                   />
                   <div className="space-y-2 rounded-lg border p-3">
                     <p className="text-xs text-muted-foreground">اعضای پروژه</p>
@@ -8243,6 +8495,7 @@ function App() {
               taskStatusItems={TASK_STATUS_ITEMS}
               activeTeamMembers={activeTeamMembers}
               projects={projects}
+              currentUserId={authUser?.id ?? ""}
               tab={tab}
               setTab={setTab}
               taskSearch={taskSearch}
@@ -8257,6 +8510,9 @@ function App() {
               openContextMenu={openContextMenu}
               openEditTask={openEditTask}
               updateTaskStatus={updateTaskStatus}
+              advanceTaskWorkflow={advanceTaskWorkflow}
+              decideTaskWorkflow={decideTaskWorkflow}
+              addTaskWorkflowComment={addTaskWorkflowComment}
               copyTextToClipboard={copyTextToClipboard}
               removeTask={removeTask}
               taskIsDone={taskIsDone}
@@ -8277,6 +8533,103 @@ function App() {
 
           {activeView === "chat" && (
             <>
+              <Dialog open={chatDetailsOpen} onOpenChange={setChatDetailsOpen}>
+                <DialogContent aria-describedby={undefined} className="liquid-glass max-h-[82vh] overflow-hidden sm:max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>جزئیات گفتگو</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-3 md:grid-cols-[1fr_1fr]">
+                    <div className="rounded-lg border p-3">
+                      <p className="mb-2 text-xs text-muted-foreground">مشخصات طرف گفتگو</p>
+                      {selectedConversation?.type === "direct" && selectedConversationOtherMember ? (
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            {selectedConversationOtherMember.avatarDataUrl ? (
+                              <img src={selectedConversationOtherMember.avatarDataUrl} alt={selectedConversationOtherMember.fullName} className="h-10 w-10 rounded-full border object-cover" />
+                            ) : (
+                              <span className="flex h-10 w-10 items-center justify-center rounded-full border bg-muted text-xs font-semibold">
+                                {memberInitials(selectedConversationOtherMember.fullName)}
+                              </span>
+                            )}
+                            <div>
+                              <p className="font-semibold">{selectedConversationOtherMember.fullName}</p>
+                              <p className="text-xs text-muted-foreground">{selectedConversationOtherMember.role || "بدون سمت"}</p>
+                            </div>
+                          </div>
+                          <p className="text-xs">شماره: {selectedConversationOtherMember.phone || "—"}</p>
+                          <p className="text-xs">ایمیل: {selectedConversationOtherMember.email || "—"}</p>
+                          <p className="text-xs text-muted-foreground">{selectedConversationOtherMember.bio || "بدون توضیح"}</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1 text-sm">
+                          <p className="font-semibold">{selectedConversation ? conversationTitle(selectedConversation) : "—"}</p>
+                          <p className="text-xs text-muted-foreground">تعداد اعضا: {toFaNum(String(selectedConversation?.participantIds?.length ?? 0))}</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <p className="mb-2 text-xs text-muted-foreground">جستجو در گفتگو</p>
+                      <Input
+                        placeholder="عبارت جستجو"
+                        value={chatDetailsSearchQuery}
+                        onChange={(e) => setChatDetailsSearchQuery(e.target.value)}
+                        className="mb-2 h-9 text-xs"
+                      />
+                      <div className="max-h-48 space-y-1 overflow-y-auto">
+                        {chatDetailsSearchQuery.trim() && chatDetailsSearchResults.length === 0 ? (
+                          <p className="px-1 py-1 text-xs text-muted-foreground">نتیجه‌ای پیدا نشد.</p>
+                        ) : (
+                          chatDetailsSearchResults.map((row) => (
+                            <button
+                              key={`chat-search-${row.id}`}
+                              type="button"
+                              className="w-full rounded-md border px-2 py-1.5 text-right hover:bg-muted/40"
+                              onClick={() => {
+                                setChatDetailsOpen(false);
+                              }}
+                            >
+                              <p className="truncate text-xs font-semibold">{row.senderName}</p>
+                              <p className="truncate text-[11px] text-muted-foreground">{row.text || "فایل/voice"}</p>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="mb-2 text-xs text-muted-foreground">مدیاهای ارسال‌شده</p>
+                    <div className="max-h-[32vh] space-y-2 overflow-y-auto">
+                      {chatSharedMediaItems.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">مدیایی در این گفتگو ثبت نشده است.</p>
+                      ) : (
+                        chatSharedMediaItems.map((item) => (
+                          <div key={item.id} className="rounded-md border p-2">
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                              <p className="truncate text-xs font-semibold">{item.senderName}</p>
+                              <span className="text-[10px] text-muted-foreground">{isoDateTimeToJalali(item.createdAt)}</span>
+                            </div>
+                            {item.attachment.kind === "voice" ? (
+                              <audio controls src={item.attachment.dataUrl} className="w-full" />
+                            ) : isImageAttachment(item.attachment) ? (
+                              <button
+                                type="button"
+                                className="block w-full overflow-hidden rounded-md border"
+                                onClick={() => setChatImagePreview({ src: item.attachment.dataUrl, name: item.attachment.name || "تصویر" })}
+                              >
+                                <img src={item.attachment.dataUrl} alt={item.attachment.name || "image"} className="max-h-48 w-full object-contain bg-muted/20" />
+                              </button>
+                            ) : (
+                              <a className="text-xs underline" href={item.attachment.dataUrl} download={item.attachment.name}>
+                                دانلود {item.attachment.name}
+                              </a>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
               <Card className="overflow-hidden border bg-card">
                 <CardHeader className="border-b bg-background py-3">
                   <div className="flex items-center justify-between gap-3">
@@ -8597,17 +8950,24 @@ function App() {
                           </Button>
                         )}
                         {selectedConversation ? (
-                          selectedConversation.type === "direct" && conversationOtherMember(selectedConversation)?.avatarDataUrl ? (
-                            <img
-                              src={conversationOtherMember(selectedConversation)!.avatarDataUrl}
-                              alt={conversationTitle(selectedConversation)}
-                              className="h-9 w-9 rounded-full border object-cover"
-                            />
-                          ) : (
-                            <span className="flex h-9 w-9 items-center justify-center rounded-full border bg-muted text-xs font-bold">
-                              {selectedConversation.type === "group" ? "GR" : memberInitials(conversationTitle(selectedConversation))}
-                            </span>
-                          )
+                          <button
+                            type="button"
+                            className="rounded-full transition-transform hover:scale-[1.03]"
+                            onClick={() => setChatDetailsOpen(true)}
+                            title="جزئیات گفتگو"
+                          >
+                            {selectedConversation.type === "direct" && conversationOtherMember(selectedConversation)?.avatarDataUrl ? (
+                              <img
+                                src={conversationOtherMember(selectedConversation)!.avatarDataUrl}
+                                alt={conversationTitle(selectedConversation)}
+                                className="h-9 w-9 rounded-full border object-cover"
+                              />
+                            ) : (
+                              <span className="flex h-9 w-9 items-center justify-center rounded-full border bg-muted text-xs font-bold">
+                                {selectedConversation.type === "group" ? "GR" : memberInitials(conversationTitle(selectedConversation))}
+                              </span>
+                            )}
+                          </button>
                         ) : null}
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold">{selectedConversation ? conversationTitle(selectedConversation) : "یک گفتگو را انتخاب کن"}</p>
@@ -8625,20 +8985,6 @@ function App() {
                         {typingUsers.map((u) => u.fullName).join("، ")} در حال تایپ...
                       </p>
                     )}
-                    {selectedConversation && (
-                      <div className="px-3 pb-2">
-                        <div className="relative">
-                          <Search className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                          <Input
-                            className="h-9 pr-7 text-xs"
-                            placeholder="جستجو در پیام‌ها"
-                            value={chatSearchQuery}
-                            onChange={(e) => setChatSearchQuery(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    )}
-
                     <div
                       ref={chatScrollRef}
                       onScroll={handleChatScroll}
@@ -8652,8 +8998,8 @@ function App() {
                       )}
                       {!selectedConversation ? (
                         <p className="text-sm text-muted-foreground">برای شروع، یک گفتگوی خصوصی یا گروه ایجاد کن.</p>
-                      ) : filteredChatTimeline.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">{chatSearchQuery.trim() ? "پیامی با این عبارت پیدا نشد." : "هنوز پیامی ثبت نشده است."}</p>
+                      ) : chatTimeline.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">هنوز پیامی ثبت نشده است.</p>
                       ) : (
                         <>
                           {chatVirtualWindow.paddingTop > 0 && <div style={{ height: chatVirtualWindow.paddingTop }} aria-hidden="true" />}

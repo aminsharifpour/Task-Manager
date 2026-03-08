@@ -306,6 +306,130 @@ const normalizeTaskStatus = (value, doneFallback = false) => {
   if (status === "todo" || status === "doing" || status === "blocked" || status === "done") return status;
   return doneFallback ? "done" : "todo";
 };
+const WORKFLOW_ASSIGNEE_TYPES = new Set([
+  "task_assigner",
+  "task_assignee_primary",
+  "task_assignee_secondary",
+  "project_owner",
+  "project_members",
+  "role",
+  "member",
+  "all_participants",
+]);
+const WORKFLOW_ROUTE_TYPES = new Set(["next", "previous", "stay", "done"]);
+const normalizeWorkflowSteps = (value) => {
+  if (!Array.isArray(value)) return [];
+  const rows = [];
+  for (let i = 0; i < value.length && rows.length < 12; i += 1) {
+    const raw = value[i];
+    if (typeof raw === "string") {
+      const title = raw.trim().slice(0, 120);
+      if (!title) continue;
+      rows.push({
+        id: `step-${rows.length + 1}`,
+        title,
+        assigneeType: "task_assignee_primary",
+        assigneeRole: "",
+        assigneeMemberId: "",
+        requiresApproval: false,
+        approvalAssigneeType: "task_assigner",
+        approvalAssigneeRole: "",
+        approvalAssigneeMemberId: "",
+        onApprove: "next",
+        onReject: "stay",
+        canvasX: 32 + (rows.length % 3) * 280,
+        canvasY: 28 + Math.floor(rows.length / 3) * 140,
+      });
+      continue;
+    }
+    if (!raw || typeof raw !== "object") continue;
+    const obj = raw;
+    const title = String(obj.title ?? "").trim().slice(0, 120);
+    if (!title) continue;
+    const assigneeTypeRaw = String(obj.assigneeType ?? "task_assignee_primary").trim();
+    const assigneeType = WORKFLOW_ASSIGNEE_TYPES.has(assigneeTypeRaw) ? assigneeTypeRaw : "task_assignee_primary";
+    const assigneeRoleRaw = String(obj.assigneeRole ?? "").trim();
+    const assigneeRole = assigneeRoleRaw === "admin" || assigneeRoleRaw === "manager" || assigneeRoleRaw === "member" ? assigneeRoleRaw : "";
+    const assigneeMemberId = String(obj.assigneeMemberId ?? "").trim();
+    const requiresApproval = Boolean(obj.requiresApproval);
+    const approvalAssigneeTypeRaw = String(obj.approvalAssigneeType ?? "").trim();
+    const approvalAssigneeTypeCandidate = approvalAssigneeTypeRaw || (requiresApproval ? "task_assigner" : "");
+    const approvalAssigneeType = WORKFLOW_ASSIGNEE_TYPES.has(approvalAssigneeTypeCandidate) ? approvalAssigneeTypeCandidate : "";
+    const approvalAssigneeRoleRaw = String(obj.approvalAssigneeRole ?? "").trim();
+    const approvalAssigneeRole = approvalAssigneeRoleRaw === "admin" || approvalAssigneeRoleRaw === "manager" || approvalAssigneeRoleRaw === "member" ? approvalAssigneeRoleRaw : "";
+    const approvalAssigneeMemberId = String(obj.approvalAssigneeMemberId ?? "").trim();
+    const id = String(obj.id ?? "").trim().slice(0, 64) || `step-${rows.length + 1}`;
+    const onApproveRaw = String(obj.onApprove ?? "next").trim().slice(0, 64);
+    const onRejectRaw = String(obj.onReject ?? "stay").trim().slice(0, 64);
+    const onApprove = WORKFLOW_ROUTE_TYPES.has(onApproveRaw) || onApproveRaw ? onApproveRaw : "next";
+    const onReject = WORKFLOW_ROUTE_TYPES.has(onRejectRaw) || onRejectRaw ? onRejectRaw : "stay";
+    const canvasX = Number.isFinite(Number(obj.canvasX)) ? Number(obj.canvasX) : 32 + (rows.length % 3) * 280;
+    const canvasY = Number.isFinite(Number(obj.canvasY)) ? Number(obj.canvasY) : 28 + Math.floor(rows.length / 3) * 140;
+    rows.push({
+      id,
+      title,
+      assigneeType,
+      assigneeRole,
+      assigneeMemberId,
+      requiresApproval,
+      approvalAssigneeType,
+      approvalAssigneeRole,
+      approvalAssigneeMemberId,
+      onApprove,
+      onReject,
+      canvasX,
+      canvasY,
+    });
+  }
+  return rows;
+};
+const normalizeWorkflowStepComments = (value) => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((row) => row && typeof row === "object")
+    .map((row) => ({
+      id: String(row.id ?? "").trim() || crypto.randomUUID(),
+      stepId: String(row.stepId ?? "").trim(),
+      authorId: String(row.authorId ?? "").trim(),
+      authorName: String(row.authorName ?? "").trim().slice(0, 120),
+      text: String(row.text ?? "").trim().slice(0, 1200),
+      createdAt: String(row.createdAt ?? new Date().toISOString()),
+    }))
+    .filter((row) => row.stepId && row.authorId && row.text)
+    .slice(-300);
+};
+const resolveWorkflowAssigneeIds = ({ db, task, project, step, mode = "execution" }) => {
+  const isApprovalMode = mode === "approval";
+  const defaultType = isApprovalMode ? "task_assigner" : "task_assignee_primary";
+  const type = String(isApprovalMode ? step?.approvalAssigneeType ?? defaultType : step?.assigneeType ?? defaultType).trim();
+  const role = isApprovalMode ? step?.approvalAssigneeRole : step?.assigneeRole;
+  const memberId = isApprovalMode ? step?.approvalAssigneeMemberId : step?.assigneeMemberId;
+  const activeMembers = Array.isArray(db.teamMembers) ? db.teamMembers.filter((m) => m.isActive !== false) : [];
+  const byRole = (role) => activeMembers.filter((m) => normalizeAppRole(m.appRole) === role).map((m) => String(m.id ?? "").trim());
+  const unique = (rows) => Array.from(new Set(rows.map((id) => String(id ?? "").trim()).filter(Boolean)));
+  if (type === "member") return unique([memberId]);
+  if (type === "role") return unique(byRole(role));
+  if (type === "task_assigner") return unique([task?.assignerId]);
+  if (type === "task_assignee_secondary") return unique([task?.assigneeSecondaryId]);
+  if (type === "project_owner") return unique([project?.ownerId]);
+  if (type === "project_members") return unique(normalizeIdArray(project?.memberIds ?? []));
+  if (type === "all_participants") return unique([task?.assignerId, task?.assigneePrimaryId, task?.assigneeSecondaryId]);
+  return unique([task?.assigneePrimaryId]);
+};
+const resolveWorkflowPendingAssigneeIds = ({ db, task, project, step }) =>
+  step?.requiresApproval
+    ? resolveWorkflowAssigneeIds({ db, task, project, step, mode: "approval" })
+    : resolveWorkflowAssigneeIds({ db, task, project, step, mode: "execution" });
+const resolveWorkflowTargetIndex = ({ steps, currentIndex, route }) => {
+  const safeRoute = String(route ?? "").trim();
+  if (safeRoute === "done") return steps.length;
+  if (safeRoute === "previous") return Math.max(0, currentIndex - 1);
+  if (safeRoute === "stay") return currentIndex;
+  if (safeRoute === "next" || !safeRoute) return currentIndex + 1;
+  const idx = steps.findIndex((step) => String(step?.id ?? "").trim() === safeRoute);
+  if (idx === -1) return currentIndex + 1;
+  return idx;
+};
 const normalizePresenceStatus = (value) => {
   const status = String(value ?? "").trim();
   return status === "in_meeting" ? "in_meeting" : "online";
@@ -1723,10 +1847,11 @@ app.get("/api/projects", (req, res) => {
 });
 
 app.post("/api/projects", (req, res) => {
-  const { name, description = "", ownerId, memberIds = [] } = req.body ?? {};
+  const { name, description = "", ownerId, memberIds = [], workflowTemplateSteps = [] } = req.body ?? {};
   const cleanName = String(name ?? "").trim();
   const cleanOwnerId = String(ownerId ?? "").trim();
   const cleanMemberIds = normalizeIdArray(memberIds);
+  const cleanWorkflowTemplateSteps = normalizeWorkflowSteps(workflowTemplateSteps);
   if (!cleanName) {
     return res.status(400).json({ message: "Project name is required." });
   }
@@ -1760,6 +1885,7 @@ app.post("/api/projects", (req, res) => {
     description: String(description ?? "").trim(),
     ownerId: cleanOwnerId,
     memberIds: mergedMemberIds,
+    workflowTemplateSteps: cleanWorkflowTemplateSteps,
     createdAt: new Date().toISOString(),
   };
 
@@ -1781,12 +1907,13 @@ app.post("/api/projects", (req, res) => {
 
 app.patch("/api/projects/:id", (req, res) => {
   const { id } = req.params;
-  const { name, description = "", ownerId, memberIds = [] } = req.body ?? {};
+  const { name, description = "", ownerId, memberIds = [], workflowTemplateSteps = [] } = req.body ?? {};
   const payload = {
     name: String(name ?? "").trim(),
     description: String(description ?? "").trim(),
     ownerId: String(ownerId ?? "").trim(),
     memberIds: normalizeIdArray(memberIds),
+    workflowTemplateSteps: normalizeWorkflowSteps(workflowTemplateSteps),
   };
   if (!payload.name) {
     return res.status(400).json({ message: "Project name is required." });
@@ -1889,10 +2016,23 @@ app.get("/api/tasks", (req, res) => {
     const createdAt = String(task?.createdAt ?? new Date().toISOString());
     const updatedAt = String(task?.updatedAt ?? createdAt);
     const lastStatusChangedAt = String(task?.lastStatusChangedAt ?? updatedAt);
+    const workflowSteps = normalizeWorkflowSteps(task?.workflowSteps ?? []);
+    const rawCurrentStep = Number(task?.workflowCurrentStep ?? (workflowSteps.length > 0 ? 0 : -1));
+    const workflowCurrentStep =
+      workflowSteps.length === 0
+        ? -1
+        : Number.isFinite(rawCurrentStep)
+          ? Math.max(0, Math.min(workflowSteps.length - 1, Math.floor(rawCurrentStep)))
+          : 0;
     return {
       ...task,
       status,
       blockedReason: normalizeBlockedReason(task?.blockedReason, status),
+      workflowSteps,
+      workflowCurrentStep,
+      workflowPendingAssigneeIds: normalizeIdArray(task?.workflowPendingAssigneeIds ?? []),
+      workflowStepComments: normalizeWorkflowStepComments(task?.workflowStepComments ?? []),
+      workflowCompletedAt: String(task?.workflowCompletedAt ?? "").trim(),
       done: status === "done",
       createdAt,
       updatedAt,
@@ -2022,6 +2162,7 @@ app.post("/api/tasks", (req, res) => {
     executionDate,
     status,
     blockedReason = "",
+    workflowSteps = [],
   } = req.body ?? {};
   const normalizedStatus = normalizeTaskStatus(status, false);
   const normalizedBlockedReason = normalizeBlockedReason(blockedReason, normalizedStatus);
@@ -2037,6 +2178,7 @@ app.post("/api/tasks", (req, res) => {
     executionDate: String(executionDate ?? "").trim(),
     status: normalizedStatus,
     blockedReason: normalizedBlockedReason,
+    workflowSteps: normalizeWorkflowSteps(workflowSteps),
   };
 
   if (
@@ -2077,6 +2219,8 @@ app.post("/api/tasks", (req, res) => {
   if (!canAccessProject(project, req.auth?.userId, req.auth?.role)) {
     return res.status(403).json({ message: "You can only create tasks in projects you can access." });
   }
+  const projectWorkflowTemplate = normalizeWorkflowSteps(project?.workflowTemplateSteps ?? []);
+  const resolvedWorkflowSteps = payload.workflowSteps.length > 0 ? payload.workflowSteps : projectWorkflowTemplate;
   const projectMembers = new Set(normalizeIdArray(project.memberIds ?? []));
   if (
     !projectMembers.has(payload.assigneePrimaryId) ||
@@ -2099,7 +2243,8 @@ app.post("/api/tasks", (req, res) => {
       String(task?.announceDate ?? "").trim() === payload.announceDate &&
       String(task?.executionDate ?? "").trim() === payload.executionDate &&
       normalizeTaskStatus(task?.status, Boolean(task?.done)) === payload.status &&
-      String(task?.blockedReason ?? "").trim() === payload.blockedReason
+      String(task?.blockedReason ?? "").trim() === payload.blockedReason &&
+      JSON.stringify(normalizeWorkflowSteps(task?.workflowSteps ?? [])) === JSON.stringify(resolvedWorkflowSteps)
     );
   });
   if (duplicateRecentTask) {
@@ -2123,9 +2268,18 @@ app.post("/api/tasks", (req, res) => {
   }
 
   const nowIso = new Date().toISOString();
+  const initialWorkflowStep = resolvedWorkflowSteps[0] ?? null;
+  const initialPendingAssigneeIds = initialWorkflowStep
+    ? resolveWorkflowPendingAssigneeIds({ db, task: payload, project, step: initialWorkflowStep })
+    : [];
   const task = {
     id: crypto.randomUUID(),
     ...payload,
+    workflowSteps: resolvedWorkflowSteps,
+    workflowCurrentStep: resolvedWorkflowSteps.length > 0 ? 0 : -1,
+    workflowPendingAssigneeIds: initialPendingAssigneeIds,
+    workflowStepComments: [],
+    workflowCompletedAt: "",
     assigner: assigner.fullName,
     assigneePrimary: assigneePrimary.fullName,
     assigneeSecondary: assigneeSecondary?.fullName ?? "",
@@ -2179,6 +2333,8 @@ app.patch("/api/tasks/:id", (req, res) => {
       status: nextStatus,
       blockedReason: body.done ? "" : String(db.tasks[index].blockedReason ?? ""),
       done: body.done,
+      workflowPendingAssigneeIds: nextStatus === "done" ? [] : normalizeIdArray(db.tasks[index]?.workflowPendingAssigneeIds ?? []),
+      workflowCompletedAt: nextStatus === "done" ? String(db.tasks[index]?.workflowCompletedAt ?? nowIso) : "",
       updatedAt: nowIso,
       lastStatusChangedAt:
         nextStatus !== prevStatus
@@ -2217,6 +2373,8 @@ app.patch("/api/tasks/:id", (req, res) => {
       status,
       blockedReason,
       done: status === "done",
+      workflowPendingAssigneeIds: status === "done" ? [] : normalizeIdArray(db.tasks[index]?.workflowPendingAssigneeIds ?? []),
+      workflowCompletedAt: status === "done" ? String(db.tasks[index]?.workflowCompletedAt ?? nowIso) : "",
       updatedAt: nowIso,
       lastStatusChangedAt:
         status !== prevStatus
@@ -2249,6 +2407,7 @@ app.patch("/api/tasks/:id", (req, res) => {
     executionDate: String(body.executionDate ?? "").trim(),
     status: normalizeTaskStatus(body.status, typeof body.done === "boolean" ? body.done : Boolean(db.tasks[index].done)),
     blockedReason: normalizeBlockedReason(body.blockedReason, normalizeTaskStatus(body.status, typeof body.done === "boolean" ? body.done : Boolean(db.tasks[index].done))),
+    workflowSteps: normalizeWorkflowSteps(body.workflowSteps ?? []),
   };
   if (
     !payload.title ||
@@ -2304,9 +2463,28 @@ app.patch("/api/tasks/:id", (req, res) => {
   const nowIso = new Date().toISOString();
   const prevAssigneePrimaryId = String(db.tasks[index]?.assigneePrimaryId ?? "").trim();
   const prevAssigneeSecondaryId = String(db.tasks[index]?.assigneeSecondaryId ?? "").trim();
+  const nextWorkflowSteps = payload.workflowSteps;
+  const existingCurrentStep = Number(db.tasks[index]?.workflowCurrentStep ?? 0);
+  const normalizedWorkflowCurrentStep =
+    nextWorkflowSteps.length === 0
+      ? -1
+      : Number.isFinite(existingCurrentStep)
+        ? Math.max(0, Math.min(nextWorkflowSteps.length - 1, Math.floor(existingCurrentStep)))
+        : 0;
+  const stagedTaskForRouting = { ...db.tasks[index], ...payload };
+  const currentWorkflowStep = normalizedWorkflowCurrentStep >= 0 ? nextWorkflowSteps[normalizedWorkflowCurrentStep] : null;
+  const nextWorkflowPendingAssigneeIds =
+    currentWorkflowStep && payload.status !== "done"
+      ? resolveWorkflowPendingAssigneeIds({ db, task: stagedTaskForRouting, project, step: currentWorkflowStep })
+      : [];
   db.tasks[index] = {
     ...db.tasks[index],
     ...payload,
+    workflowSteps: nextWorkflowSteps,
+    workflowCurrentStep: normalizedWorkflowCurrentStep,
+    workflowPendingAssigneeIds: nextWorkflowPendingAssigneeIds,
+    workflowStepComments: normalizeWorkflowStepComments(db.tasks[index]?.workflowStepComments ?? []),
+    workflowCompletedAt: payload.status === "done" ? String(db.tasks[index]?.workflowCompletedAt ?? nowIso) : "",
     assigner: assigner.fullName,
     assigneePrimary: assigneePrimary.fullName,
     assigneeSecondary: assigneeSecondary?.fullName ?? "",
@@ -2334,6 +2512,195 @@ app.patch("/api/tasks/:id", (req, res) => {
   if (prevAssigneePrimaryId !== nextAssigneePrimaryId || prevAssigneeSecondaryId !== nextAssigneeSecondaryId) {
     emitTaskAssignedToUsers(db.tasks[index], payload.assignerId);
   }
+  return res.json(db.tasks[index]);
+});
+
+app.post("/api/tasks/:id/workflow/comments", (req, res) => {
+  const { id } = req.params;
+  const stepId = String(req.body?.stepId ?? "").trim();
+  const text = String(req.body?.text ?? "").trim();
+  if (!stepId) return res.status(400).json({ message: "stepId is required." });
+  if (!text) return res.status(400).json({ message: "Comment text is required." });
+  const db = readStore();
+  const index = db.tasks.findIndex((t) => t.id === id);
+  if (index === -1) return res.status(404).json({ message: "Task not found." });
+  const task = db.tasks[index];
+  const project = db.projects.find((p) => String(p?.name ?? "").trim() === String(task?.projectName ?? "").trim());
+  if (!canAccessProject(project, req.auth?.userId, req.auth?.role)) {
+    return res.status(403).json({ message: "You can only comment on tasks in projects you can access." });
+  }
+  const steps = normalizeWorkflowSteps(task?.workflowSteps ?? []);
+  const stepExists = steps.some((step) => String(step?.id ?? "").trim() === stepId);
+  if (!stepExists) return res.status(400).json({ message: "Workflow step not found for this task." });
+  const userId = String(req.auth?.userId ?? "").trim();
+  const author = db.teamMembers.find((member) => String(member?.id ?? "").trim() === userId);
+  if (!author) return res.status(403).json({ message: "User not found." });
+  const nowIso = new Date().toISOString();
+  const existing = normalizeWorkflowStepComments(task?.workflowStepComments ?? []);
+  const next = [
+    ...existing,
+    {
+      id: crypto.randomUUID(),
+      stepId,
+      authorId: userId,
+      authorName: String(author.fullName ?? "").trim() || "نامشخص",
+      text: text.slice(0, 1200),
+      createdAt: nowIso,
+    },
+  ].slice(-300);
+  db.tasks[index] = {
+    ...task,
+    workflowStepComments: next,
+    updatedAt: nowIso,
+  };
+  addAuditLog(db, req, {
+    action: "task.workflow.comment",
+    entityType: "task",
+    entityId: id,
+    summary: `Workflow comment added on step ${stepId}`,
+  });
+  writeStore(db);
+  triggerWebhookEvent(db, "task.updated", {
+    taskId: id,
+    title: db.tasks[index]?.title,
+    status: db.tasks[index]?.status,
+  });
+  return res.json(db.tasks[index]);
+});
+
+app.post("/api/tasks/:id/workflow/advance", (req, res) => {
+  const { id } = req.params;
+  const db = readStore();
+  const index = db.tasks.findIndex((t) => t.id === id);
+  if (index === -1) return res.status(404).json({ message: "Task not found." });
+  if (!ensurePermission(req, res, db, "taskChangeStatus")) return;
+  const task = db.tasks[index];
+  const project = db.projects.find((p) => String(p?.name ?? "").trim() === String(task?.projectName ?? "").trim());
+  if (!canAccessProject(project, req.auth?.userId, req.auth?.role)) {
+    return res.status(403).json({ message: "You can only update tasks in projects you can access." });
+  }
+  const steps = normalizeWorkflowSteps(task?.workflowSteps ?? []);
+  if (steps.length === 0) {
+    return res.status(400).json({ message: "This task has no workflow steps." });
+  }
+  const nowIso = new Date().toISOString();
+  const currentIndex = Number.isFinite(Number(task?.workflowCurrentStep))
+    ? Math.max(0, Math.min(steps.length - 1, Math.floor(Number(task.workflowCurrentStep))))
+    : 0;
+  const currentStep = steps[currentIndex];
+  if (currentStep?.requiresApproval) {
+    return res.status(400).json({ message: "This workflow step requires approve/reject decision." });
+  }
+  const nextIndex = Math.min(steps.length, currentIndex + 1);
+  const completed = nextIndex >= steps.length;
+  const nextStatus = completed ? "done" : normalizeTaskStatus(task?.status, Boolean(task?.done)) === "todo" ? "doing" : normalizeTaskStatus(task?.status, Boolean(task?.done));
+  const nextStep = completed ? null : steps[nextIndex];
+  const nextPendingAssigneeIds = nextStep ? resolveWorkflowPendingAssigneeIds({ db, task, project, step: nextStep }) : [];
+
+  db.tasks[index] = {
+    ...task,
+    workflowSteps: steps,
+    workflowCurrentStep: completed ? steps.length - 1 : nextIndex,
+    workflowPendingAssigneeIds: completed ? [] : nextPendingAssigneeIds,
+    workflowCompletedAt: completed ? nowIso : "",
+    status: nextStatus,
+    done: completed,
+    updatedAt: nowIso,
+    lastStatusChangedAt: nowIso,
+  };
+  addAuditLog(db, req, {
+    action: "task.workflow.advance",
+    entityType: "task",
+    entityId: id,
+    summary: completed ? `Task workflow completed: ${String(task?.title ?? "").trim()}` : `Task workflow advanced to step ${nextIndex + 1}`,
+    meta: {
+      currentStepIndex: currentIndex,
+      nextStepIndex: completed ? steps.length - 1 : nextIndex,
+      stepsCount: steps.length,
+      completed,
+    },
+  });
+  writeStore(db);
+  triggerWebhookEvent(db, "task.updated", {
+    taskId: id,
+    title: db.tasks[index]?.title,
+    status: db.tasks[index]?.status,
+  });
+  return res.json(db.tasks[index]);
+});
+
+app.post("/api/tasks/:id/workflow/decision", (req, res) => {
+  const { id } = req.params;
+  const decision = String(req.body?.decision ?? "").trim();
+  if (decision !== "approve" && decision !== "reject") {
+    return res.status(400).json({ message: "decision must be approve or reject." });
+  }
+  const db = readStore();
+  const index = db.tasks.findIndex((t) => t.id === id);
+  if (index === -1) return res.status(404).json({ message: "Task not found." });
+  if (!ensurePermission(req, res, db, "taskChangeStatus")) return;
+  const task = db.tasks[index];
+  const userId = String(req.auth?.userId ?? "").trim();
+  const project = db.projects.find((p) => String(p?.name ?? "").trim() === String(task?.projectName ?? "").trim());
+  if (!canAccessProject(project, req.auth?.userId, req.auth?.role)) {
+    return res.status(403).json({ message: "You can only update tasks in projects you can access." });
+  }
+  const steps = normalizeWorkflowSteps(task?.workflowSteps ?? []);
+  if (steps.length === 0) {
+    return res.status(400).json({ message: "This task has no workflow steps." });
+  }
+  const currentIndex = Number.isFinite(Number(task?.workflowCurrentStep))
+    ? Math.max(0, Math.min(steps.length - 1, Math.floor(Number(task.workflowCurrentStep))))
+    : 0;
+  const currentStep = steps[currentIndex];
+  if (!currentStep?.requiresApproval) {
+    return res.status(400).json({ message: "Current step does not require approval." });
+  }
+  const allowedAssignees = resolveWorkflowAssigneeIds({ db, task, project, step: currentStep, mode: "approval" });
+  if (allowedAssignees.length === 0) {
+    return res.status(400).json({ message: "No approver is configured for this workflow step." });
+  }
+  if (allowedAssignees.length > 0 && !allowedAssignees.includes(userId)) {
+    return res.status(403).json({ message: "You are not allowed to approve/reject this step." });
+  }
+  const route = decision === "approve" ? currentStep.onApprove : currentStep.onReject;
+  const targetIndexRaw = resolveWorkflowTargetIndex({ steps, currentIndex, route });
+  const completed = targetIndexRaw >= steps.length;
+  const targetIndex = completed ? steps.length - 1 : Math.max(0, Math.min(steps.length - 1, targetIndexRaw));
+  const nextStep = completed ? null : steps[targetIndex];
+  const nowIso = new Date().toISOString();
+  const nextPendingAssigneeIds = nextStep ? resolveWorkflowPendingAssigneeIds({ db, task, project, step: nextStep }) : [];
+  const nextStatus = completed ? "done" : normalizeTaskStatus(task?.status, Boolean(task?.done)) === "todo" ? "doing" : normalizeTaskStatus(task?.status, Boolean(task?.done));
+
+  db.tasks[index] = {
+    ...task,
+    workflowSteps: steps,
+    workflowCurrentStep: targetIndex,
+    workflowPendingAssigneeIds: completed ? [] : nextPendingAssigneeIds,
+    workflowCompletedAt: completed ? nowIso : "",
+    status: nextStatus,
+    done: completed,
+    updatedAt: nowIso,
+    lastStatusChangedAt: nowIso,
+  };
+  addAuditLog(db, req, {
+    action: "task.workflow.decision",
+    entityType: "task",
+    entityId: id,
+    summary: `Workflow step ${decision}ed for task: ${String(task?.title ?? "").trim()}`,
+    meta: {
+      decision,
+      currentStepIndex: currentIndex,
+      targetStepIndex: targetIndex,
+      completed,
+    },
+  });
+  writeStore(db);
+  triggerWebhookEvent(db, "task.updated", {
+    taskId: id,
+    title: db.tasks[index]?.title,
+    status: db.tasks[index]?.status,
+  });
   return res.json(db.tasks[index]);
 });
 

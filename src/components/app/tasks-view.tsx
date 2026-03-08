@@ -1,5 +1,5 @@
-import type { ComponentType } from "react";
-import { Activity, CheckCircle2, FileText, Inbox, Pencil, Plus, Trash2 } from "lucide-react";
+import { useMemo, useState, type ComponentType } from "react";
+import { Activity, CheckCircle2, FileText, Inbox, MessageSquareText, Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,12 +10,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BufferedInput, BufferedTextarea } from "@/components/ui/buffered-fields";
+import { type WorkflowStepEditorRow } from "@/components/app/workflow-step-editor";
+import WorkflowStepConfigDialog from "@/components/app/workflow-step-config-dialog";
 
 type TasksViewProps = {
   toFaNum: (value: string) => string;
@@ -34,7 +35,8 @@ type TasksViewProps = {
   applyTaskTemplate: (id: string, mode: "add" | "edit") => void;
   taskStatusItems: Array<{ value: string; label: string }>;
   activeTeamMembers: Array<{ id: string; fullName: string }>;
-  projects: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string; workflowTemplateSteps?: Array<{ title?: string }> }>;
+  currentUserId: string;
   tab: string;
   setTab: (value: string) => void;
   taskSearch: string;
@@ -49,6 +51,9 @@ type TasksViewProps = {
   openContextMenu: (event: React.MouseEvent, title: string, items: any[]) => void;
   openEditTask: (task: any) => void;
   updateTaskStatus: (id: string, status: any, reason?: string) => Promise<void>;
+  advanceTaskWorkflow: (id: string) => Promise<void>;
+  decideTaskWorkflow: (id: string, decision: "approve" | "reject") => Promise<void>;
+  addTaskWorkflowComment: (taskId: string, stepId: string, text: string) => Promise<void>;
   copyTextToClipboard: (text: string, message?: string) => Promise<void>;
   removeTask: (id: string) => Promise<void>;
   taskIsDone: (task: any) => boolean;
@@ -67,6 +72,99 @@ type TasksViewProps = {
 };
 
 export default function TasksView(props: TasksViewProps) {
+  const [workflowCommentsOpen, setWorkflowCommentsOpen] = useState(false);
+  const [workflowCommentsTaskId, setWorkflowCommentsTaskId] = useState<string | null>(null);
+  const [workflowCommentStepId, setWorkflowCommentStepId] = useState("");
+  const [workflowCommentText, setWorkflowCommentText] = useState("");
+  const [workflowCommentBusy, setWorkflowCommentBusy] = useState(false);
+  const parseWorkflowRows = (value: unknown): WorkflowStepEditorRow[] => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      const rows: WorkflowStepEditorRow[] = [];
+      for (let index = 0; index < parsed.length; index += 1) {
+        const row = parsed[index];
+        if (!row || typeof row !== "object") continue;
+        const obj = row as Record<string, unknown>;
+        const title = String(obj.title ?? "").trim().slice(0, 120);
+        if (!title) continue;
+        rows.push({
+          id: String(obj.id ?? `step-${index + 1}`),
+          title,
+          assigneeType: (String(obj.assigneeType ?? "task_assignee_primary") as WorkflowStepEditorRow["assigneeType"]),
+          assigneeRole: (String(obj.assigneeRole ?? "") as WorkflowStepEditorRow["assigneeRole"]),
+          assigneeMemberId: String(obj.assigneeMemberId ?? ""),
+          requiresApproval: Boolean(obj.requiresApproval),
+          approvalAssigneeType: (String(obj.approvalAssigneeType ?? (obj.requiresApproval ? "task_assigner" : "")) as WorkflowStepEditorRow["approvalAssigneeType"]),
+          approvalAssigneeRole: (String(obj.approvalAssigneeRole ?? "") as WorkflowStepEditorRow["approvalAssigneeRole"]),
+          approvalAssigneeMemberId: String(obj.approvalAssigneeMemberId ?? ""),
+          onApprove: String(obj.onApprove ?? "next"),
+          onReject: String(obj.onReject ?? "stay"),
+          canvasX: Number.isFinite(Number(obj.canvasX)) ? Number(obj.canvasX) : undefined,
+          canvasY: Number.isFinite(Number(obj.canvasY)) ? Number(obj.canvasY) : undefined,
+        });
+      }
+      return rows;
+    } catch {
+      return raw
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .slice(0, 12)
+        .map((title, index) => ({
+          id: `step-${index + 1}`,
+          title,
+          assigneeType: "task_assignee_primary",
+          assigneeRole: "",
+          assigneeMemberId: "",
+          requiresApproval: false,
+          approvalAssigneeType: "task_assigner",
+          approvalAssigneeRole: "",
+          approvalAssigneeMemberId: "",
+          onApprove: "next",
+          onReject: "stay",
+          canvasX: 32 + (index % 3) * 280,
+          canvasY: 28 + Math.floor(index / 3) * 140,
+        }));
+    }
+  };
+  const serializeWorkflowRows = (rows: WorkflowStepEditorRow[]): string => {
+    const next = Array.isArray(rows) ? rows.filter((row) => String(row.title ?? "").trim()) : [];
+    if (next.length === 0) return "";
+    return JSON.stringify(next);
+  };
+  const resolveMemberSelectValue = (memberId: string, required: boolean) => {
+    const exists = props.activeTeamMembers.some((m) => m.id === memberId);
+    if (exists) return memberId;
+    return required ? "unselected" : "none";
+  };
+  const selectedWorkflowCommentTask = useMemo(
+    () => props.filteredTasks.find((task) => task.id === workflowCommentsTaskId) ?? null,
+    [props.filteredTasks, workflowCommentsTaskId],
+  );
+  const selectedWorkflowCommentSteps = Array.isArray(selectedWorkflowCommentTask?.workflowSteps) ? selectedWorkflowCommentTask.workflowSteps : [];
+  const selectedWorkflowComments = Array.isArray(selectedWorkflowCommentTask?.workflowStepComments) ? selectedWorkflowCommentTask.workflowStepComments : [];
+  const routeLabelForStep = (route: string | undefined, steps: Array<{ id?: string; title?: string }>) => {
+    const safe = String(route ?? "").trim();
+    if (!safe || safe === "next") return "مرحله بعد";
+    if (safe === "previous") return "مرحله قبل";
+    if (safe === "stay") return "همان مرحله";
+    if (safe === "done") return "اتمام تسک";
+    const target = steps.find((step) => String(step?.id ?? "") === safe);
+    return target?.title ? `پرش به: ${target.title}` : "پرش به مرحله دیگر";
+  };
+  const openWorkflowComments = (task: any) => {
+    const steps = Array.isArray(task?.workflowSteps) ? task.workflowSteps : [];
+    const currentIndex = Number(task?.workflowCurrentStep ?? 0);
+    const fallbackStepId = String(steps[Math.max(0, Math.min(steps.length - 1, currentIndex))]?.id ?? steps[0]?.id ?? "");
+    setWorkflowCommentsTaskId(task.id);
+    setWorkflowCommentStepId(fallbackStepId);
+    setWorkflowCommentText("");
+    setWorkflowCommentsOpen(true);
+  };
+
   return (
     <>
       <section className="grid gap-4 sm:grid-cols-3">
@@ -94,154 +192,10 @@ export default function TasksView(props: TasksViewProps) {
         <CardHeader className="space-y-4">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <CardTitle>لیست تسک‌ها</CardTitle>
-            <Dialog open={props.taskOpen} onOpenChange={props.setTaskOpen}>
-              <DialogTrigger asChild>
-                <Button className="gap-2">
-                  <Plus className="h-4 w-4" />
-                  افزودن تسک
-                </Button>
-              </DialogTrigger>
-              <DialogContent aria-describedby={undefined} className="liquid-glass max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>افزودن تسک</DialogTitle>
-                  <DialogDescription>پروژه را از لیست پروژه‌ها انتخاب کن.</DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4">
-                  <BufferedInput
-                    placeholder="عنوان تسک"
-                    value={props.taskDraft.title}
-                    onCommit={(next) => props.setTaskDraft((p: any) => ({ ...p, title: next }))}
-                  />
-                  {props.taskErrors.title && <p className="text-xs text-destructive">{props.taskErrors.title}</p>}
-                  <BufferedTextarea
-                    placeholder="شرح تسک"
-                    value={props.taskDraft.description}
-                    onCommit={(next) => props.setTaskDraft((p: any) => ({ ...p, description: next }))}
-                  />
-                  {props.taskErrors.description && <p className="text-xs text-destructive">{props.taskErrors.description}</p>}
-                  <div className="space-y-2 rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground">قالب آماده تسک</p>
-                    <div className="flex flex-wrap gap-2">
-                      {props.taskTemplates.map((template) => (
-                        <Button key={template.id} type="button" size="sm" variant="outline" onClick={() => props.applyTaskTemplate(template.id, "add")}>
-                          {template.label}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Select value={props.taskDraft.status} onValueChange={(v) => props.setTaskDraft((p: any) => ({ ...p, status: v }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="وضعیت تسک" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {props.taskStatusItems.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>
-                            {item.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {props.taskDraft.status === "blocked" && (
-                    <div className="space-y-2">
-                      <BufferedTextarea
-                        placeholder="دلیل بلاک شدن"
-                        value={props.taskDraft.blockedReason}
-                        onCommit={(next) => props.setTaskDraft((p: any) => ({ ...p, blockedReason: next }))}
-                      />
-                      {props.taskErrors.blockedReason && <p className="text-xs text-destructive">{props.taskErrors.blockedReason}</p>}
-                    </div>
-                  )}
-                  <div className="space-y-2">
-                    <Select value={props.taskDraft.assignerId} onValueChange={(v) => props.setTaskDraft((p: any) => ({ ...p, assignerId: v }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="ابلاغ‌کننده" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {props.activeTeamMembers.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.fullName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {props.taskErrors.assignerId && <p className="text-xs text-destructive">{props.taskErrors.assignerId}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Select value={props.taskDraft.assigneePrimaryId} onValueChange={(v) => props.setTaskDraft((p: any) => ({ ...p, assigneePrimaryId: v }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="انجام‌دهنده اصلی" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {props.activeTeamMembers.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.fullName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {props.taskErrors.assigneePrimaryId && <p className="text-xs text-destructive">{props.taskErrors.assigneePrimaryId}</p>}
-                  </div>
-                  <Select value={props.taskDraft.assigneeSecondaryId} onValueChange={(v) => props.setTaskDraft((p: any) => ({ ...p, assigneeSecondaryId: v }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="انجام‌دهنده دوم (اختیاری)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {props.activeTeamMembers.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.fullName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="space-y-2">
-                    <Select value={props.taskDraft.projectName} onValueChange={(v) => props.setTaskDraft((p: any) => ({ ...p, projectName: v }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="انتخاب پروژه" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {props.projects.map((p) => (
-                          <SelectItem key={p.id} value={p.name}>
-                            {p.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {props.taskErrors.projectName && <p className="text-xs text-destructive">{props.taskErrors.projectName}</p>}
-                    {props.taskOpenDisableReasonProjects && <p className="text-xs text-muted-foreground">ابتدا یک یا چند پروژه ثبت کن.</p>}
-                    {props.taskOpenDisableReasonMembers && <p className="text-xs text-muted-foreground">ابتدا یک یا چند عضو تیم ثبت کن.</p>}
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <props.DatePickerField
-                        label="تاریخ ابلاغ"
-                        valueIso={props.taskDraft.announceDateIso}
-                        onChange={(v) => props.setTaskDraft((p: any) => ({ ...p, announceDateIso: v }))}
-                      />
-                      {props.taskErrors.announceDateIso && <p className="text-xs text-destructive">{props.taskErrors.announceDateIso}</p>}
-                    </div>
-                    <div className="space-y-2">
-                      <props.DatePickerField
-                        label="تاریخ پایان"
-                        valueIso={props.taskDraft.executionDateIso}
-                        onChange={(v) => props.setTaskDraft((p: any) => ({ ...p, executionDateIso: v }))}
-                      />
-                      {props.taskErrors.executionDateIso && <p className="text-xs text-destructive">{props.taskErrors.executionDateIso}</p>}
-                    </div>
-                  </div>
-                  {props.taskErrors.form && <p className="text-xs text-destructive">{props.taskErrors.form}</p>}
-                </div>
-                <DialogFooter>
-                  <Button variant="secondary" onClick={() => props.setTaskOpen(false)}>
-                    بستن
-                  </Button>
-                  <Button disabled={props.taskCreateBusy || props.taskOpenDisabled} onClick={props.addTask}>
-                    {props.taskCreateBusy ? "در حال ثبت..." : "ثبت تسک"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <Button type="button" className="gap-2" onClick={() => props.setTaskOpen(true)}>
+              <Plus className="h-4 w-4" />
+              افزودن تسک
+            </Button>
           </div>
 
           <Tabs value={props.tab} onValueChange={props.setTab}>
@@ -295,13 +249,14 @@ export default function TasksView(props: TasksViewProps) {
                     <th className="px-3 py-2 text-right font-medium">مسئول</th>
                     <th className="px-3 py-2 text-right font-medium">وضعیت</th>
                     <th className="px-3 py-2 text-right font-medium">پایان</th>
+                    <th className="px-3 py-2 text-right font-medium">ورکفلو</th>
                     <th className="px-3 py-2 text-right font-medium">عملیات</th>
                   </tr>
                 </thead>
                 <tbody>
                   {props.tasksVirtual.windowState.paddingTop > 0 && (
                     <tr aria-hidden="true">
-                      <td colSpan={6} style={{ height: props.tasksVirtual.windowState.paddingTop }} />
+                      <td colSpan={7} style={{ height: props.tasksVirtual.windowState.paddingTop }} />
                     </tr>
                   )}
                   {props.visibleTaskRows.map((t) => (
@@ -311,9 +266,31 @@ export default function TasksView(props: TasksViewProps) {
                       onContextMenu={(event) =>
                         props.openContextMenu(event, `تسک: ${t.title}`, [
                           { id: "task-edit", label: "ویرایش تسک", icon: Pencil, onSelect: () => props.openEditTask(t) },
+                          {
+                            id: "task-workflow-next",
+                            label: "مرحله بعد ورکفلو",
+                            icon: CheckCircle2,
+                            disabled: !Array.isArray(t.workflowSteps) || t.workflowSteps.length === 0 || props.taskIsDone(t),
+                            onSelect: () => void props.advanceTaskWorkflow(t.id),
+                          },
                           { id: "task-status-todo", label: "تغییر وضعیت به برای انجام", icon: Inbox, onSelect: () => void props.updateTaskStatus(t.id, "todo") },
                           { id: "task-status-doing", label: "تغییر وضعیت به در حال انجام", icon: Activity, onSelect: () => void props.updateTaskStatus(t.id, "doing") },
                           { id: "task-status-done", label: "تغییر وضعیت به انجام‌شده", icon: CheckCircle2, onSelect: () => void props.updateTaskStatus(t.id, "done") },
+                          {
+                            id: "task-workflow-approve",
+                            label: "تایید مرحله",
+                            icon: CheckCircle2,
+                            disabled: !Array.isArray(t.workflowPendingAssigneeIds) || !t.workflowPendingAssigneeIds.includes(props.currentUserId),
+                            onSelect: () => void props.decideTaskWorkflow(t.id, "approve"),
+                          },
+                          {
+                            id: "task-workflow-reject",
+                            label: "رد مرحله",
+                            icon: Trash2,
+                            tone: "danger",
+                            disabled: !Array.isArray(t.workflowPendingAssigneeIds) || !t.workflowPendingAssigneeIds.includes(props.currentUserId),
+                            onSelect: () => void props.decideTaskWorkflow(t.id, "reject"),
+                          },
                           { id: "task-copy-title", label: "کپی عنوان تسک", icon: FileText, onSelect: () => void props.copyTextToClipboard(t.title, "عنوان تسک کپی شد.") },
                           { id: "task-delete", label: "حذف تسک", icon: Trash2, tone: "danger", onSelect: () => void props.removeTask(t.id) },
                         ])
@@ -335,7 +312,51 @@ export default function TasksView(props: TasksViewProps) {
                       </td>
                       <td className="px-3 py-2">{props.isoToJalali(t.executionDate)}</td>
                       <td className="px-3 py-2">
+                        {Array.isArray(t.workflowSteps) && t.workflowSteps.length > 0 ? (
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">
+                              مرحله {props.toFaNum(String(Math.max(1, Number(t.workflowCurrentStep ?? 0) + 1)))} از {props.toFaNum(String(t.workflowSteps.length))}
+                            </p>
+                            {(() => {
+                              const current = t.workflowSteps[Math.max(0, Math.min(t.workflowSteps.length - 1, Number(t.workflowCurrentStep ?? 0)))];
+                              if (!current) return <p className="text-xs font-medium">—</p>;
+                              return (
+                                <>
+                                  <p className="text-xs font-medium">{current.title ?? "—"}</p>
+                                  {current.requiresApproval ? (
+                                    <p className="text-[11px] text-muted-foreground">
+                                      اگر تایید شد: {routeLabelForStep(current.onApprove, t.workflowSteps)} | اگر رد شد: {routeLabelForStep(current.onReject, t.workflowSteps)}
+                                    </p>
+                                  ) : (
+                                    <p className="text-[11px] text-muted-foreground">این مرحله نیاز به تایید ندارد و مستقیم به مرحله بعد می‌رود.</p>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">بدون ورکفلو</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
+                          {Array.isArray(t.workflowSteps) && t.workflowSteps.length > 0 && !props.taskIsDone(t) && (
+                            <>
+                              <Button size="sm" variant="secondary" className="h-8 text-xs" onClick={() => void props.advanceTaskWorkflow(t.id)}>
+                                مرحله بعد
+                              </Button>
+                              {Array.isArray(t.workflowPendingAssigneeIds) && t.workflowPendingAssigneeIds.includes(props.currentUserId) && (
+                                <>
+                                  <Button size="sm" className="h-8 text-xs" onClick={() => void props.decideTaskWorkflow(t.id, "approve")}>
+                                    تایید
+                                  </Button>
+                                  <Button size="sm" variant="destructive" className="h-8 text-xs" onClick={() => void props.decideTaskWorkflow(t.id, "reject")}>
+                                    رد
+                                  </Button>
+                                </>
+                              )}
+                            </>
+                          )}
                           <Select
                             value={props.normalizeTaskStatus(t.status, Boolean(t.done))}
                             onValueChange={(value) => {
@@ -357,6 +378,9 @@ export default function TasksView(props: TasksViewProps) {
                           <Button size="icon" variant="ghost" onClick={() => props.openEditTask(t)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
+                          <Button size="icon" variant="ghost" onClick={() => openWorkflowComments(t)}>
+                            <MessageSquareText className="h-4 w-4" />
+                          </Button>
                           <Button size="icon" variant="ghost" className="text-destructive" onClick={() => void props.removeTask(t.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -366,7 +390,7 @@ export default function TasksView(props: TasksViewProps) {
                   ))}
                   {props.tasksVirtual.windowState.paddingBottom > 0 && (
                     <tr aria-hidden="true">
-                      <td colSpan={6} style={{ height: props.tasksVirtual.windowState.paddingBottom }} />
+                      <td colSpan={7} style={{ height: props.tasksVirtual.windowState.paddingBottom }} />
                     </tr>
                   )}
                 </tbody>
@@ -375,6 +399,158 @@ export default function TasksView(props: TasksViewProps) {
           )}
         </CardContent>
       </Card>
+
+      {props.taskOpen && (
+        <Card className="liquid-glass lift-on-hover">
+          <CardHeader>
+            <CardTitle>افزودن تسک جدید</CardTitle>
+            <CardDescription>این فرم به صورت صفحه‌ای باز می‌شود تا فضای کافی برای تعریف تسک و ورک‌فلو داشته باشید.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4">
+              <BufferedInput placeholder="عنوان تسک" value={props.taskDraft.title} onCommit={(next) => props.setTaskDraft((p: any) => ({ ...p, title: next }))} />
+              {props.taskErrors.title && <p className="text-xs text-destructive">{props.taskErrors.title}</p>}
+              <BufferedTextarea placeholder="شرح تسک" value={props.taskDraft.description} onCommit={(next) => props.setTaskDraft((p: any) => ({ ...p, description: next }))} />
+              {props.taskErrors.description && <p className="text-xs text-destructive">{props.taskErrors.description}</p>}
+              <div className="space-y-2 rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">قالب آماده تسک</p>
+                <div className="flex flex-wrap gap-2">
+                  {props.taskTemplates.map((template) => (
+                    <Button key={template.id} type="button" size="sm" variant="outline" onClick={() => props.applyTaskTemplate(template.id, "add")}>
+                      {template.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Select value={props.taskDraft.status} onValueChange={(v) => props.setTaskDraft((p: any) => ({ ...p, status: v }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="وضعیت تسک" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {props.taskStatusItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {props.taskDraft.status === "blocked" && (
+                <div className="space-y-2">
+                  <BufferedTextarea placeholder="دلیل بلاک شدن" value={props.taskDraft.blockedReason} onCommit={(next) => props.setTaskDraft((p: any) => ({ ...p, blockedReason: next }))} />
+                  {props.taskErrors.blockedReason && <p className="text-xs text-destructive">{props.taskErrors.blockedReason}</p>}
+                </div>
+              )}
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">مالک/ابلاغ‌کننده تسک</p>
+                  <Select value={resolveMemberSelectValue(props.taskDraft.assignerId, true)} onValueChange={(v) => props.setTaskDraft((p: any) => ({ ...p, assignerId: v === "unselected" ? "" : v }))}>
+                    <SelectTrigger className="text-foreground">
+                      <SelectValue placeholder="ابلاغ‌کننده" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unselected">انتخاب کنید</SelectItem>
+                      {props.activeTeamMembers.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.fullName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {props.taskErrors.assignerId && <p className="text-xs text-destructive">{props.taskErrors.assignerId}</p>}
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">انجام‌دهنده اصلی تسک</p>
+                  <Select value={resolveMemberSelectValue(props.taskDraft.assigneePrimaryId, true)} onValueChange={(v) => props.setTaskDraft((p: any) => ({ ...p, assigneePrimaryId: v === "unselected" ? "" : v }))}>
+                    <SelectTrigger className="text-foreground">
+                      <SelectValue placeholder="انجام‌دهنده اصلی" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unselected">انتخاب کنید</SelectItem>
+                      {props.activeTeamMembers.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.fullName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {props.taskErrors.assigneePrimaryId && <p className="text-xs text-destructive">{props.taskErrors.assigneePrimaryId}</p>}
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">انجام‌دهنده دوم تسک (اختیاری)</p>
+                  <Select value={resolveMemberSelectValue(props.taskDraft.assigneeSecondaryId, false)} onValueChange={(v) => props.setTaskDraft((p: any) => ({ ...p, assigneeSecondaryId: v === "none" ? "" : v }))}>
+                    <SelectTrigger className="text-foreground">
+                      <SelectValue placeholder="انجام‌دهنده دوم (اختیاری)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">بدون انجام‌دهنده دوم</SelectItem>
+                      {props.activeTeamMembers.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.fullName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">پروژه</p>
+                  <Select
+                    value={props.taskDraft.projectName}
+                    onValueChange={(v) =>
+                      props.setTaskDraft((p: any) => {
+                        const project = props.projects.find((item) => item.name === v);
+                        const projectWorkflowText = Array.isArray(project?.workflowTemplateSteps) && project.workflowTemplateSteps.length > 0 ? JSON.stringify(project.workflowTemplateSteps) : "";
+                        return { ...p, projectName: v, workflowStepsText: p.workflowStepsText?.trim() ? p.workflowStepsText : projectWorkflowText };
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="انتخاب پروژه" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {props.projects.map((p) => (
+                        <SelectItem key={p.id} value={p.name}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {props.taskErrors.projectName && <p className="text-xs text-destructive">{props.taskErrors.projectName}</p>}
+                  {props.taskOpenDisableReasonProjects && <p className="text-xs text-muted-foreground">ابتدا یک یا چند پروژه ثبت کن.</p>}
+                  {props.taskOpenDisableReasonMembers && <p className="text-xs text-muted-foreground">ابتدا یک یا چند عضو تیم ثبت کن.</p>}
+                </div>
+              </div>
+              <WorkflowStepConfigDialog
+                title="ورکفلو اختصاصی تسک"
+                rows={parseWorkflowRows(props.taskDraft.workflowStepsText)}
+                summary={parseWorkflowRows(props.taskDraft.workflowStepsText).length > 0 ? `${props.toFaNum(String(parseWorkflowRows(props.taskDraft.workflowStepsText).length))} مرحله تعریف شده` : "بدون ورک‌فلو"}
+                onSave={(next) => props.setTaskDraft((p: any) => ({ ...p, workflowStepsText: serializeWorkflowRows(next) }))}
+                members={props.activeTeamMembers}
+              />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <props.DatePickerField label="تاریخ ابلاغ" valueIso={props.taskDraft.announceDateIso} onChange={(v) => props.setTaskDraft((p: any) => ({ ...p, announceDateIso: v }))} />
+                  {props.taskErrors.announceDateIso && <p className="text-xs text-destructive">{props.taskErrors.announceDateIso}</p>}
+                </div>
+                <div className="space-y-2">
+                  <props.DatePickerField label="تاریخ پایان" valueIso={props.taskDraft.executionDateIso} onChange={(v) => props.setTaskDraft((p: any) => ({ ...p, executionDateIso: v }))} />
+                  {props.taskErrors.executionDateIso && <p className="text-xs text-destructive">{props.taskErrors.executionDateIso}</p>}
+                </div>
+              </div>
+              {props.taskErrors.form && <p className="text-xs text-destructive">{props.taskErrors.form}</p>}
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="secondary" onClick={() => props.setTaskOpen(false)}>
+                انصراف
+              </Button>
+              <Button disabled={props.taskCreateBusy || props.taskOpenDisabled} onClick={props.addTask}>
+                {props.taskCreateBusy ? "در حال ثبت..." : "ثبت تسک"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog
         open={props.taskEditOpen}
@@ -416,11 +592,16 @@ export default function TasksView(props: TasksViewProps) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Select value={props.taskEditDraft.assignerId} onValueChange={(v) => props.setTaskEditDraft((p: any) => ({ ...p, assignerId: v }))}>
-                <SelectTrigger>
+              <p className="text-xs font-medium text-muted-foreground">مالک/ابلاغ‌کننده تسک</p>
+              <Select
+                value={resolveMemberSelectValue(props.taskEditDraft.assignerId, true)}
+                onValueChange={(v) => props.setTaskEditDraft((p: any) => ({ ...p, assignerId: v === "unselected" ? "" : v }))}
+              >
+                <SelectTrigger className="text-foreground">
                   <SelectValue placeholder="ابلاغ‌کننده" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="unselected">انتخاب کنید</SelectItem>
                   {props.activeTeamMembers.map((m) => (
                     <SelectItem key={m.id} value={m.id}>
                       {m.fullName}
@@ -431,11 +612,16 @@ export default function TasksView(props: TasksViewProps) {
               {props.taskEditErrors.assignerId && <p className="text-xs text-destructive">{props.taskEditErrors.assignerId}</p>}
             </div>
             <div className="space-y-2">
-              <Select value={props.taskEditDraft.assigneePrimaryId} onValueChange={(v) => props.setTaskEditDraft((p: any) => ({ ...p, assigneePrimaryId: v }))}>
-                <SelectTrigger>
+              <p className="text-xs font-medium text-muted-foreground">انجام‌دهنده اصلی تسک</p>
+              <Select
+                value={resolveMemberSelectValue(props.taskEditDraft.assigneePrimaryId, true)}
+                onValueChange={(v) => props.setTaskEditDraft((p: any) => ({ ...p, assigneePrimaryId: v === "unselected" ? "" : v }))}
+              >
+                <SelectTrigger className="text-foreground">
                   <SelectValue placeholder="انجام‌دهنده اصلی" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="unselected">انتخاب کنید</SelectItem>
                   {props.activeTeamMembers.map((m) => (
                     <SelectItem key={m.id} value={m.id}>
                       {m.fullName}
@@ -445,20 +631,36 @@ export default function TasksView(props: TasksViewProps) {
               </Select>
               {props.taskEditErrors.assigneePrimaryId && <p className="text-xs text-destructive">{props.taskEditErrors.assigneePrimaryId}</p>}
             </div>
-            <Select value={props.taskEditDraft.assigneeSecondaryId} onValueChange={(v) => props.setTaskEditDraft((p: any) => ({ ...p, assigneeSecondaryId: v }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="انجام‌دهنده دوم (اختیاری)" />
-              </SelectTrigger>
-              <SelectContent>
-                {props.activeTeamMembers.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.fullName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <div className="space-y-2">
-              <Select value={props.taskEditDraft.projectName} onValueChange={(v) => props.setTaskEditDraft((p: any) => ({ ...p, projectName: v }))}>
+              <p className="text-xs font-medium text-muted-foreground">انجام‌دهنده دوم تسک (اختیاری)</p>
+              <Select
+                value={resolveMemberSelectValue(props.taskEditDraft.assigneeSecondaryId, false)}
+                onValueChange={(v) => props.setTaskEditDraft((p: any) => ({ ...p, assigneeSecondaryId: v === "none" ? "" : v }))}
+              >
+                <SelectTrigger className="text-foreground">
+                  <SelectValue placeholder="انجام‌دهنده دوم (اختیاری)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">بدون انجام‌دهنده دوم</SelectItem>
+                  {props.activeTeamMembers.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.fullName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+            <Select
+              value={props.taskEditDraft.projectName}
+              onValueChange={(v) =>
+                props.setTaskEditDraft((p: any) => {
+                  const project = props.projects.find((item) => item.name === v);
+                  const projectWorkflowText = Array.isArray(project?.workflowTemplateSteps) && project.workflowTemplateSteps.length > 0 ? JSON.stringify(project.workflowTemplateSteps) : "";
+                  return { ...p, projectName: v, workflowStepsText: p.workflowStepsText?.trim() ? p.workflowStepsText : projectWorkflowText };
+                })
+              }
+            >
                 <SelectTrigger>
                   <SelectValue placeholder="انتخاب پروژه" />
                 </SelectTrigger>
@@ -472,6 +674,17 @@ export default function TasksView(props: TasksViewProps) {
               </Select>
               {props.taskEditErrors.projectName && <p className="text-xs text-destructive">{props.taskEditErrors.projectName}</p>}
             </div>
+            <WorkflowStepConfigDialog
+              title="ورکفلو اختصاصی تسک"
+              rows={parseWorkflowRows(props.taskEditDraft.workflowStepsText)}
+              summary={
+                parseWorkflowRows(props.taskEditDraft.workflowStepsText).length > 0
+                  ? `${props.toFaNum(String(parseWorkflowRows(props.taskEditDraft.workflowStepsText).length))} مرحله تعریف شده`
+                  : "بدون ورک‌فلو"
+              }
+              onSave={(next) => props.setTaskEditDraft((p: any) => ({ ...p, workflowStepsText: serializeWorkflowRows(next) }))}
+              members={props.activeTeamMembers}
+            />
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <props.DatePickerField label="تاریخ ابلاغ" valueIso={props.taskEditDraft.announceDateIso} onChange={(v) => props.setTaskEditDraft((p: any) => ({ ...p, announceDateIso: v }))} />
@@ -499,6 +712,87 @@ export default function TasksView(props: TasksViewProps) {
               بستن
             </Button>
             <Button onClick={props.updateTask}>ذخیره تغییرات</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={workflowCommentsOpen}
+        onOpenChange={(open) => {
+          setWorkflowCommentsOpen(open);
+          if (!open) {
+            setWorkflowCommentsTaskId(null);
+            setWorkflowCommentStepId("");
+            setWorkflowCommentText("");
+          }
+        }}
+      >
+        <DialogContent aria-describedby={undefined} className="liquid-glass max-h-[88vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>کامنت‌های مراحل ورک‌فلو</DialogTitle>
+            <DialogDescription>{selectedWorkflowCommentTask?.title ?? "تسک انتخاب نشده"}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">مرحله</p>
+              <Select value={workflowCommentStepId || "none"} onValueChange={(value) => setWorkflowCommentStepId(value === "none" ? "" : value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="انتخاب مرحله" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">انتخاب کنید</SelectItem>
+                  {selectedWorkflowCommentSteps.map((step: any, idx: number) => (
+                    <SelectItem key={`wf-comment-step-${step.id ?? idx}`} value={String(step.id ?? "")}>
+                      {`مرحله ${props.toFaNum(String(idx + 1))}: ${step.title ?? "بدون عنوان"}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">کامنت‌ها</p>
+              <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border p-2">
+                {selectedWorkflowComments
+                  .filter((comment: any) => String(comment.stepId ?? "") === workflowCommentStepId)
+                  .map((comment: any) => (
+                    <div key={comment.id} className="rounded-md border bg-background/40 p-2">
+                      <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                        <span>{comment.authorName || "نامشخص"}</span>
+                        <span>{props.isoToJalali(String(comment.createdAt || "").slice(0, 10))}</span>
+                      </div>
+                      <p className="text-xs leading-5">{comment.text}</p>
+                    </div>
+                  ))}
+                {selectedWorkflowComments.filter((comment: any) => String(comment.stepId ?? "") === workflowCommentStepId).length === 0 && (
+                  <p className="text-xs text-muted-foreground">برای این مرحله هنوز کامنتی ثبت نشده است.</p>
+                )}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">ثبت کامنت جدید</p>
+              <BufferedTextarea value={workflowCommentText} onCommit={setWorkflowCommentText} placeholder="نظر خود را برای این مرحله بنویس..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setWorkflowCommentsOpen(false)}>
+              بستن
+            </Button>
+            <Button
+              type="button"
+              disabled={workflowCommentBusy || !selectedWorkflowCommentTask?.id || !workflowCommentStepId || !workflowCommentText.trim()}
+              onClick={async () => {
+                if (!selectedWorkflowCommentTask?.id || !workflowCommentStepId || !workflowCommentText.trim()) return;
+                try {
+                  setWorkflowCommentBusy(true);
+                  await props.addTaskWorkflowComment(selectedWorkflowCommentTask.id, workflowCommentStepId, workflowCommentText.trim());
+                  setWorkflowCommentText("");
+                } finally {
+                  setWorkflowCommentBusy(false);
+                }
+              }}
+            >
+              {workflowCommentBusy ? "در حال ثبت..." : "ثبت کامنت"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
