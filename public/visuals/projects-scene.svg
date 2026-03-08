@@ -1,0 +1,13 @@
+<svg width="1200" height="560" viewBox="0 0 1200 560" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="560" rx="32" fill="#EEF2FF"/>
+  <circle cx="1020" cy="120" r="130" fill="#C7D2FE"/>
+  <circle cx="160" cy="450" r="90" fill="#A5B4FC"/>
+  <rect x="110" y="100" width="980" height="360" rx="24" fill="#ffffff" stroke="#818CF8" stroke-width="4"/>
+  <rect x="170" y="160" width="300" height="240" rx="18" fill="#E0E7FF"/>
+  <rect x="500" y="160" width="300" height="240" rx="18" fill="#EDE9FE"/>
+  <rect x="830" y="160" width="200" height="240" rx="18" fill="#EEF2FF"/>
+  <path d="M310 220H660V250H310V220Z" fill="#6366F1"/>
+  <path d="M310 270H750V300H310V270Z" fill="#818CF8"/>
+  <path d="M310 320H690V350H310V320Z" fill="#A5B4FC"/>
+  <text x="860" y="295" fill="#312E81" font-size="34" font-family="sans-serif">Projects</text>
+</svg>

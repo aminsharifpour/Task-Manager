@@ -28,20 +28,88 @@ const defaultSettings = {
     deadlineReminderHours: 6,
     escalationEnabled: true,
     escalationAfterHours: 24,
+    channels: {
+      inAppTaskAssigned: true,
+      inAppTaskNew: true,
+      inAppProjectNew: true,
+      inAppChatMessage: true,
+      inAppMention: true,
+      inAppSystem: true,
+      soundOnMessage: true,
+    },
   },
   calendar: {
     showTasks: true,
     showProjects: true,
     defaultRange: "monthly",
   },
+  accounting: {
+    transactionCategories: ["خوراک", "حمل‌ونقل", "قبوض", "حقوق", "تفریح", "درمان", "سایر"],
+  },
   team: {
     defaultAppRole: "member",
     memberCanEditTasks: true,
     memberCanDeleteTasks: false,
+    permissions: {
+      admin: {
+        projectCreate: true,
+        projectUpdate: true,
+        projectDelete: true,
+        taskCreate: true,
+        taskUpdate: true,
+        taskDelete: true,
+        taskChangeStatus: true,
+        teamCreate: true,
+        teamUpdate: true,
+        teamDelete: true,
+      },
+      manager: {
+        projectCreate: true,
+        projectUpdate: true,
+        projectDelete: false,
+        taskCreate: true,
+        taskUpdate: true,
+        taskDelete: false,
+        taskChangeStatus: true,
+        teamCreate: false,
+        teamUpdate: true,
+        teamDelete: false,
+      },
+      member: {
+        projectCreate: false,
+        projectUpdate: false,
+        projectDelete: false,
+        taskCreate: false,
+        taskUpdate: false,
+        taskDelete: false,
+        taskChangeStatus: true,
+        teamCreate: false,
+        teamUpdate: false,
+        teamDelete: false,
+      },
+    },
+  },
+  workflow: {
+    requireBlockedReason: true,
+    allowedTransitions: {
+      todo: ["doing", "blocked", "done"],
+      doing: ["blocked", "done", "todo"],
+      blocked: ["doing", "todo"],
+      done: ["todo"],
+    },
+  },
+  integrations: {
+    webhook: {
+      enabled: false,
+      url: "",
+      secret: "",
+      events: ["task.created", "task.updated", "project.created", "chat.message.created"],
+    },
   },
 };
 
 const defaultData = {
+  teams: [],
   projects: [],
   tasks: [],
   teamMembers: [],
@@ -51,6 +119,9 @@ const defaultData = {
   accountingBudgets: {},
   accountingBudgetHistory: [],
   accountingAccounts: [],
+  hrProfiles: [],
+  hrLeaveRequests: [],
+  hrAttendanceRecords: [],
   chatConversations: [],
   chatMessages: [],
   auditLogs: [],
@@ -136,6 +207,7 @@ const normalizeTeamMembers = (rows) => {
     phone: normalizePhone(m.phone),
     appRole: normalizeAppRole(m.appRole),
     isActive: m.isActive !== false,
+    teamIds: Array.from(new Set((Array.isArray(m.teamIds) ? m.teamIds : []).map((item) => String(item ?? "").trim()).filter(Boolean))),
     passwordHash: (() => {
       const raw = String(m.passwordHash ?? "").trim();
       if (!raw) return hashPassword("123456");
@@ -144,6 +216,20 @@ const normalizeTeamMembers = (rows) => {
       return `${LEGACY_PASSWORD_PREFIX}${raw}`;
     })(),
   }));
+};
+const normalizeTeams = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  return list
+    .filter((row) => row && typeof row === "object")
+    .map((row) => ({
+      id: String(row.id ?? "").trim() || crypto.randomUUID(),
+      name: String(row.name ?? "").trim().slice(0, 80),
+      description: String(row.description ?? "").trim().slice(0, 500),
+      isActive: row.isActive !== false,
+      createdAt: String(row.createdAt ?? new Date().toISOString()),
+      updatedAt: String(row.updatedAt ?? row.createdAt ?? new Date().toISOString()),
+    }))
+    .filter((row) => row.name.length >= 2);
 };
 
 const ensureAdminAccount = (db) => {
@@ -182,9 +268,67 @@ const ensureAdminAccount = (db) => {
   };
   return { ...db, teamMembers: [admin, ...db.teamMembers] };
 };
+const ensureTeamAssignments = (db) => {
+  const nextTeams = normalizeTeams(db.teams);
+  const hasDefaultTeam = nextTeams.some((team) => team.name === "عمومی");
+  const now = new Date().toISOString();
+  if (!hasDefaultTeam) {
+    nextTeams.unshift({
+      id: crypto.randomUUID(),
+      name: "عمومی",
+      description: "تیم پیش‌فرض سیستم",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  const fallbackTeamId = nextTeams[0]?.id ?? "";
+  const validTeamIds = new Set(nextTeams.map((team) => team.id));
+  const nextMembers = normalizeTeamMembers(db.teamMembers).map((member) => {
+    const teamIds = member.teamIds.filter((id) => validTeamIds.has(id));
+    const ensuredTeamIds = teamIds.length > 0 ? teamIds : fallbackTeamId ? [fallbackTeamId] : [];
+    return { ...member, teamIds: ensuredTeamIds };
+  });
+  return { ...db, teams: nextTeams, teamMembers: nextMembers };
+};
 
 function normalizeSettings(value) {
   const incoming = value && typeof value === "object" ? value : {};
+  const bool = (v, fallback) => (typeof v === "boolean" ? v : fallback);
+  const normalizeTransitions = (candidate, fallback) => {
+    const source = candidate && typeof candidate === "object" ? candidate : {};
+    const cleanList = (rows, defaults) => {
+      const allowed = Array.isArray(rows) ? rows : defaults;
+      return Array.from(new Set(allowed.filter((x) => x === "todo" || x === "doing" || x === "blocked" || x === "done")));
+    };
+    return {
+      todo: cleanList(source.todo, fallback.todo),
+      doing: cleanList(source.doing, fallback.doing),
+      blocked: cleanList(source.blocked, fallback.blocked),
+      done: cleanList(source.done, fallback.done),
+    };
+  };
+  const normalizePermissionRole = (incomingRole, fallbackRole) => ({
+    projectCreate: bool(incomingRole?.projectCreate, fallbackRole.projectCreate),
+    projectUpdate: bool(incomingRole?.projectUpdate, fallbackRole.projectUpdate),
+    projectDelete: bool(incomingRole?.projectDelete, fallbackRole.projectDelete),
+    taskCreate: bool(incomingRole?.taskCreate, fallbackRole.taskCreate),
+    taskUpdate: bool(incomingRole?.taskUpdate, fallbackRole.taskUpdate),
+    taskDelete: bool(incomingRole?.taskDelete, fallbackRole.taskDelete),
+    taskChangeStatus: bool(incomingRole?.taskChangeStatus, fallbackRole.taskChangeStatus),
+    teamCreate: bool(incomingRole?.teamCreate, fallbackRole.teamCreate),
+    teamUpdate: bool(incomingRole?.teamUpdate, fallbackRole.teamUpdate),
+    teamDelete: bool(incomingRole?.teamDelete, fallbackRole.teamDelete),
+  });
+  const normalizeTransactionCategories = (rows, defaults) => {
+    const list = Array.isArray(rows) ? rows : defaults;
+    const cleaned = list
+      .map((row) => String(row ?? "").trim())
+      .filter(Boolean)
+      .map((row) => row.slice(0, 50));
+    const unique = Array.from(new Set(cleaned));
+    return unique.length > 0 ? unique.slice(0, 40) : defaults;
+  };
   return {
     general: {
       organizationName: String(incoming.general?.organizationName ?? defaultSettings.general.organizationName),
@@ -202,16 +346,68 @@ function normalizeSettings(value) {
       deadlineReminderHours: Math.max(1, Number(incoming.notifications?.deadlineReminderHours ?? defaultSettings.notifications.deadlineReminderHours) || defaultSettings.notifications.deadlineReminderHours),
       escalationEnabled: Boolean(incoming.notifications?.escalationEnabled ?? defaultSettings.notifications.escalationEnabled),
       escalationAfterHours: Math.max(1, Number(incoming.notifications?.escalationAfterHours ?? defaultSettings.notifications.escalationAfterHours) || defaultSettings.notifications.escalationAfterHours),
+      channels: {
+        inAppTaskAssigned: bool(incoming.notifications?.channels?.inAppTaskAssigned, defaultSettings.notifications.channels.inAppTaskAssigned),
+        inAppTaskNew: bool(incoming.notifications?.channels?.inAppTaskNew, defaultSettings.notifications.channels.inAppTaskNew),
+        inAppProjectNew: bool(incoming.notifications?.channels?.inAppProjectNew, defaultSettings.notifications.channels.inAppProjectNew),
+        inAppChatMessage: bool(incoming.notifications?.channels?.inAppChatMessage, defaultSettings.notifications.channels.inAppChatMessage),
+        inAppMention: bool(incoming.notifications?.channels?.inAppMention, defaultSettings.notifications.channels.inAppMention),
+        inAppSystem: bool(incoming.notifications?.channels?.inAppSystem, defaultSettings.notifications.channels.inAppSystem),
+        soundOnMessage: bool(incoming.notifications?.channels?.soundOnMessage, defaultSettings.notifications.channels.soundOnMessage),
+      },
     },
     calendar: {
       showTasks: Boolean(incoming.calendar?.showTasks ?? defaultSettings.calendar.showTasks),
       showProjects: Boolean(incoming.calendar?.showProjects ?? defaultSettings.calendar.showProjects),
       defaultRange: String(incoming.calendar?.defaultRange ?? defaultSettings.calendar.defaultRange),
     },
+    accounting: {
+      transactionCategories: normalizeTransactionCategories(
+        incoming.accounting?.transactionCategories,
+        defaultSettings.accounting.transactionCategories,
+      ),
+    },
     team: {
       defaultAppRole: String(incoming.team?.defaultAppRole ?? defaultSettings.team.defaultAppRole),
       memberCanEditTasks: Boolean(incoming.team?.memberCanEditTasks ?? defaultSettings.team.memberCanEditTasks),
       memberCanDeleteTasks: Boolean(incoming.team?.memberCanDeleteTasks ?? defaultSettings.team.memberCanDeleteTasks),
+      permissions: {
+        admin: normalizePermissionRole(incoming.team?.permissions?.admin, defaultSettings.team.permissions.admin),
+        manager: normalizePermissionRole(incoming.team?.permissions?.manager, defaultSettings.team.permissions.manager),
+        member: normalizePermissionRole(incoming.team?.permissions?.member, defaultSettings.team.permissions.member),
+      },
+    },
+    workflow: {
+      requireBlockedReason: bool(incoming.workflow?.requireBlockedReason, defaultSettings.workflow.requireBlockedReason),
+      allowedTransitions: normalizeTransitions(incoming.workflow?.allowedTransitions, defaultSettings.workflow.allowedTransitions),
+    },
+    integrations: {
+      webhook: {
+        enabled: bool(incoming.integrations?.webhook?.enabled, defaultSettings.integrations.webhook.enabled),
+        url: String(incoming.integrations?.webhook?.url ?? defaultSettings.integrations.webhook.url).trim(),
+        secret: String(incoming.integrations?.webhook?.secret ?? defaultSettings.integrations.webhook.secret).trim().slice(0, 256),
+        events: Array.from(
+          new Set(
+            (Array.isArray(incoming.integrations?.webhook?.events)
+              ? incoming.integrations.webhook.events
+              : defaultSettings.integrations.webhook.events
+            )
+              .map((item) => String(item ?? "").trim())
+              .filter((item) =>
+                [
+                  "task.created",
+                  "task.updated",
+                  "task.deleted",
+                  "project.created",
+                  "project.updated",
+                  "project.deleted",
+                  "chat.message.created",
+                  "chat.mention.created",
+                ].includes(item),
+              ),
+          ),
+        ),
+      },
     },
   };
 }
@@ -231,6 +427,7 @@ export function readStore() {
   try {
     const parsed = JSON.parse(raw);
     const result = {
+      teams: normalizeTeams(parsed.teams),
       projects: Array.isArray(parsed.projects) ? parsed.projects : [],
       tasks: normalizeTasks(parsed.tasks),
       teamMembers: normalizeTeamMembers(parsed.teamMembers),
@@ -243,17 +440,25 @@ export function readStore() {
           : {},
       accountingBudgetHistory: Array.isArray(parsed.accountingBudgetHistory) ? parsed.accountingBudgetHistory : [],
       accountingAccounts: Array.isArray(parsed.accountingAccounts) ? parsed.accountingAccounts : [],
+      hrProfiles: Array.isArray(parsed.hrProfiles) ? parsed.hrProfiles : [],
+      hrLeaveRequests: Array.isArray(parsed.hrLeaveRequests) ? parsed.hrLeaveRequests : [],
+      hrAttendanceRecords: Array.isArray(parsed.hrAttendanceRecords) ? parsed.hrAttendanceRecords : [],
       chatConversations: Array.isArray(parsed.chatConversations) ? parsed.chatConversations : [],
       chatMessages: Array.isArray(parsed.chatMessages) ? parsed.chatMessages : [],
       auditLogs: normalizeAuditLogs(parsed.auditLogs),
     };
     const withAdmin = ensureAdminAccount(result);
-    if (withAdmin.teamMembers.length !== result.teamMembers.length) {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(withAdmin, null, 2), "utf8");
+    const withTeams = ensureTeamAssignments(withAdmin);
+    if (
+      withAdmin.teamMembers.length !== result.teamMembers.length ||
+      JSON.stringify(withTeams.teams) !== JSON.stringify(result.teams) ||
+      JSON.stringify(withTeams.teamMembers.map((m) => m.teamIds)) !== JSON.stringify(result.teamMembers.map((m) => m.teamIds))
+    ) {
+      fs.writeFileSync(DATA_FILE, JSON.stringify(withTeams, null, 2), "utf8");
     }
-    return withAdmin;
+    return withTeams;
   } catch {
-    const fallback = ensureAdminAccount({ ...defaultData, teamMembers: [] });
+    const fallback = ensureTeamAssignments(ensureAdminAccount({ ...defaultData, teamMembers: [] }));
     fs.writeFileSync(DATA_FILE, JSON.stringify(fallback, null, 2), "utf8");
     return fallback;
   }
@@ -263,12 +468,18 @@ export function writeStore(next) {
   ensureStore();
   const normalized = {
     ...next,
+    teams: normalizeTeams(next?.teams),
     tasks: normalizeTasks(next?.tasks),
     teamMembers: normalizeTeamMembers(next?.teamMembers),
     settings: normalizeSettings(next?.settings),
+    hrProfiles: Array.isArray(next?.hrProfiles) ? next.hrProfiles : [],
+    hrLeaveRequests: Array.isArray(next?.hrLeaveRequests) ? next.hrLeaveRequests : [],
+    hrAttendanceRecords: Array.isArray(next?.hrAttendanceRecords) ? next.hrAttendanceRecords : [],
     auditLogs: normalizeAuditLogs(next?.auditLogs),
   };
-  fs.writeFileSync(DATA_FILE, JSON.stringify(ensureAdminAccount(normalized), null, 2), "utf8");
+  const withAdmin = ensureAdminAccount(normalized);
+  const withTeams = ensureTeamAssignments(withAdmin);
+  fs.writeFileSync(DATA_FILE, JSON.stringify(withTeams, null, 2), "utf8");
 }
 
 export function getDefaultStore() {
