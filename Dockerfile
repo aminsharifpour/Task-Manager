@@ -1,24 +1,19 @@
-FROM node:22-alpine AS build
+FROM node:22-alpine AS deps
 WORKDIR /app
 
 COPY package*.json ./
 RUN npm ci
-
-COPY . .
-RUN npm run build
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=8787
+ENV SERVE_CLIENT=false
 
-COPY --from=build /app/package*.json ./
-RUN npm ci --omit=dev
-
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/server ./server
+COPY --from=deps /app/node_modules ./node_modules
+COPY package*.json ./
+COPY apps/api ./apps/api
 
 EXPOSE 8787
-CMD ["npm", "start"]
-
+CMD ["node", "apps/api/src/index.js"]

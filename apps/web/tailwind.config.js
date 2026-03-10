@@ -1,9 +1,13 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwindcssAnimate from "tailwindcss-animate";
+
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: ["class"],
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: [path.join(currentDir, "index.html"), path.join(currentDir, "src/**/*.{ts,tsx}")],
   theme: {
   	extend: {
   		borderRadius: {

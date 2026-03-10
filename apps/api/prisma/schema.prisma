@@ -1,0 +1,397 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AppRole {
+  admin
+  manager
+  member
+}
+
+enum TaskStatus {
+  todo
+  doing
+  blocked
+  done
+}
+
+enum HrContractType {
+  full_time
+  part_time
+  contract
+  internship
+}
+
+enum HrLeaveType {
+  annual
+  sick
+  hourly
+  unpaid
+  marriage
+  parental
+  mission
+  other
+}
+
+enum HrLeaveStatus {
+  pending
+  approved
+  rejected
+}
+
+enum HrAttendanceStatus {
+  present
+  absent
+  leave
+  mission
+  remote
+}
+
+enum AccountingType {
+  income
+  expense
+}
+
+enum ConversationType {
+  direct
+  group
+}
+
+model Team {
+  id          String           @id
+  name        String
+  description String?
+  isActive    Boolean          @default(true)
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  memberships TeamMembership[]
+  projects    ProjectTeam[]
+}
+
+model User {
+  id                     String                    @id
+  fullName               String
+  roleTitle              String?
+  email                  String?
+  phone                  String                    @unique
+  bio                    String?
+  avatarUrl              String?
+  appRole                AppRole                   @default(member)
+  isActive               Boolean                   @default(true)
+  passwordHash           String
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+  profile                HrProfile?
+  teams                  TeamMembership[]
+  assignedPrimaryTasks   Task[]                    @relation("TaskPrimaryAssignee")
+  assignedSecondaryTasks Task[]                    @relation("TaskSecondaryAssignee")
+  announcedTasks         Task[]                    @relation("TaskAssigner")
+  taskComments           TaskWorkflowComment[]
+  ownedProjects          Project[]
+  projectMemberships     ProjectMember[]
+  leaveRequests          HrLeaveRequest[]          @relation("LeaveRequester")
+  leaveReviewed          HrLeaveRequest[]          @relation("LeaveReviewer")
+  attendanceRecords      HrAttendanceRecord[]
+  notifications          Notification[]
+  accounts               AccountingAccount[]
+  transactions           AccountingTransaction[]
+  conversationLinks      ChatConversationMember[]
+  sentMessages           ChatMessage[]             @relation("ChatMessageSender")
+  messageReactions       ChatMessageReaction[]
+  presenceEvents         PresenceEvent[]
+}
+
+model TeamMembership {
+  id        String   @id
+  teamId    String
+  userId    String
+  createdAt DateTime @default(now())
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+model Project {
+  id                    String                 @id
+  name                  String
+  description           String?
+  ownerId               String
+  workflowTemplateSteps Json?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  owner                 User                   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  members               ProjectMember[]
+  teams                 ProjectTeam[]
+  tasks                 Task[]
+}
+
+model ProjectMember {
+  id        String   @id
+  projectId String
+  userId    String
+  createdAt DateTime @default(now())
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model ProjectTeam {
+  id        String   @id
+  projectId String
+  teamId    String
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, teamId])
+}
+
+model Task {
+  id                  String                @id
+  title               String
+  description         String?
+  assignerId          String
+  assigneePrimaryId   String
+  assigneeSecondaryId String?
+  projectId           String?
+  announceDate        DateTime?
+  executionDate       DateTime?
+  status              TaskStatus           @default(todo)
+  blockedReason       String?
+  isDone              Boolean              @default(false)
+  workflowSteps       Json?
+  workflowCurrentStep Int                  @default(0)
+  workflowPendingAssigneeIds Json?
+  workflowCompletedAt DateTime?
+  lastStatusChangedAt DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  assigner            User                 @relation("TaskAssigner", fields: [assignerId], references: [id], onDelete: Restrict)
+  assigneePrimary     User                 @relation("TaskPrimaryAssignee", fields: [assigneePrimaryId], references: [id], onDelete: Restrict)
+  assigneeSecondary   User?                @relation("TaskSecondaryAssignee", fields: [assigneeSecondaryId], references: [id], onDelete: SetNull)
+  project             Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  workflowComments    TaskWorkflowComment[]
+}
+
+model TaskWorkflowComment {
+  id        String   @id
+  taskId     String
+  stepId     String
+  authorId   String
+  text       String
+  createdAt  DateTime @default(now())
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+model MeetingMinute {
+  id         String   @id
+  title      String
+  date       DateTime
+  attendees  String?
+  summary    String
+  decisions  String?
+  followUps  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model HrProfile {
+  userId                  String         @id
+  employeeCode            String?
+  department              String?
+  managerId               String?
+  hireDate                DateTime?
+  birthDate               DateTime?
+  nationalId              String?
+  contractType            HrContractType @default(full_time)
+  salaryBase              Decimal?       @db.Decimal(18, 2)
+  education               String?
+  skills                  String?
+  emergencyContactName    String?
+  emergencyContactPhone   String?
+  notes                   String?
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  user                    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model HrLeaveRequest {
+  id          String        @id
+  userId       String
+  reviewerId   String?
+  leaveType    HrLeaveType
+  fromDate     DateTime
+  toDate       DateTime
+  hours        Decimal?      @db.Decimal(10, 2)
+  reason       String?
+  status       HrLeaveStatus @default(pending)
+  reviewNote   String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  requester    User          @relation("LeaveRequester", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer     User?         @relation("LeaveReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+}
+
+model HrAttendanceRecord {
+  id         String             @id
+  userId      String
+  date        DateTime
+  checkIn     String?
+  checkOut    String?
+  workHours   Decimal?           @db.Decimal(10, 2)
+  status      HrAttendanceStatus @default(present)
+  note        String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+}
+
+model AccountingAccount {
+  id          String                 @id
+  userId       String
+  name         String
+  bankName     String?
+  cardLast4    String?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions AccountingTransaction[]
+}
+
+model AccountingTransaction {
+  id         String         @id
+  userId      String
+  accountId   String?
+  type        AccountingType
+  title       String
+  amount      Decimal       @db.Decimal(18, 2)
+  category    String?
+  date        DateTime
+  timeHHMM    String?
+  note        String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account     AccountingAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+}
+
+model AccountingBudget {
+  id         String   @id
+  monthKey    String   @unique
+  amount      Decimal  @db.Decimal(18, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AccountingBudgetHistory {
+  id         String   @id
+  monthKey    String
+  amount      Decimal  @db.Decimal(18, 2)
+  createdAt   DateTime @default(now())
+}
+
+model ChatConversation {
+  id             String                   @id
+  type           ConversationType
+  title          String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  participants   ChatConversationMember[]
+  messages       ChatMessage[]
+}
+
+model ChatConversationMember {
+  id              String           @id
+  conversationId  String
+  userId          String
+  unreadCount     Int              @default(0)
+  joinedAt        DateTime         @default(now())
+  conversation    ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+}
+
+model ChatMessage {
+  id              String                @id
+  conversationId  String
+  senderId        String
+  text            String?
+  attachments     Json?
+  mentions        Json?
+  replyToMessageId String?
+  forwardedFromId  String?
+  isDeleted       Boolean               @default(false)
+  readByIds       Json?
+  editedAt        DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  conversation    ChatConversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender          User                  @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  reactions       ChatMessageReaction[]
+}
+
+model ChatMessageReaction {
+  id         String   @id
+  messageId   String
+  userId      String
+  emoji       String
+  createdAt   DateTime @default(now())
+  message     ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+}
+
+model Notification {
+  id         String   @id
+  userId      String
+  type        String
+  title       String
+  body        String?
+  payload     Json?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AppSetting {
+  key       String   @id
+  payload   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id            String   @id
+  actorUserId   String?
+  actorFullName String?
+  actorRole     String?
+  entityType    String
+  entityId      String
+  action        String
+  summary       String?
+  meta          Json?
+  createdAt     DateTime @default(now())
+}
+
+model PresenceEvent {
+  id         String   @id
+  userId      String
+  status      String
+  taskId      String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

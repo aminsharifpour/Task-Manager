@@ -2,15 +2,25 @@
 import path from "node:path";
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
+import { fileURLToPath } from "node:url";
 
-const DEFAULT_DATA_FILE = path.resolve(process.cwd(), "server", "data", "db.json");
+const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const API_ROOT = path.resolve(CURRENT_DIR, "..");
+const PROJECT_ROOT = path.resolve(API_ROOT, "..", "..");
+const LEGACY_SERVER_ROOT = path.resolve(PROJECT_ROOT, "server");
+const LEGACY_DATA_FILE = path.resolve(LEGACY_SERVER_ROOT, "data", "db.json");
+const DEFAULT_DATA_FILE = fs.existsSync(path.resolve(API_ROOT, "data", "db.json"))
+  ? path.resolve(API_ROOT, "data", "db.json")
+  : LEGACY_DATA_FILE;
 const DATA_FILE = (() => {
   const fromEnv = String(process.env.TASK_APP_DATA_FILE || "").trim();
   if (!fromEnv) return DEFAULT_DATA_FILE;
   return path.isAbsolute(fromEnv) ? fromEnv : path.resolve(process.cwd(), fromEnv);
 })();
 const DATA_DIR = path.dirname(DATA_FILE);
-const UPLOADS_DIR = path.resolve(process.cwd(), "server", "data", "uploads");
+const UPLOADS_DIR = fs.existsSync(path.resolve(API_ROOT, "data", "uploads"))
+  ? path.resolve(API_ROOT, "data", "uploads")
+  : path.resolve(LEGACY_SERVER_ROOT, "data", "uploads");
 
 const defaultSettings = {
   general: {
