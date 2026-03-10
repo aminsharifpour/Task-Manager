@@ -4,16 +4,72 @@
 
 @font-face {
   font-family: "YekanBakh";
-  src:
-    local("Yekan Bakh"),
-    local("YekanBakh"),
-    local("YekanBakhFaNum");
+  src: url("/fonts/YekanBakh-Thin.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "YekanBakh";
+  src: url("/fonts/YekanBakh-Light.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "YekanBakh";
+  src: url("/fonts/YekanBakh-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "YekanBakh";
+  src: url("/fonts/YekanBakh-SemiBold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "YekanBakh";
+  src: url("/fonts/YekanBakh-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "YekanBakh";
+  src: url("/fonts/YekanBakh-ExtraBold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 800;
   font-display: swap;
 }
 
 @layer base {
   :root {
-    --app-font: "YekanBakh", "Yekan Bakh", "YekanBakhFaNum", "yekan", system-ui, sans-serif;
+    --app-font: "YekanBakh";
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --radius-sm: 0.625rem;
+    --radius-md: 0.875rem;
+    --radius-lg: 1.125rem;
+    --status-success-bg: 145 65% 95%;
+    --status-success-fg: 157 72% 25%;
+    --status-warning-bg: 38 100% 95%;
+    --status-warning-fg: 28 88% 34%;
+    --status-error-bg: 0 88% 96%;
+    --status-error-fg: 0 75% 43%;
+    --status-info-bg: 204 88% 95%;
+    --status-info-fg: 208 84% 34%;
     --background: 36 33% 97%;
     --foreground: 20 16% 12%;
     --card: 0 0% 100%;
@@ -45,6 +101,14 @@
   }
 
   .dark {
+    --status-success-bg: 153 54% 17%;
+    --status-success-fg: 147 64% 78%;
+    --status-warning-bg: 35 76% 18%;
+    --status-warning-fg: 40 86% 78%;
+    --status-error-bg: 0 68% 19%;
+    --status-error-fg: 0 82% 84%;
+    --status-info-bg: 210 64% 19%;
+    --status-info-fg: 204 84% 80%;
     --background: 222 29% 11%;
     --foreground: 210 20% 92%;
     --card: 223 22% 15%;
@@ -125,6 +189,16 @@
   #root * {
     font-family: var(--app-font);
   }
+
+  input[type="number"],
+  code,
+  kbd,
+  samp,
+  pre,
+  .font-mono {
+    font-family: var(--app-font) !important;
+    font-variant-numeric: normal;
+  }
 }
 
 @layer components {
@@ -134,11 +208,7 @@
   }
 
   .scene-decor {
-    pointer-events: none;
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    overflow: hidden;
+    display: none;
   }
 
   .scene-orb {
@@ -147,7 +217,7 @@
     border-radius: 9999px;
     opacity: 0.35;
     mix-blend-mode: multiply;
-    animation: float-drift 14s ease-in-out infinite;
+    animation: none;
   }
 
   .scene-orb-a {
@@ -189,57 +259,36 @@
   .liquid-glass {
     position: relative;
     overflow: hidden;
-    background: linear-gradient(
-      135deg,
-      hsl(var(--card) / 0.66),
-      hsl(var(--card) / 0.36)
-    );
-    border: 1px solid hsl(var(--border) / 0.5);
-    box-shadow:
-      0 12px 36px -18px hsl(var(--hero-1) / 0.38),
-      0 10px 22px -16px hsl(var(--hero-2) / 0.25),
-      inset 0 1px 0 hsl(0 0% 100% / 0.42);
-    backdrop-filter: blur(14px) saturate(145%);
-    -webkit-backdrop-filter: blur(14px) saturate(145%);
-    transition: box-shadow 280ms ease, border-color 280ms ease;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    transition: none;
   }
 
   .liquid-glass::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: linear-gradient(
-      120deg,
-      transparent 0%,
-      hsl(0 0% 100% / 0.24) 40%,
-      transparent 70%
-    );
-    transform: translateX(-120%);
-    animation: glass-shimmer 8.5s linear infinite;
+    content: none;
   }
 
   .lift-on-hover {
-    transition: transform 220ms ease, box-shadow 280ms ease;
+    transition: none;
   }
 
   .lift-on-hover:hover {
-    transform: translateY(-3px) scale(1.003);
-    box-shadow:
-      0 20px 48px -24px hsl(var(--hero-1) / 0.5),
-      0 12px 34px -24px hsl(var(--hero-2) / 0.35),
-      inset 0 1px 0 hsl(0 0% 100% / 0.45);
-    border-color: hsl(var(--hero-2) / 0.3);
+    transform: none;
+    box-shadow: none;
+    border-color: hsl(var(--border));
   }
 
   .menu-item-glass {
     background: linear-gradient(140deg, hsl(var(--card) / 0.54), hsl(var(--card) / 0.2));
     border: 1px solid transparent;
-    transition: transform 180ms ease, border-color 180ms ease, background 220ms ease;
+    transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), border-color 280ms cubic-bezier(0.22, 1, 0.36, 1), background 320ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .menu-item-glass:hover:not(:disabled) {
-    transform: translateX(-2px);
+    transform: translateX(-1px);
     border-color: hsl(var(--hero-1) / 0.28);
     background: linear-gradient(140deg, hsl(var(--card) / 0.85), hsl(var(--card) / 0.38));
   }
@@ -255,6 +304,281 @@
     color: hsl(var(--primary-foreground));
     border-color: hsl(var(--primary) / 0.72);
     transform: translateX(0);
+  }
+
+  .menu-item-icon,
+  .click-icon,
+  .click-avatar {
+    transform-origin: center;
+    will-change: transform;
+  }
+
+  .menu-item-glass:active .menu-item-icon {
+    animation: icon-jelly 420ms ease-out;
+  }
+
+  .action-icon-btn:active .click-icon,
+  .action-icon-btn:active .click-avatar {
+    animation: icon-pop 380ms ease-out;
+  }
+
+  .action-icon-btn:active {
+    transform: translateY(-1px);
+  }
+
+  .app-shell .lucide {
+    transform-origin: center;
+    will-change: transform;
+    transition: color 240ms cubic-bezier(0.22, 1, 0.36, 1), filter 260ms cubic-bezier(0.22, 1, 0.36, 1), transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .app-context-menu .app-context-menu-item {
+    transition:
+      background-color 170ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 170ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .app-context-menu .app-context-menu-item:not(:disabled):hover {
+    transform: translateX(-2px);
+  }
+
+  .app-context-menu .app-context-menu-item:not(:disabled):active {
+    transform: translateX(-1px) scale(0.99);
+  }
+
+  .app-context-menu .app-context-menu-icon {
+    transform-origin: center;
+    will-change: transform;
+    transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), filter 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .app-context-menu .app-context-menu-item:not(:disabled):hover .app-context-menu-icon {
+    animation: icon-default-pop 440ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-context-menu .app-context-menu-item:not(:disabled):hover .lucide-trash2 {
+    animation: icon-danger-shake 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-context-menu .app-context-menu-item:not(:disabled):hover .lucide-reply,
+  .app-context-menu .app-context-menu-item:not(:disabled):hover .lucide-forward {
+    animation: icon-arrow-swipe 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-context-menu .app-context-menu-item:not(:disabled):hover .lucide-message-square {
+    animation: icon-chat-bounce 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-context-menu .app-context-menu-item:not(:disabled):hover .lucide-pencil,
+  .app-context-menu .app-context-menu-item:not(:disabled):hover .lucide-file-text,
+  .app-context-menu .app-context-menu-item:not(:disabled):hover .lucide-folder-kanban {
+    animation: icon-file-flip 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell .overflow-x-auto.rounded-xl.border {
+    border-radius: var(--radius-lg);
+    border-color: hsl(var(--border) / 0.92);
+    background: linear-gradient(180deg, hsl(var(--card) / 0.92), hsl(var(--card) / 0.84));
+  }
+
+  .app-shell table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .app-shell table thead th {
+    user-select: none;
+    cursor: pointer;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    backdrop-filter: blur(4px);
+    background: hsl(var(--muted) / 0.68);
+  }
+
+  .app-shell table thead th[data-sort-direction]::before {
+    content: "↕";
+    margin-left: 0.35rem;
+    font-size: 0.7rem;
+    opacity: 0.45;
+  }
+
+  .app-shell table thead th[data-sort-direction="asc"]::before {
+    content: "↑";
+    opacity: 0.95;
+  }
+
+  .app-shell table thead th[data-sort-direction="desc"]::before {
+    content: "↓";
+    opacity: 0.95;
+  }
+
+  .app-shell table tbody tr:nth-child(2n) {
+    background: hsl(var(--muted) / 0.12);
+  }
+
+  .app-shell table tbody tr:hover {
+    background: hsl(var(--primary) / 0.07) !important;
+  }
+
+  .dark .app-shell table thead th {
+    background: hsl(var(--muted) / 0.82);
+  }
+
+  .dark .app-shell table tbody tr:nth-child(2n) {
+    background: hsl(var(--muted) / 0.2);
+  }
+
+  .dark .visual-hero-image-wrap {
+    border-color: hsl(var(--border) / 0.95);
+    background: linear-gradient(170deg, hsl(var(--card) / 0.92), hsl(var(--secondary) / 0.55));
+  }
+
+  .app-shell .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  .view-content-enter {
+    animation: view-content-enter 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes view-content-enter {
+    0% {
+      opacity: 0;
+      transform: translateY(8px) scale(0.995);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide {
+    animation: icon-default-pop 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-bell {
+    animation: icon-ring 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-message-square {
+    animation: icon-chat-bounce 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-folder-kanban,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-file-text,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-file-spreadsheet {
+    animation: icon-file-flip 580ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-calendar-days {
+    animation: icon-calendar-drop 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-layout-dashboard,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-bar-chart3 {
+    animation: icon-dashboard-rise 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-settings {
+    animation: icon-gear-spin 760ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-wallet-cards,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-download {
+    animation: icon-wallet-swing 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-user-square2,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-users,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-at-sign {
+    animation: icon-user-nod 500ms ease-out both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-trash2 {
+    animation: icon-danger-shake 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-plus,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-check-check,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-check-circle2 {
+    animation: icon-confirm-pop 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-sun,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-moon {
+    animation: icon-theme-orbit 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-reply,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-forward {
+    animation: icon-arrow-swipe 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-paperclip,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-mic,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-smile-plus {
+    animation: icon-chat-tools 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-history,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-activity,
+  .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide-plug-zap {
+    animation: icon-pulse-zap 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    filter: drop-shadow(0 0 6px hsl(var(--hero-1) / 0.32));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .app-shell .lucide,
+    .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide,
+    .app-context-menu .app-context-menu-item,
+    .app-context-menu .app-context-menu-icon,
+    .app-context-menu .app-context-menu-item:hover .app-context-menu-icon {
+      animation: none !important;
+      transition: none !important;
+      transform: none !important;
+      filter: none !important;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .app-shell .lucide {
+      transition-duration: 120ms;
+    }
+
+    .app-shell .overflow-x-auto > table {
+      min-width: max(640px, 100%);
+    }
+
+    .app-shell .overflow-x-auto > table thead th,
+    .app-shell .overflow-x-auto > table tbody td {
+      white-space: nowrap;
+    }
+
+    .app-shell .overflow-x-auto > table thead th {
+      font-size: 0.72rem;
+      line-height: 1.1rem;
+      padding: 0.55rem 0.5rem;
+    }
+
+    .app-shell .overflow-x-auto > table tbody td {
+      font-size: 0.74rem;
+      line-height: 1.2rem;
+      padding: 0.48rem 0.5rem;
+    }
+
+    .app-shell :is(button, a, [role="button"], .menu-item-glass):hover .lucide {
+      animation-duration: 280ms !important;
+      animation-timing-function: ease-out !important;
+      filter: none !important;
+    }
+
+    .menu-item-glass:active .menu-item-icon,
+    .action-icon-btn:active .click-icon,
+    .action-icon-btn:active .click-avatar {
+      animation-duration: 240ms !important;
+    }
   }
 
   .spark-ring {
@@ -277,19 +601,66 @@
   }
 
   .animate-fade-up {
-    animation: fade-up 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation: none;
   }
 
   .animate-fade-side {
-    animation: fade-side 560ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation: none;
   }
 
   .animate-scale-in {
-    animation: scale-in 260ms ease-out both;
+    animation: none;
   }
 
   .animate-pulse-soft {
-    animation: pulse-soft 2.8s ease-in-out infinite;
+    animation: none;
+  }
+
+  .visual-hero {
+    border-color: hsl(var(--border) / 0.9);
+    background: linear-gradient(160deg, hsl(var(--card) / 0.96), hsl(var(--card) / 0.9));
+  }
+
+  .visual-hero-accent {
+    opacity: 0.55;
+    transition: opacity 360ms cubic-bezier(0.22, 1, 0.36, 1), filter 360ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .visual-hero-image-wrap img {
+    transform: scale(1.01);
+    transition: transform 220ms ease;
+  }
+
+  .visual-hero:hover .visual-hero-image-wrap img {
+    transform: scale(1.04);
+  }
+
+  .dark .visual-hero {
+    border-color: hsl(var(--border) / 0.95);
+    background:
+      linear-gradient(145deg, hsl(222 28% 17% / 0.96), hsl(222 24% 14% / 0.94)),
+      linear-gradient(180deg, hsl(var(--card) / 0.9), hsl(var(--card) / 0.86));
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04);
+  }
+
+  .dark .visual-hero-accent {
+    opacity: 0.25;
+    filter: saturate(0.72) brightness(0.7);
+  }
+
+  .dark .visual-hero-image-wrap {
+    border-color: hsl(var(--border) / 0.95) !important;
+    background: hsl(222 24% 13% / 0.92) !important;
+    box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 0.03);
+  }
+
+  .dark .visual-hero-image-wrap img {
+    filter: saturate(0.84) brightness(0.9) contrast(1.04);
+  }
+
+  .dark .visual-hero .bg-background\/70 {
+    background: hsl(222 22% 16% / 0.88) !important;
+    border-color: hsl(var(--border) / 0.95) !important;
   }
 }
 
@@ -334,6 +705,139 @@
   50% {
     box-shadow: 0 0 0 10px hsl(var(--primary) / 0);
   }
+}
+
+@keyframes icon-jelly {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  30% {
+    transform: scale(1.26) rotate(-10deg);
+  }
+  55% {
+    transform: scale(0.94) rotate(8deg);
+  }
+  78% {
+    transform: scale(1.06) rotate(-4deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes icon-pop {
+  0% {
+    transform: scale(1) translateY(0);
+  }
+  40% {
+    transform: scale(1.2) translateY(-1px);
+  }
+  70% {
+    transform: scale(0.96) translateY(0);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes icon-default-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+@keyframes icon-ring {
+  0% { transform: rotate(0deg); }
+  20% { transform: rotate(14deg); }
+  40% { transform: rotate(-12deg); }
+  60% { transform: rotate(8deg); }
+  80% { transform: rotate(-5deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes icon-chat-bounce {
+  0% { transform: translateY(0) scale(1); }
+  35% { transform: translateY(-2px) scale(1.1); }
+  68% { transform: translateY(1px) scale(0.98); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes icon-file-flip {
+  0% { transform: perspective(120px) rotateY(0deg) scale(1); }
+  50% { transform: perspective(120px) rotateY(-16deg) scale(1.08); }
+  100% { transform: perspective(120px) rotateY(0deg) scale(1); }
+}
+
+@keyframes icon-calendar-drop {
+  0% { transform: translateY(0) scale(1); }
+  35% { transform: translateY(1px) scale(0.97); }
+  62% { transform: translateY(-2px) scale(1.08); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes icon-dashboard-rise {
+  0% { transform: translateY(0) scale(1); }
+  45% { transform: translateY(-1px) scale(1.1); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes icon-gear-spin {
+  0% { transform: rotate(0deg) scale(1); }
+  65% { transform: rotate(110deg) scale(1.08); }
+  100% { transform: rotate(140deg) scale(1); }
+}
+
+@keyframes icon-wallet-swing {
+  0% { transform: rotate(0deg) scale(1); }
+  30% { transform: rotate(-8deg) scale(1.1); }
+  60% { transform: rotate(6deg) scale(1.04); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+@keyframes icon-user-nod {
+  0% { transform: translateY(0) scale(1); }
+  35% { transform: translateY(-2px) scale(1.12); }
+  75% { transform: translateY(1px) scale(0.97); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes icon-danger-shake {
+  0% { transform: translateX(0) scale(1); }
+  25% { transform: translateX(-2px) scale(1.08); }
+  50% { transform: translateX(2px) scale(1.06); }
+  75% { transform: translateX(-1px) scale(1.02); }
+  100% { transform: translateX(0) scale(1); }
+}
+
+@keyframes icon-confirm-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+
+@keyframes icon-theme-orbit {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(-20deg) scale(1.16); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+@keyframes icon-arrow-swipe {
+  0% { transform: translateX(0) scale(1); }
+  45% { transform: translateX(-3px) scale(1.12); }
+  100% { transform: translateX(0) scale(1); }
+}
+
+@keyframes icon-chat-tools {
+  0% { transform: scale(1) rotate(0deg); }
+  45% { transform: scale(1.14) rotate(-8deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+@keyframes icon-pulse-zap {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.16); }
+  70% { transform: scale(1.03); }
+  100% { transform: scale(1); }
 }
 
 @keyframes glass-shimmer {

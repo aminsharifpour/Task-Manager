@@ -1,0 +1,15 @@
+<svg width="1200" height="560" viewBox="0 0 1200 560" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="560" rx="32" fill="#F8FAFC"/>
+  <circle cx="1030" cy="120" r="130" fill="#CBD5E1"/>
+  <circle cx="170" cy="450" r="95" fill="#E2E8F0"/>
+  <rect x="120" y="100" width="960" height="360" rx="24" fill="#ffffff" stroke="#94A3B8" stroke-width="4"/>
+  <rect x="190" y="165" width="820" height="44" rx="12" fill="#F1F5F9"/>
+  <rect x="190" y="230" width="820" height="44" rx="12" fill="#F8FAFC"/>
+  <rect x="190" y="295" width="820" height="44" rx="12" fill="#F1F5F9"/>
+  <rect x="190" y="360" width="820" height="44" rx="12" fill="#F8FAFC"/>
+  <circle cx="225" cy="187" r="10" fill="#0EA5E9"/>
+  <circle cx="225" cy="252" r="10" fill="#10B981"/>
+  <circle cx="225" cy="317" r="10" fill="#F59E0B"/>
+  <circle cx="225" cy="382" r="10" fill="#EF4444"/>
+  <text x="870" y="188" fill="#334155" font-size="24" font-family="sans-serif">Audit Trail</text>
+</svg>
