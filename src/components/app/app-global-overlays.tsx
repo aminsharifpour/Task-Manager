@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BufferedInput, BufferedTextarea } from "@/components/ui/buffered-fields";
 import { AppContextMenu } from "@/components/ui/app-context-menu";
 import ToastStack from "@/components/app/toast-stack";
+import { resolveAssetUrl } from "@/lib/asset-url";
 
 export default function AppGlobalOverlays(props: any) {
   const {
@@ -49,7 +50,7 @@ export default function AppGlobalOverlays(props: any) {
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               {profileDraft.avatarDataUrl ? (
-                <img src={profileDraft.avatarDataUrl} alt="avatar" className="h-14 w-14 rounded-full border object-cover" />
+                <img src={resolveAssetUrl(profileDraft.avatarDataUrl)} alt="avatar" className="h-14 w-14 rounded-full border object-cover" />
               ) : (
                 <div className="flex h-14 w-14 items-center justify-center rounded-full border bg-muted text-sm font-semibold">
                   {memberInitials(profileDraft.fullName)}

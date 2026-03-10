@@ -47,7 +47,7 @@ type UseAppBootstrapLoadDeps<
   setHrAttendanceRecords: Dispatch<SetStateAction<THrAttendance[]>>;
   setHrSummary: Dispatch<SetStateAction<THrSummary | null>>;
   setAuthToken: (value: string) => void;
-  setAuthUser: (value: null) => void;
+  setAuthUser: Dispatch<SetStateAction<any | null>>;
   setAuthError: (value: string) => void;
   setKnownTaskIds: (ids: string[]) => void;
   setKnownProjectIds: (ids: string[]) => void;
@@ -200,6 +200,16 @@ export function useAppBootstrapLoad<
         setProjects(normalizedProjects);
         setTeamMembers(teamMembersData);
         setChatConversations(normalizedConversations);
+        setTransactions(transactionsData);
+        setAccounts(accountsData);
+        setBudgetHistory(budgetHistoryData);
+        setTeams(teamsData);
+        setSettingsDraft(mergeSettingsWithDefaults(settingsData as TSettings | null | undefined));
+        setInboxData(inboxPayload);
+        setHrProfiles(Array.isArray(hrProfilesData) ? hrProfilesData : []);
+        setHrLeaveRequests(Array.isArray(hrLeavesData) ? hrLeavesData : []);
+        setHrAttendanceRecords(Array.isArray(hrAttendanceData) ? hrAttendanceData : []);
+        setHrSummary(hrSummaryData ?? null);
         setKnownTaskIds(tasksData.map((t) => t.id));
         setKnownProjectIds(normalizedProjects.map((p) => p.id));
         setKnownConversationIds(normalizedConversations.map((c) => c.id));
@@ -214,28 +224,23 @@ export function useAppBootstrapLoad<
             : latestConversationId;
         setSelectedConversationId(preferredConversationId);
         if (preferredConversationId) {
-          const rows = await apiRequest<TChatMessage[]>(buildMessagesPath(preferredConversationId));
-          if (!mounted) return;
-          const normalizedMessages: TChatMessage[] = rows.map((m) =>
-            m.senderId === authUserId ? m : { ...m, receivedAt: m.receivedAt || m.createdAt },
-          );
-          setChatMessages(normalizedMessages);
-          setChatHasMore(rows.length >= chatPageSize);
+          try {
+            const rows = await apiRequest<TChatMessage[]>(buildMessagesPath(preferredConversationId));
+            if (!mounted) return;
+            const normalizedMessages: TChatMessage[] = rows.map((m) =>
+              m.senderId === authUserId ? m : { ...m, receivedAt: m.receivedAt || m.createdAt },
+            );
+            setChatMessages(normalizedMessages);
+            setChatHasMore(rows.length >= chatPageSize);
+          } catch {
+            if (!mounted) return;
+            setChatMessages([]);
+            setChatHasMore(false);
+          }
         } else {
           setChatMessages([]);
           setChatHasMore(false);
         }
-
-        setTransactions(transactionsData);
-        setAccounts(accountsData);
-        setBudgetHistory(budgetHistoryData);
-        setTeams(teamsData);
-        setSettingsDraft(mergeSettingsWithDefaults(settingsData as TSettings | null | undefined));
-        setInboxData(inboxPayload);
-        setHrProfiles(Array.isArray(hrProfilesData) ? hrProfilesData : []);
-        setHrLeaveRequests(Array.isArray(hrLeavesData) ? hrLeavesData : []);
-        setHrAttendanceRecords(Array.isArray(hrAttendanceData) ? hrAttendanceData : []);
-        setHrSummary(hrSummaryData ?? null);
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error(error);

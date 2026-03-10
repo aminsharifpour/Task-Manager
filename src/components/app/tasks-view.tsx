@@ -1,5 +1,5 @@
 import { useMemo, useState, type ComponentType } from "react";
-import { Activity, CheckCircle2, FileText, Inbox, MessageSquareText, Pencil, Plus, Trash2 } from "lucide-react";
+import { Activity, CheckCheck, CheckCircle2, ChevronRight, FileText, Inbox, MessageSquareText, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { BufferedInput, BufferedTextarea } from "@/components/ui/buffered-fields";
 import { type WorkflowStepEditorRow } from "@/components/app/workflow-step-editor";
 import WorkflowStepConfigDialog from "@/components/app/workflow-step-config-dialog";
@@ -102,8 +103,20 @@ export default function TasksView(props: TasksViewProps) {
           approvalAssigneeMemberId: String(obj.approvalAssigneeMemberId ?? ""),
           onApprove: String(obj.onApprove ?? "next"),
           onReject: String(obj.onReject ?? "stay"),
+          stageStatus: (String(obj.stageStatus ?? "todo") as WorkflowStepEditorRow["stageStatus"]),
+          comments: Array.isArray(obj.comments)
+            ? obj.comments
+                .filter((comment) => comment && typeof comment === "object")
+                .map((comment, idx) => ({
+                  id: String((comment as Record<string, unknown>).id ?? `c-${idx + 1}`),
+                  text: String((comment as Record<string, unknown>).text ?? "").slice(0, 500),
+                  createdAt: String((comment as Record<string, unknown>).createdAt ?? new Date().toISOString()),
+                }))
+            : [],
           canvasX: Number.isFinite(Number(obj.canvasX)) ? Number(obj.canvasX) : undefined,
           canvasY: Number.isFinite(Number(obj.canvasY)) ? Number(obj.canvasY) : undefined,
+          dueDate: /^\d{4}-\d{2}-\d{2}$/.test(String(obj.dueDate ?? "").trim()) ? String(obj.dueDate ?? "").trim() : "",
+          approvalDeadline: /^\d{4}-\d{2}-\d{2}$/.test(String(obj.approvalDeadline ?? "").trim()) ? String(obj.approvalDeadline ?? "").trim() : "",
         });
       }
       return rows;
@@ -125,8 +138,12 @@ export default function TasksView(props: TasksViewProps) {
           approvalAssigneeMemberId: "",
           onApprove: "next",
           onReject: "stay",
+          stageStatus: "todo",
+          comments: [],
           canvasX: 32 + (index % 3) * 280,
           canvasY: 28 + Math.floor(index / 3) * 140,
+          dueDate: "",
+          approvalDeadline: "",
         }));
     }
   };
@@ -240,23 +257,24 @@ export default function TasksView(props: TasksViewProps) {
           {props.filteredTasks.length === 0 ? (
             <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">تسکی برای نمایش وجود ندارد.</div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border">
-              <table className="min-w-full text-sm">
+            <div className="rounded-xl border">
+              <table className="w-full table-fixed text-xs">
                 <thead className="bg-muted/40 text-muted-foreground">
                   <tr>
-                    <th className="px-3 py-2 text-right font-medium">عنوان</th>
-                    <th className="px-3 py-2 text-right font-medium">پروژه</th>
-                    <th className="px-3 py-2 text-right font-medium">مسئول</th>
-                    <th className="px-3 py-2 text-right font-medium">وضعیت</th>
-                    <th className="px-3 py-2 text-right font-medium">پایان</th>
-                    <th className="px-3 py-2 text-right font-medium">ورکفلو</th>
-                    <th className="px-3 py-2 text-right font-medium">عملیات</th>
+                    <th className="w-[24%] px-2 py-2 text-right font-medium">عنوان</th>
+                    <th className="w-[10%] px-2 py-2 text-right font-medium">پروژه</th>
+                    <th className="w-[10%] px-2 py-2 text-right font-medium">ابلاغ‌کننده</th>
+                    <th className="w-[10%] px-2 py-2 text-right font-medium">مسئول</th>
+                    <th className="w-[10%] px-2 py-2 text-right font-medium">وضعیت</th>
+                    <th className="w-[9%] px-2 py-2 text-right font-medium">پایان</th>
+                    <th className="w-[17%] px-2 py-2 text-right font-medium">ورکفلو</th>
+                    <th className="w-[20%] px-2 py-2 text-right font-medium">عملیات</th>
                   </tr>
                 </thead>
                 <tbody>
                   {props.tasksVirtual.windowState.paddingTop > 0 && (
                     <tr aria-hidden="true">
-                      <td colSpan={7} style={{ height: props.tasksVirtual.windowState.paddingTop }} />
+                      <td colSpan={8} style={{ height: props.tasksVirtual.windowState.paddingTop }} />
                     </tr>
                   )}
                   {props.visibleTaskRows.map((t) => (
@@ -296,22 +314,23 @@ export default function TasksView(props: TasksViewProps) {
                         ])
                       }
                     >
-                      <td className="max-w-[280px] px-3 py-2">
+                      <td className="px-2 py-2">
                         <p className={`font-semibold ${props.taskIsDone(t) ? "line-through text-muted-foreground" : ""}`}>{t.title}</p>
-                        <p className="truncate text-xs text-muted-foreground">{t.description}</p>
+                        <p className="line-clamp-2 text-[11px] text-muted-foreground">{t.description}</p>
                         {props.normalizeTaskStatus(t.status, Boolean(t.done)) === "blocked" && (
                           <p className="mt-1 text-[11px] text-destructive">دلیل بلاک: {t.blockedReason || "ثبت نشده"}</p>
                         )}
                       </td>
-                      <td className="px-3 py-2">{t.projectName}</td>
-                      <td className="px-3 py-2">{props.teamMemberNameById.get(t.assigneePrimaryId ?? "") ?? t.assigneePrimary}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-2"><span className="line-clamp-2">{t.projectName}</span></td>
+                      <td className="px-2 py-2"><span className="line-clamp-2">{props.teamMemberNameById.get(t.assignerId ?? "") ?? t.assigner}</span></td>
+                      <td className="px-2 py-2"><span className="line-clamp-2">{props.teamMemberNameById.get(t.assigneePrimaryId ?? "") ?? t.assigneePrimary}</span></td>
+                      <td className="px-2 py-2">
                         <Badge variant="outline" className={props.taskStatusBadgeClass(props.normalizeTaskStatus(t.status, Boolean(t.done)))}>
                           {props.taskStatusItems.find((x) => x.value === props.normalizeTaskStatus(t.status, Boolean(t.done)))?.label ?? "برای انجام"}
                         </Badge>
                       </td>
-                      <td className="px-3 py-2">{props.isoToJalali(t.executionDate)}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-2">{props.isoToJalali(t.executionDate)}</td>
+                      <td className="px-2 py-2">
                         {Array.isArray(t.workflowSteps) && t.workflowSteps.length > 0 ? (
                           <div className="space-y-1">
                             <p className="text-xs text-muted-foreground">
@@ -338,21 +357,37 @@ export default function TasksView(props: TasksViewProps) {
                           <span className="text-xs text-muted-foreground">بدون ورکفلو</span>
                         )}
                       </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2">
+                      <td className="px-2 py-2">
+                        <TooltipProvider delayDuration={100}>
+                        <div className="flex flex-wrap items-center gap-1">
                           {Array.isArray(t.workflowSteps) && t.workflowSteps.length > 0 && !props.taskIsDone(t) && (
                             <>
-                              <Button size="sm" variant="secondary" className="h-8 text-xs" onClick={() => void props.advanceTaskWorkflow(t.id)}>
-                                مرحله بعد
-                              </Button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button size="icon" variant="secondary" className="h-8 w-8" onClick={() => void props.advanceTaskWorkflow(t.id)}>
+                                    <ChevronRight className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>مرحله بعد</TooltipContent>
+                              </Tooltip>
                               {Array.isArray(t.workflowPendingAssigneeIds) && t.workflowPendingAssigneeIds.includes(props.currentUserId) && (
                                 <>
-                                  <Button size="sm" className="h-8 text-xs" onClick={() => void props.decideTaskWorkflow(t.id, "approve")}>
-                                    تایید
-                                  </Button>
-                                  <Button size="sm" variant="destructive" className="h-8 text-xs" onClick={() => void props.decideTaskWorkflow(t.id, "reject")}>
-                                    رد
-                                  </Button>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button size="icon" className="h-8 w-8" onClick={() => void props.decideTaskWorkflow(t.id, "approve")}>
+                                        <CheckCheck className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>تایید مرحله</TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button size="icon" variant="destructive" className="h-8 w-8" onClick={() => void props.decideTaskWorkflow(t.id, "reject")}>
+                                        <X className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>رد مرحله</TooltipContent>
+                                  </Tooltip>
                                 </>
                               )}
                             </>
@@ -364,7 +399,7 @@ export default function TasksView(props: TasksViewProps) {
                               void props.updateTaskStatus(t.id, value, reason);
                             }}
                           >
-                            <SelectTrigger className="h-8 w-[132px] text-xs">
+                            <SelectTrigger className="h-8 w-[122px] text-xs">
                               <SelectValue placeholder="وضعیت" />
                             </SelectTrigger>
                             <SelectContent>
@@ -375,22 +410,38 @@ export default function TasksView(props: TasksViewProps) {
                               ))}
                             </SelectContent>
                           </Select>
-                          <Button size="icon" variant="ghost" onClick={() => props.openEditTask(t)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" onClick={() => openWorkflowComments(t)}>
-                            <MessageSquareText className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="text-destructive" onClick={() => void props.removeTask(t.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="icon" variant="ghost" onClick={() => props.openEditTask(t)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>ویرایش تسک</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="icon" variant="ghost" onClick={() => openWorkflowComments(t)}>
+                                <MessageSquareText className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>کامنت‌های ورک‌فلو</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="icon" variant="ghost" className="text-destructive" onClick={() => void props.removeTask(t.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>حذف تسک</TooltipContent>
+                          </Tooltip>
                         </div>
+                        </TooltipProvider>
                       </td>
                     </tr>
                   ))}
                   {props.tasksVirtual.windowState.paddingBottom > 0 && (
                     <tr aria-hidden="true">
-                      <td colSpan={7} style={{ height: props.tasksVirtual.windowState.paddingBottom }} />
+                      <td colSpan={8} style={{ height: props.tasksVirtual.windowState.paddingBottom }} />
                     </tr>
                   )}
                 </tbody>
@@ -401,13 +452,15 @@ export default function TasksView(props: TasksViewProps) {
       </Card>
 
       {props.taskOpen && (
-        <Card className="liquid-glass lift-on-hover">
-          <CardHeader>
-            <CardTitle>افزودن تسک جدید</CardTitle>
-            <CardDescription>این فرم به صورت صفحه‌ای باز می‌شود تا فضای کافی برای تعریف تسک و ورک‌فلو داشته باشید.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4">
+        <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:static md:z-auto md:bg-transparent md:backdrop-blur-0">
+          <div className="flex h-full min-h-0 items-end justify-center p-2 md:block md:h-auto md:p-0">
+            <Card className="liquid-glass lift-on-hover flex h-[min(92dvh,920px)] w-full min-h-0 flex-col overflow-hidden md:h-auto">
+              <CardHeader className="shrink-0 border-b">
+                <CardTitle>افزودن تسک جدید</CardTitle>
+                <CardDescription>این فرم به صورت صفحه‌ای باز می‌شود تا فضای کافی برای تعریف تسک و ورک‌فلو داشته باشید.</CardDescription>
+              </CardHeader>
+              <CardContent className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y space-y-4 pb-24 md:pb-6" style={{ WebkitOverflowScrolling: "touch" }}>
+                <div className="grid gap-4">
               <BufferedInput placeholder="عنوان تسک" value={props.taskDraft.title} onCommit={(next) => props.setTaskDraft((p: any) => ({ ...p, title: next }))} />
               {props.taskErrors.title && <p className="text-xs text-destructive">{props.taskErrors.title}</p>}
               <BufferedTextarea placeholder="شرح تسک" value={props.taskDraft.description} onCommit={(next) => props.setTaskDraft((p: any) => ({ ...p, description: next }))} />
@@ -538,18 +591,22 @@ export default function TasksView(props: TasksViewProps) {
                   {props.taskErrors.executionDateIso && <p className="text-xs text-destructive">{props.taskErrors.executionDateIso}</p>}
                 </div>
               </div>
-              {props.taskErrors.form && <p className="text-xs text-destructive">{props.taskErrors.form}</p>}
-            </div>
-            <div className="flex items-center justify-end gap-2">
-              <Button variant="secondary" onClick={() => props.setTaskOpen(false)}>
-                انصراف
-              </Button>
-              <Button disabled={props.taskCreateBusy || props.taskOpenDisabled} onClick={props.addTask}>
-                {props.taskCreateBusy ? "در حال ثبت..." : "ثبت تسک"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+                {props.taskErrors.form && <p className="text-xs text-destructive">{props.taskErrors.form}</p>}
+              </div>
+              </CardContent>
+              <div className="shrink-0 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+                <div className="flex items-center justify-end gap-2">
+                  <Button variant="secondary" onClick={() => props.setTaskOpen(false)}>
+                    انصراف
+                  </Button>
+                  <Button disabled={props.taskCreateBusy || props.taskOpenDisabled} onClick={props.addTask}>
+                    {props.taskCreateBusy ? "در حال ثبت..." : "ثبت تسک"}
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
       )}
 
       <Dialog

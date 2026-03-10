@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,18 @@ const MENU_MARGIN = 12;
 
 export function AppContextMenu({ open, x, y, title, items, onClose }: AppContextMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuHeight, setMenuHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuHeight(0);
+      return;
+    }
+    const nextHeight = menuRef.current?.offsetHeight ?? 0;
+    if (nextHeight > 0 && nextHeight !== menuHeight) {
+      setMenuHeight(nextHeight);
+    }
+  }, [open, title, items, menuHeight]);
 
   useEffect(() => {
     if (!open) return;
@@ -56,10 +68,12 @@ export function AppContextMenu({ open, x, y, title, items, onClose }: AppContext
   const menuPosition = useMemo(() => {
     if (typeof window === "undefined") return { left: x, top: y };
     const maxLeft = Math.max(MENU_MARGIN, window.innerWidth - MENU_WIDTH - MENU_MARGIN);
+    const effectiveHeight = menuHeight || Math.max(120, items.length * 42 + (title ? 36 : 0) + 12);
+    const maxTop = Math.max(MENU_MARGIN, window.innerHeight - effectiveHeight - MENU_MARGIN);
     const left = Math.min(Math.max(MENU_MARGIN, x), maxLeft);
-    const top = Math.min(Math.max(MENU_MARGIN, y), window.innerHeight - MENU_MARGIN);
+    const top = Math.min(Math.max(MENU_MARGIN, y), maxTop);
     return { left, top };
-  }, [x, y]);
+  }, [x, y, menuHeight, items.length, title]);
 
   if (!open || typeof document === "undefined") return null;
 

@@ -10,6 +10,7 @@ const DATA_FILE = (() => {
   return path.isAbsolute(fromEnv) ? fromEnv : path.resolve(process.cwd(), fromEnv);
 })();
 const DATA_DIR = path.dirname(DATA_FILE);
+const UPLOADS_DIR = path.resolve(process.cwd(), "server", "data", "uploads");
 
 const defaultSettings = {
   general: {
@@ -157,6 +158,90 @@ const normalizeTaskStatus = (value, fallbackDone = false) => {
   if (status === "todo" || status === "doing" || status === "blocked" || status === "done") return status;
   return fallbackDone ? "done" : "todo";
 };
+const ensureUploadsDir = (subdir = "") => {
+  const dir = subdir ? path.join(UPLOADS_DIR, subdir) : UPLOADS_DIR;
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+};
+const extFromMime = (mimeType, fallback = "bin") => {
+  const clean = String(mimeType ?? "").trim().toLowerCase();
+  if (clean === "image/jpeg") return "jpg";
+  if (clean === "image/png") return "png";
+  if (clean === "image/webp") return "webp";
+  if (clean === "image/gif") return "gif";
+  if (clean === "image/svg+xml") return "svg";
+  if (clean === "image/bmp") return "bmp";
+  if (clean === "audio/webm") return "webm";
+  if (clean === "audio/mpeg") return "mp3";
+  if (clean === "audio/wav") return "wav";
+  if (clean === "audio/ogg") return "ogg";
+  return fallback;
+};
+const persistDataUrlAsset = (dataUrl, subdir, prefix) => {
+  const text = String(dataUrl ?? "").trim();
+  const match = /^data:([^;]+);base64,(.+)$/i.exec(text);
+  if (!match) return "";
+  try {
+    const mimeType = String(match[1] ?? "").trim().toLowerCase();
+    const encoded = String(match[2] ?? "");
+    const buffer = Buffer.from(encoded, "base64");
+    if (!buffer.length) return "";
+    ensureUploadsDir(subdir);
+    const ext = extFromMime(mimeType, subdir === "avatars" ? "jpg" : "bin");
+    const fileName = `${prefix}-${crypto.randomUUID()}.${ext}`;
+    fs.writeFileSync(path.join(UPLOADS_DIR, subdir, fileName), buffer);
+    return `/uploads/${subdir}/${fileName}`;
+  } catch {
+    return "";
+  }
+};
+const normalizeStoredAssetRef = (value, { subdir, prefix, allowDataUrlPrefix } = {}) => {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (text.startsWith("/uploads/")) return text;
+  if (allowDataUrlPrefix && text.startsWith(allowDataUrlPrefix)) {
+    return persistDataUrlAsset(text, subdir, prefix);
+  }
+  return "";
+};
+const normalizeChatAttachmentsInStore = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  return list
+    .slice(0, 4)
+    .map((row) => {
+      const kind = row?.kind === "voice" ? "voice" : "file";
+      const assetRef = normalizeStoredAssetRef(row?.dataUrl, {
+        subdir: "chat",
+        prefix: kind === "voice" ? "voice" : "file",
+        allowDataUrlPrefix: "data:",
+      });
+      if (!assetRef) return null;
+      return {
+        id: String(row?.id ?? "").trim() || crypto.randomUUID(),
+        kind,
+        name: String(row?.name ?? "").trim().slice(0, 120) || (kind === "voice" ? "voice-message.webm" : "file"),
+        mimeType: String(row?.mimeType ?? "").trim().toLowerCase().slice(0, 100),
+        size: Math.max(0, Number(row?.size ?? 0) || 0),
+        durationSec: Math.max(0, Number(row?.durationSec ?? 0) || 0),
+        dataUrl: assetRef,
+      };
+    })
+    .filter(Boolean);
+};
+const normalizeChatMessagesInStore = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  return list
+    .filter((row) => row && typeof row === "object")
+    .map((row) => ({
+      ...row,
+      senderAvatarDataUrl: normalizeStoredAssetRef(row.senderAvatarDataUrl, {
+        subdir: "avatars",
+        prefix: "avatar",
+        allowDataUrlPrefix: "data:image/",
+      }),
+      attachments: normalizeChatAttachmentsInStore(row.attachments),
+    }));
+};
 const normalizeTasks = (rows) => {
   const list = Array.isArray(rows) ? rows : [];
   return list
@@ -207,6 +292,11 @@ const normalizeTeamMembers = (rows) => {
     phone: normalizePhone(m.phone),
     appRole: normalizeAppRole(m.appRole),
     isActive: m.isActive !== false,
+    avatarDataUrl: normalizeStoredAssetRef(m.avatarDataUrl, {
+      subdir: "avatars",
+      prefix: "avatar",
+      allowDataUrlPrefix: "data:image/",
+    }),
     teamIds: Array.from(new Set((Array.isArray(m.teamIds) ? m.teamIds : []).map((item) => String(item ?? "").trim()).filter(Boolean))),
     passwordHash: (() => {
       const raw = String(m.passwordHash ?? "").trim();
@@ -332,7 +422,11 @@ function normalizeSettings(value) {
   return {
     general: {
       organizationName: String(incoming.general?.organizationName ?? defaultSettings.general.organizationName),
-      logoDataUrl: String(incoming.general?.logoDataUrl ?? defaultSettings.general.logoDataUrl),
+      logoDataUrl: normalizeStoredAssetRef(incoming.general?.logoDataUrl ?? defaultSettings.general.logoDataUrl, {
+        subdir: "branding",
+        prefix: "logo",
+        allowDataUrlPrefix: "data:image/",
+      }),
       language: String(incoming.general?.language ?? defaultSettings.general.language),
       timezone: String(incoming.general?.timezone ?? defaultSettings.general.timezone),
       weekStartsOn: String(incoming.general?.weekStartsOn ?? defaultSettings.general.weekStartsOn),
@@ -416,6 +510,7 @@ function ensureStore() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+  ensureUploadsDir();
   if (!fs.existsSync(DATA_FILE)) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(defaultData, null, 2), "utf8");
   }
@@ -444,17 +539,14 @@ export function readStore() {
       hrLeaveRequests: Array.isArray(parsed.hrLeaveRequests) ? parsed.hrLeaveRequests : [],
       hrAttendanceRecords: Array.isArray(parsed.hrAttendanceRecords) ? parsed.hrAttendanceRecords : [],
       chatConversations: Array.isArray(parsed.chatConversations) ? parsed.chatConversations : [],
-      chatMessages: Array.isArray(parsed.chatMessages) ? parsed.chatMessages : [],
+      chatMessages: normalizeChatMessagesInStore(parsed.chatMessages),
       auditLogs: normalizeAuditLogs(parsed.auditLogs),
     };
     const withAdmin = ensureAdminAccount(result);
     const withTeams = ensureTeamAssignments(withAdmin);
-    if (
-      withAdmin.teamMembers.length !== result.teamMembers.length ||
-      JSON.stringify(withTeams.teams) !== JSON.stringify(result.teams) ||
-      JSON.stringify(withTeams.teamMembers.map((m) => m.teamIds)) !== JSON.stringify(result.teamMembers.map((m) => m.teamIds))
-    ) {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(withTeams, null, 2), "utf8");
+    const normalizedText = JSON.stringify(withTeams, null, 2);
+    if (normalizedText !== raw.trim()) {
+      fs.writeFileSync(DATA_FILE, normalizedText, "utf8");
     }
     return withTeams;
   } catch {
@@ -475,6 +567,7 @@ export function writeStore(next) {
     hrProfiles: Array.isArray(next?.hrProfiles) ? next.hrProfiles : [],
     hrLeaveRequests: Array.isArray(next?.hrLeaveRequests) ? next.hrLeaveRequests : [],
     hrAttendanceRecords: Array.isArray(next?.hrAttendanceRecords) ? next.hrAttendanceRecords : [],
+    chatMessages: normalizeChatMessagesInStore(next?.chatMessages),
     auditLogs: normalizeAuditLogs(next?.auditLogs),
   };
   const withAdmin = ensureAdminAccount(normalized);

@@ -12,6 +12,7 @@ const app = express();
 const httpServer = createServer(app);
 const PORT = Number(process.env.PORT || 8787);
 const CLIENT_DIST = path.resolve(process.cwd(), "dist");
+const UPLOADS_DIR = path.resolve(process.cwd(), "server", "data", "uploads");
 const JWT_SECRET = String(process.env.JWT_SECRET || "");
 const JWT_EXPIRES_IN = String(process.env.JWT_EXPIRES_IN || "12h");
 const CORS_ORIGIN = String(process.env.CORS_ORIGIN || "").trim();
@@ -82,6 +83,7 @@ app.use(
   ),
 );
 app.use(express.json({ limit: "5mb" }));
+app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "30d", fallthrough: true }));
 app.use((req, res, next) => {
   const start = Date.now();
   const requestId = crypto.randomUUID();
@@ -196,6 +198,7 @@ const calculateWorkHours = (checkIn, checkOut) => {
 const normalizeAvatarDataUrl = (value) => {
   const text = String(value ?? "").trim();
   if (!text) return "";
+  if (text.startsWith("/uploads/")) return text;
   if (!text.startsWith("data:image/")) return "";
   return text.length <= 2_000_000 ? text : "";
 };
@@ -294,6 +297,7 @@ const canManageHr = (role) => {
 const normalizeLogoDataUrl = (value) => {
   const text = String(value ?? "").trim();
   if (!text) return "";
+  if (text.startsWith("/uploads/")) return text;
   if (!text.startsWith("data:image/")) return "";
   return text.length <= 2_000_000 ? text : "";
 };
@@ -337,8 +341,12 @@ const normalizeWorkflowSteps = (value) => {
         approvalAssigneeMemberId: "",
         onApprove: "next",
         onReject: "stay",
+        stageStatus: "todo",
+        comments: [],
         canvasX: 32 + (rows.length % 3) * 280,
         canvasY: 28 + Math.floor(rows.length / 3) * 140,
+        dueDate: "",
+        approvalDeadline: "",
       });
       continue;
     }
@@ -363,8 +371,23 @@ const normalizeWorkflowSteps = (value) => {
     const onRejectRaw = String(obj.onReject ?? "stay").trim().slice(0, 64);
     const onApprove = WORKFLOW_ROUTE_TYPES.has(onApproveRaw) || onApproveRaw ? onApproveRaw : "next";
     const onReject = WORKFLOW_ROUTE_TYPES.has(onRejectRaw) || onRejectRaw ? onRejectRaw : "stay";
+    const stageStatusRaw = String(obj.stageStatus ?? "todo").trim();
+    const stageStatus = stageStatusRaw === "doing" || stageStatusRaw === "blocked" || stageStatusRaw === "done" ? stageStatusRaw : "todo";
+    const comments = Array.isArray(obj.comments)
+      ? obj.comments
+          .filter((comment) => comment && typeof comment === "object")
+          .map((comment) => ({
+            id: String(comment.id ?? "").trim() || crypto.randomUUID(),
+            text: String(comment.text ?? "").trim().slice(0, 500),
+            createdAt: String(comment.createdAt ?? new Date().toISOString()),
+          }))
+          .filter((comment) => comment.text)
+          .slice(-30)
+      : [];
     const canvasX = Number.isFinite(Number(obj.canvasX)) ? Number(obj.canvasX) : 32 + (rows.length % 3) * 280;
     const canvasY = Number.isFinite(Number(obj.canvasY)) ? Number(obj.canvasY) : 28 + Math.floor(rows.length / 3) * 140;
+    const dueDate = normalizeIsoDate(obj.dueDate);
+    const approvalDeadline = normalizeIsoDate(obj.approvalDeadline);
     rows.push({
       id,
       title,
@@ -377,8 +400,12 @@ const normalizeWorkflowSteps = (value) => {
       approvalAssigneeMemberId,
       onApprove,
       onReject,
+      stageStatus,
+      comments,
       canvasX,
       canvasY,
+      dueDate,
+      approvalDeadline,
     });
   }
   return rows;
@@ -474,7 +501,19 @@ const normalizeChatAttachments = (value) => {
       const name = String(row?.name ?? "").trim() || (kind === "voice" ? "voice-message.webm" : "file");
       const size = Number(row?.size ?? 0);
       const durationSec = Number(row?.durationSec ?? 0);
-      if (!dataUrl || !dataUrl.startsWith("data:") || !dataUrl.includes(";base64,")) return null;
+      if (!dataUrl) return null;
+      if (dataUrl.startsWith("/uploads/")) {
+        return {
+          id: crypto.randomUUID(),
+          kind,
+          name: name.slice(0, 120),
+          mimeType: mimeType.slice(0, 100),
+          size: Number.isFinite(size) && size > 0 ? Math.round(size) : 0,
+          durationSec: Number.isFinite(durationSec) && durationSec > 0 ? Number(durationSec.toFixed(1)) : 0,
+          dataUrl,
+        };
+      }
+      if (!dataUrl.startsWith("data:") || !dataUrl.includes(";base64,")) return null;
       if (dataUrl.length > 2_000_000) return null;
       return {
         id: crypto.randomUUID(),
@@ -2063,6 +2102,13 @@ app.get("/api/inbox", (req, res) => {
         return String(task?.executionDate ?? "").trim() === today;
       })
       .sort((a, b) => String(a.executionDate ?? "").localeCompare(String(b.executionDate ?? "")));
+    const pendingWorkflowTasks = tasks
+      .filter((task) => {
+        if (isTaskDone(task)) return false;
+        const pendingIds = normalizeIdArray(task?.workflowPendingAssigneeIds ?? []);
+        return pendingIds.includes(userId);
+      })
+      .sort((a, b) => String(b.updatedAt ?? b.createdAt ?? "").localeCompare(String(a.updatedAt ?? a.createdAt ?? "")));
 
     const userProjectNames = new Set(
       projects
@@ -2138,6 +2184,7 @@ app.get("/api/inbox", (req, res) => {
     return res.json({
       today,
       todayAssignedTasks,
+      pendingWorkflowTasks,
       unreadConversations: unreadConversations.slice(0, 20),
       mentionedMessages: mentionedMessages.slice(0, 20),
       overdueProjects: overdueProjects.slice(0, 20),

@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { resolveAssetUrl } from "@/lib/asset-url";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +56,49 @@ export default function TeamMemberProfileDialog({
   normalizeTaskStatus,
   openEditMember,
 }: TeamMemberProfileDialogProps) {
+  const attendanceLedgerRows = useMemo(
+    () =>
+      selectedMemberAttendanceRecords
+        .map((row) => ({
+          id: `attendance-${row.id}`,
+          kind: "attendance" as const,
+          date: row.date || "",
+          title: HR_ATTENDANCE_STATUS_ITEMS.find((x) => x.value === row.status)?.label ?? row.status,
+          subtitle: [row.checkIn ? `ورود ${toFaNum(row.checkIn)}` : "", row.checkOut ? `خروج ${toFaNum(row.checkOut)}` : ""].filter(Boolean).join(" | "),
+          hours: Number(row.workHours) || 0,
+          statusLabel: HR_ATTENDANCE_STATUS_ITEMS.find((x) => x.value === row.status)?.label ?? row.status,
+          note: row.note || "",
+        }))
+        .sort((a, b) => String(b.date).localeCompare(String(a.date))),
+    [HR_ATTENDANCE_STATUS_ITEMS, selectedMemberAttendanceRecords, toFaNum],
+  );
+  const leaveLedgerRows = useMemo(
+    () =>
+      selectedMemberLeaveRequests
+        .map((row) => ({
+          id: `leave-${row.id}`,
+          kind: "leave" as const,
+          date: row.fromDate || "",
+          endDate: row.toDate || "",
+          title: HR_LEAVE_TYPE_ITEMS.find((x) => x.value === row.leaveType)?.label ?? row.leaveType,
+          subtitle: row.fromDate && row.toDate ? `${isoToJalali(row.fromDate)} تا ${isoToJalali(row.toDate)}` : "—",
+          hours: Number(row.hours) || 0,
+          statusLabel: HR_LEAVE_STATUS_ITEMS.find((x) => x.value === row.status)?.label ?? row.status,
+          note: row.reason || "",
+        }))
+        .sort((a, b) => String(b.date).localeCompare(String(a.date))),
+    [HR_LEAVE_STATUS_ITEMS, HR_LEAVE_TYPE_ITEMS, isoToJalali, selectedMemberLeaveRequests],
+  );
+  const unifiedLedgerRows = useMemo(
+    () =>
+      [...attendanceLedgerRows, ...leaveLedgerRows].sort((a, b) => {
+        const dateCompare = String(b.date).localeCompare(String(a.date));
+        if (dateCompare !== 0) return dateCompare;
+        return a.kind === b.kind ? 0 : a.kind === "leave" ? -1 : 1;
+      }),
+    [attendanceLedgerRows, leaveLedgerRows],
+  );
+
   return (
     <Dialog open={memberProfileOpen} onOpenChange={setMemberProfileOpen}>
       <DialogContent aria-describedby={undefined} className="liquid-glass max-h-[88vh] overflow-y-auto">
@@ -86,7 +131,7 @@ export default function TeamMemberProfileDialog({
 
             <div className="flex justify-center">
               {selectedMember.avatarDataUrl ? (
-                <img src={selectedMember.avatarDataUrl} alt={selectedMember.fullName} className="h-24 w-24 rounded-full border object-cover" />
+                <img src={resolveAssetUrl(selectedMember.avatarDataUrl)} alt={selectedMember.fullName} className="h-24 w-24 rounded-full border object-cover" />
               ) : (
                 <div className="flex h-24 w-24 items-center justify-center rounded-full border bg-muted text-xl font-bold">
                   {memberInitials(selectedMember.fullName)}
@@ -144,6 +189,44 @@ export default function TeamMemberProfileDialog({
             </section>
 
             <section className="rounded-lg border p-3">
+              <p className="mb-2 text-sm font-semibold">کاردکس کامل مرخصی و حضور و غیاب</p>
+              {unifiedLedgerRows.length === 0 ? (
+                <p className="text-xs text-muted-foreground">رکوردی برای نمایش وجود ندارد.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-muted/30 text-muted-foreground">
+                      <tr>
+                        <th className="px-2 py-2 text-right font-medium">نوع</th>
+                        <th className="px-2 py-2 text-right font-medium">تاریخ</th>
+                        <th className="px-2 py-2 text-right font-medium">عنوان</th>
+                        <th className="px-2 py-2 text-right font-medium">جزئیات</th>
+                        <th className="px-2 py-2 text-right font-medium">ساعت</th>
+                        <th className="px-2 py-2 text-right font-medium">وضعیت</th>
+                        <th className="px-2 py-2 text-right font-medium">توضیح</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unifiedLedgerRows.map((row) => (
+                        <tr key={row.id} className="border-t">
+                          <td className="px-2 py-2">
+                            <Badge variant="outline">{row.kind === "attendance" ? "حضور" : "مرخصی"}</Badge>
+                          </td>
+                          <td className="px-2 py-2">{isoToJalali(row.date)}</td>
+                          <td className="px-2 py-2">{row.title}</td>
+                          <td className="px-2 py-2 text-muted-foreground">{row.subtitle || "—"}</td>
+                          <td className="px-2 py-2">{toFaNum(String(row.hours || 0))}</td>
+                          <td className="px-2 py-2">{row.statusLabel}</td>
+                          <td className="px-2 py-2">{row.note || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-lg border p-3">
               <p className="mb-2 text-sm font-semibold">سوابق رفت‌وآمد</p>
               {selectedMemberAttendanceRecords.length === 0 ? (
                 <p className="text-xs text-muted-foreground">رکوردی ثبت نشده است.</p>
@@ -160,7 +243,7 @@ export default function TeamMemberProfileDialog({
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedMemberAttendanceRecords.slice(0, 20).map((row) => (
+                      {selectedMemberAttendanceRecords.map((row) => (
                         <tr key={`profile-att-${row.id}`} className="border-t">
                           <td className="px-2 py-2">{isoToJalali(row.date)}</td>
                           <td className="px-2 py-2">{HR_ATTENDANCE_STATUS_ITEMS.find((x) => x.value === row.status)?.label ?? row.status}</td>
@@ -181,7 +264,7 @@ export default function TeamMemberProfileDialog({
                 <p className="text-xs text-muted-foreground">درخواستی ثبت نشده است.</p>
               ) : (
                 <div className="space-y-2">
-                  {selectedMemberLeaveRequests.slice(0, 20).map((row) => (
+                  {selectedMemberLeaveRequests.map((row) => (
                     <div key={`profile-leave-${row.id}`} className="rounded-md border p-2 text-xs">
                       <div className="flex items-center justify-between gap-2">
                         <p className="font-semibold">{HR_LEAVE_TYPE_ITEMS.find((x) => x.value === row.leaveType)?.label ?? row.leaveType}</p>

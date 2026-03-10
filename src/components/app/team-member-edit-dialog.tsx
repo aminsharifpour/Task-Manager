@@ -10,6 +10,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BufferedInput, BufferedTextarea } from "@/components/ui/buffered-fields";
+import { resolveAssetUrl } from "@/lib/asset-url";
 
 type TeamMemberEditDialogProps = {
   memberEditOpen: boolean;
@@ -51,7 +52,7 @@ export default function TeamMemberEditDialog({
         <div className="space-y-3">
           <div className="flex items-center gap-3">
             {memberEditDraft.avatarDataUrl ? (
-              <img src={memberEditDraft.avatarDataUrl} alt="avatar" className="h-14 w-14 rounded-full border object-cover" />
+              <img src={resolveAssetUrl(memberEditDraft.avatarDataUrl)} alt="avatar" className="h-14 w-14 rounded-full border object-cover" />
             ) : (
               <div className="flex h-14 w-14 items-center justify-center rounded-full border bg-muted text-sm font-semibold">
                 {memberInitials(memberEditDraft.fullName)}
