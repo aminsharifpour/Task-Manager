@@ -36,7 +36,7 @@ async function main() {
     TASK_APP_DATA_FILE: dataFile,
   };
 
-  const server = spawn("node", ["server/index.js"], {
+  const server = spawn("node", ["apps/api/src/index.js"], {
     cwd: process.cwd(),
     env,
     stdio: ["ignore", "pipe", "pipe"],

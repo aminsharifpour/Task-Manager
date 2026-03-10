@@ -42,9 +42,29 @@
    ```bash
    npm run build
    ```
-3. (اختیاری) اگر بخشی از اپ API جداگانه است، حتماً `npm run dev:api` یا `npm start` را بررسی کن.
+3. برای استقرار جدا:
+   - فرانت: `npm run build:web`
+   - بک‌اند: `npm run start:api`
 
-## ۴. راه‌اندازی سرویس systemd
+## ۴. استقرار جداگانه فرانت و بک‌اند
+1. بک‌اند را به‌صورت API-only بالا بیاور:
+   ```bash
+   cp .env.backend.example .env
+   # JWT_SECRET / CORS_ORIGIN / PORT را تنظیم کن
+   npm ci
+   npm run start:api
+   ```
+2. فرانت را با آدرس API واقعی build کن:
+   ```bash
+   cp .env.frontend.example .env.production.local
+   # VITE_API_BASE را روی دامنه API بگذار
+   npm ci
+   npm run build:web
+   ```
+3. خروجی `dist/` را روی Nginx یا هر static host جدا منتشر کن.
+4. برای بک‌اند، `SERVE_CLIENT=false` بماند تا هیچ وابستگی به `dist` نداشته باشد.
+
+## ۵. راه‌اندازی سرویس systemd
 1. فایل سرویس را بساز (`/etc/systemd/system/tasks.service`):
    ```ini
    [Unit]
@@ -57,7 +77,8 @@
    WorkingDirectory=/srv/tasks
    Environment=NODE_ENV=production
    Environment=PORT=8787
-   ExecStart=/usr/bin/node server/index.js
+   Environment=SERVE_CLIENT=false
+   ExecStart=/usr/bin/node apps/api/src/index.js
    Restart=on-failure
    RestartSec=5
 
@@ -72,7 +93,7 @@
    sudo systemctl status tasks.service
    ```
 
-## ۵. راه‌اندازی پروکسی معکوس (Nginx)
+## ۶. راه‌اندازی پروکسی معکوس (Nginx)
 1. نصب Nginx:
    ```bash
    sudo apt install -y nginx
@@ -83,12 +104,25 @@
      listen 80;
      server_name example.com;
 
-     location / {
+     location /api/ {
        proxy_pass http://127.0.0.1:8787;
        proxy_set_header Host $host;
        proxy_set_header X-Real-IP $remote_addr;
        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
        proxy_set_header X-Forwarded-Proto $scheme;
+     }
+
+     location /socket.io/ {
+       proxy_pass http://127.0.0.1:8787;
+       proxy_http_version 1.1;
+       proxy_set_header Upgrade $http_upgrade;
+       proxy_set_header Connection "upgrade";
+       proxy_set_header Host $host;
+     }
+
+     location /uploads/ {
+       proxy_pass http://127.0.0.1:8787;
+       proxy_set_header Host $host;
      }
    }
    ```
@@ -99,7 +133,7 @@
    sudo systemctl restart nginx
    ```
 
-## ۶. راهکارهای امنیتی و پایداری
+## ۷. راهکارهای امنیتی و پایداری
 - فعال کردن فایروال UFW فقط برای HTTP/HTTPS/SSH:
   ```bash
   sudo ufw allow OpenSSH
@@ -117,7 +151,7 @@
   ```
   افزونه: نصب `pm2` یا `systemd` برای رصد بهتر.
 
-## ۷. به‌روزرسانی و نگهداری
+## ۸. به‌روزرسانی و نگهداری
 1. برای به‌روزرسانی کد:
    ```bash
    cd /srv/tasks
@@ -126,9 +160,10 @@
    npm run build
    sudo systemctl restart tasks.service
    ```
-2. پشتیبان‌گیری از دیتابیس ساده (`server/data/db.json`) قبل از هر تغییر.
+2. پشتیبان‌گیری از دیتابیس ساده (`apps/api/data/db.json`) قبل از هر تغییر.
 
-## ۸. نکات اضافی
-- اگر بک‌اند و فرانت مجزا شوند، `VITE_API_BASE` را به آدرس واقعی API تنظیم کن.
+## ۹. نکات اضافی
+- برای جداسازی کامل، فرانت را از روی Nginx/Static host و بک‌اند را از روی systemd/Node بالا بیاور.
+- `SERVE_CLIENT=false` یعنی بک‌اند فقط API و فایل‌های `/uploads` را سرو می‌کند.
 - از `pm2` برای مشاهده لاگ گرافیکی و مدیریت پروسس هم می‌توان استفاده کرد.
 - برای ورود به کنسول، `ssh -i key.pem ubuntu@server-ip` استفاده کن.

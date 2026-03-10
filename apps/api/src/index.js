@@ -1,21 +1,71 @@
 import path from "node:path";
 import crypto from "node:crypto";
 import { createServer } from "node:http";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import { Server as SocketIOServer } from "socket.io";
 import { getDefaultSettings, getDefaultStore, hashPasswordForStore, readStore, verifyPasswordForStore, writeStore } from "./store.js";
+import { connectDatabase, disconnectDatabase, getDatabaseHealth } from "./database.js";
+import { isPostgresMode } from "./db-mode.js";
+import {
+  createAccountingAccount,
+  createAccountingTransaction,
+  createAuditLogEntry,
+  createChatConversation,
+  createChatMessage,
+  createHrLeaveRequest,
+  createProject,
+  createTask,
+  createTeam,
+  createTeamMember,
+  deleteAccountingAccount,
+  deleteAccountingTransaction,
+  deleteChatConversation,
+  deleteHrAttendanceRecord,
+  deleteProject,
+  deleteTask,
+  deleteTeam,
+  deleteTeamMember,
+  findUserById,
+  findUserByPhone,
+  getAuditLogState,
+  getAccountingState,
+  getCoreState,
+  getSettingsState,
+  saveSettingsState,
+  setAccountingBudget,
+  markConversationRead,
+  upsertHrAttendanceRecord,
+  upsertHrProfile,
+  updateAccountingAccount,
+  updateAccountingTransaction,
+  updateChatMessage,
+  updateHrLeaveRequest,
+  updateProject,
+  updateTask,
+  updateTeam,
+  updateTeamMember,
+  updateUserPasswordHash,
+} from "./repositories/core-repository.js";
 
 const app = express();
 const httpServer = createServer(app);
 const PORT = Number(process.env.PORT || 8787);
-const CLIENT_DIST = path.resolve(process.cwd(), "dist");
-const UPLOADS_DIR = path.resolve(process.cwd(), "server", "data", "uploads");
+const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const API_ROOT = path.resolve(CURRENT_DIR, "..");
+const PROJECT_ROOT = path.resolve(API_ROOT, "..", "..");
+const LEGACY_SERVER_ROOT = path.resolve(PROJECT_ROOT, "server");
+const CLIENT_DIST = path.resolve(PROJECT_ROOT, "apps", "web", "dist");
+const DEFAULT_UPLOADS_DIR = path.resolve(API_ROOT, "data", "uploads");
+const LEGACY_UPLOADS_DIR = path.resolve(LEGACY_SERVER_ROOT, "data", "uploads");
+const UPLOADS_DIR = DEFAULT_UPLOADS_DIR;
 const JWT_SECRET = String(process.env.JWT_SECRET || "");
 const JWT_EXPIRES_IN = String(process.env.JWT_EXPIRES_IN || "12h");
 const CORS_ORIGIN = String(process.env.CORS_ORIGIN || "").trim();
+const SERVE_CLIENT = String(process.env.SERVE_CLIENT || "").trim().toLowerCase() === "true";
 const SERVER_LOG_LEVEL = String(process.env.SERVER_LOG_LEVEL || "info").trim().toLowerCase();
 const LOG_LEVEL_ORDER = { debug: 10, info: 20, warn: 30, error: 40 };
 const WEBHOOK_ALLOWED_EVENTS = [
@@ -585,7 +635,7 @@ const parseBearerToken = (headerValue) => {
   if (!header.startsWith("Bearer ")) return "";
   return header.slice("Bearer ".length).trim();
 };
-const resolveAuthUserFromToken = (token) => {
+const resolveAuthUserFromToken = async (token) => {
   const safeToken = String(token ?? "").trim();
   if (!safeToken) return null;
   try {
@@ -593,8 +643,7 @@ const resolveAuthUserFromToken = (token) => {
     const userId = String(decoded?.sub ?? "").trim();
     const role = normalizeAppRole(decoded?.role);
     if (!userId) return null;
-    const db = readStore();
-    const user = db.teamMembers.find((m) => m.id === userId);
+    const user = await findUserById(userId);
     if (!user || user.isActive === false) return null;
     return { userId, role, user };
   } catch {
@@ -839,12 +888,12 @@ const signToken = (user) =>
     ACTIVE_JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN },
   );
-const requireAuth = (req, res, next) => {
+const requireAuth = async (req, res, next) => {
   const token = parseBearerToken(req.headers.authorization);
   if (!token) {
     return res.status(401).json({ message: "Missing bearer token." });
   }
-  const auth = resolveAuthUserFromToken(token);
+  const auth = await resolveAuthUserFromToken(token);
   if (!auth) {
     return res.status(401).json({ message: "Invalid or expired token." });
   }
@@ -900,6 +949,19 @@ const canTransitionTaskStatus = (settings, fromStatus, toStatus) => {
   const map = settings?.workflow?.allowedTransitions ?? {};
   const allowed = Array.isArray(map[fromStatus]) ? map[fromStatus] : [];
   return allowed.includes(toStatus);
+};
+const appendAuditLog = async (req, dbLike, payload) => {
+  const store = readStore();
+  const auditDb = {
+    ...store,
+    auditLogs: Array.isArray(store.auditLogs) ? store.auditLogs : [],
+    teamMembers: Array.isArray(dbLike?.teamMembers) ? dbLike.teamMembers : Array.isArray(store.teamMembers) ? store.teamMembers : [],
+  };
+  addAuditLog(auditDb, req, payload);
+  const latest = Array.isArray(auditDb.auditLogs) ? auditDb.auditLogs[0] : null;
+  if (latest) {
+    await createAuditLogEntry(latest);
+  }
 };
 const buildPresenceRow = (userId) => {
   const safeUserId = String(userId ?? "").trim();
@@ -1015,18 +1077,18 @@ app.get("/api/health", (_req, res) => {
     uptimeSec: Math.floor(process.uptime()),
     heapUsedMb,
     socketClients: io.engine.clientsCount,
+    database: getDatabaseHealth(),
   });
 });
 
-app.post("/api/auth/login", loginLimiter, (req, res) => {
+app.post("/api/auth/login", loginLimiter, async (req, res) => {
   try {
     const phone = normalizePhone(req.body?.phone);
     const password = String(req.body?.password ?? "");
     if (!phone || !password) {
       return res.status(400).json({ message: "phone and password are required." });
     }
-    const db = readStore();
-    const user = db.teamMembers.find((m) => m.phone === phone);
+    const user = await findUserByPhone(phone);
     if (!user || user.isActive === false) {
       return res.status(401).json({ message: "invalid credentials." });
     }
@@ -1035,15 +1097,7 @@ app.post("/api/auth/login", loginLimiter, (req, res) => {
       return res.status(401).json({ message: "invalid credentials." });
     }
     if (!String(user.passwordHash ?? "").startsWith("bcrypt$")) {
-      const dbWithMigration = readStore();
-      const idx = dbWithMigration.teamMembers.findIndex((m) => m.id === user.id);
-      if (idx !== -1) {
-        dbWithMigration.teamMembers[idx] = {
-          ...dbWithMigration.teamMembers[idx],
-          passwordHash: hashPasswordForStore(password),
-        };
-        writeStore(dbWithMigration);
-      }
+      await updateUserPasswordHash(user.id, hashPasswordForStore(password));
     }
     const token = signToken(user);
     return res.json({
@@ -1064,9 +1118,9 @@ app.post("/api/auth/login", loginLimiter, (req, res) => {
   }
 });
 
-app.post("/api/client-logs", (req, res) => {
+app.post("/api/client-logs", async (req, res) => {
   try {
-    const auth = resolveAuthUserFromToken(parseBearerToken(req.headers.authorization));
+    const auth = await resolveAuthUserFromToken(parseBearerToken(req.headers.authorization));
     const payload = req.body && typeof req.body === "object" ? req.body : {};
     const level = ["debug", "info", "warn", "error"].includes(String(payload.level ?? "")) ? String(payload.level) : "error";
     logServer(level, "client.log", {
@@ -1091,31 +1145,30 @@ app.use("/api", (req, res, next) => {
   return requireAuth(req, res, next);
 });
 
-app.get("/api/settings", (_req, res) => {
-  const db = readStore();
-  return res.json(db.settings);
+app.get("/api/settings", async (_req, res) => {
+  const settings = await getSettingsState();
+  return res.json(settings);
 });
 
-app.put("/api/settings", requireRoles("admin", "manager"), (req, res) => {
-  const db = readStore();
-  db.settings = normalizeSettingsPayload(req.body ?? {});
-  addAuditLog(db, req, {
+app.put("/api/settings", requireRoles("admin", "manager"), async (req, res) => {
+  const settings = normalizeSettingsPayload(req.body ?? {});
+  await saveSettingsState(settings);
+  await appendAuditLog(req, await getCoreState(), {
     action: "settings.update",
     entityType: "settings",
     entityId: "app",
     summary: "Application settings updated.",
   });
-  writeStore(db);
-  return res.json(db.settings);
+  return res.json(settings);
 });
 app.post("/api/integrations/webhook/test", requireRoles("admin", "manager"), async (req, res) => {
   try {
-    const db = readStore();
+    const settings = await getSettingsState();
     const normalized = normalizeSettingsPayload({
-      ...db.settings,
+      ...settings,
       integrations: {
         webhook: {
-          ...db.settings?.integrations?.webhook,
+          ...settings?.integrations?.webhook,
           ...(req.body?.webhook ?? {}),
         },
       },
@@ -1158,8 +1211,8 @@ app.post("/api/integrations/webhook/test", requireRoles("admin", "manager"), asy
   }
 });
 
-app.get("/api/audit-logs", requireRoles("admin", "manager"), (req, res) => {
-  const db = readStore();
+app.get("/api/audit-logs", requireRoles("admin", "manager"), async (req, res) => {
+  const rowsSource = await getAuditLogState();
   const query = req.query ?? {};
   const q = String(query.q ?? "").trim().toLowerCase();
   const actorId = String(query.actorId ?? "").trim();
@@ -1171,7 +1224,7 @@ app.get("/api/audit-logs", requireRoles("admin", "manager"), (req, res) => {
   const limit = Math.min(1000, Math.max(20, Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 200));
   const fromMs = from ? new Date(from).getTime() : Number.NaN;
   const toMs = to ? new Date(to).getTime() : Number.NaN;
-  const rows = (Array.isArray(db.auditLogs) ? db.auditLogs : [])
+  const rows = (Array.isArray(rowsSource) ? rowsSource : [])
     .filter((row) => {
       if (actorId && String(row?.actor?.userId ?? "") !== actorId) return false;
       if (entityType && String(row?.entityType ?? "") !== entityType) return false;
@@ -1187,12 +1240,15 @@ app.get("/api/audit-logs", requireRoles("admin", "manager"), (req, res) => {
   return res.json(rows);
 });
 
-app.get("/api/backup/export", requireRoles("admin"), (_req, res) => {
-  const db = readStore();
+app.get("/api/backup/export", requireRoles("admin"), async (_req, res) => {
+  const db = await getCoreState();
   return res.json(db);
 });
 
 app.post("/api/backup/import", requireRoles("admin"), (req, res) => {
+  if (isPostgresMode) {
+    return res.status(501).json({ message: "Backup import is not enabled in postgres mode yet." });
+  }
   const payload = req.body ?? {};
   if (!payload || typeof payload !== "object") {
     return res.status(400).json({ message: "Invalid backup payload." });
@@ -1213,6 +1269,9 @@ app.post("/api/backup/import", requireRoles("admin"), (req, res) => {
 });
 
 app.post("/api/backup/reset", requireRoles("admin"), (req, res) => {
+  if (isPostgresMode) {
+    return res.status(501).json({ message: "Backup reset is not enabled in postgres mode yet." });
+  }
   const fresh = getDefaultStore();
   addAuditLog(fresh, req, {
     action: "backup.reset",
@@ -1224,8 +1283,8 @@ app.post("/api/backup/reset", requireRoles("admin"), (req, res) => {
   return res.json({ ok: true });
 });
 
-app.get("/api/teams", (req, res) => {
-  const db = readStore();
+app.get("/api/teams", async (req, res) => {
+  const db = await getCoreState();
   const rows = normalizeTeamRows(db.teams);
   if (normalizeAppRole(req.auth?.role) === "admin") return res.json(rows);
   const safeUserId = String(req.auth?.userId ?? "").trim();
@@ -1250,8 +1309,8 @@ app.get("/api/teams", (req, res) => {
   );
 });
 
-app.post("/api/teams", (req, res) => {
-  const db = readStore();
+app.post("/api/teams", async (req, res) => {
+  const db = await getCoreState();
   if (!ensurePermission(req, res, db, "teamCreate")) return;
   const name = String(req.body?.name ?? "").trim();
   const description = String(req.body?.description ?? "").trim();
@@ -1281,18 +1340,18 @@ app.post("/api/teams", (req, res) => {
       };
     }
   }
-  addAuditLog(db, req, {
+  await createTeam(team);
+  await appendAuditLog(req, db, {
     action: "team.group.create",
     entityType: "team-group",
     entityId: team.id,
     summary: `Team created: ${team.name}`,
   });
-  writeStore(db);
   return res.status(201).json(team);
 });
 
-app.patch("/api/teams/:id", (req, res) => {
-  const db = readStore();
+app.patch("/api/teams/:id", async (req, res) => {
+  const db = await getCoreState();
   if (!ensurePermission(req, res, db, "teamUpdate")) return;
   const teamId = String(req.params.id ?? "").trim();
   const name = String(req.body?.name ?? "").trim();
@@ -1311,18 +1370,18 @@ app.patch("/api/teams/:id", (req, res) => {
     updatedAt: new Date().toISOString(),
   };
   db.teams = teams.map((team, idx) => (idx === index ? updated : team));
-  addAuditLog(db, req, {
+  await updateTeam(updated);
+  await appendAuditLog(req, db, {
     action: "team.group.update",
     entityType: "team-group",
     entityId: teamId,
     summary: `Team updated: ${updated.name}`,
   });
-  writeStore(db);
   return res.json(updated);
 });
 
-app.delete("/api/teams/:id", (req, res) => {
-  const db = readStore();
+app.delete("/api/teams/:id", async (req, res) => {
+  const db = await getCoreState();
   if (!ensurePermission(req, res, db, "teamDelete")) return;
   const teamId = String(req.params.id ?? "").trim();
   const teams = normalizeTeamRows(db.teams);
@@ -1338,18 +1397,28 @@ app.delete("/api/teams/:id", (req, res) => {
       teamIds: filtered.length > 0 ? filtered : fallbackTeamId ? [fallbackTeamId] : [],
     };
   });
-  addAuditLog(db, req, {
+  await deleteTeam(
+    teamId,
+    (Array.isArray(db.teamMembers) ? db.teamMembers : []).map((member) => ({
+      memberId: String(member?.id ?? "").trim(),
+      teamIds: memberTeamIds(member).filter((id) => id !== teamId).length > 0
+        ? memberTeamIds(member).filter((id) => id !== teamId)
+        : fallbackTeamId
+          ? [fallbackTeamId]
+          : [],
+    })),
+  );
+  await appendAuditLog(req, db, {
     action: "team.group.delete",
     entityType: "team-group",
     entityId: teamId,
     summary: `Team deleted: ${target.name}`,
   });
-  writeStore(db);
   return res.status(204).send();
 });
 
-app.get("/api/team-members", (req, res) => {
-  const db = readStore();
+app.get("/api/team-members", async (req, res) => {
+  const db = await getCoreState();
   const safeRole = normalizeAppRole(req.auth?.role);
   const allMembers = Array.isArray(db.teamMembers) ? db.teamMembers : [];
   if (safeRole === "admin") {
@@ -1421,7 +1490,7 @@ app.get("/api/presence/admin", requireRoles("admin"), (_req, res) => {
   return res.json(rows);
 });
 
-app.post("/api/team-members", requireRoles("admin"), (req, res) => {
+app.post("/api/team-members", requireRoles("admin"), async (req, res) => {
   const { fullName, role = "", email = "", phone = "", password = "", bio = "", avatarDataUrl = "", appRole = "member", isActive = true, teamIds = [] } = req.body ?? {};
   const payload = {
     fullName: String(fullName ?? "").trim(),
@@ -1440,7 +1509,7 @@ app.post("/api/team-members", requireRoles("admin"), (req, res) => {
     return res.status(400).json({ message: "fullName, phone and password(min 4) are required." });
   }
 
-  const db = readStore();
+  const db = await getCoreState();
   if (!ensurePermission(req, res, db, "teamCreate")) return;
   const validTeamIds = new Set(normalizeTeamRows(db.teams).map((team) => team.id));
   if (payload.teamIds.length > 0 && !allIdsWithinScope(payload.teamIds, validTeamIds)) {
@@ -1471,17 +1540,17 @@ app.post("/api/team-members", requireRoles("admin"), (req, res) => {
     createdAt: new Date().toISOString(),
   };
   db.teamMembers.unshift(member);
-  addAuditLog(db, req, {
+  await createTeamMember(member);
+  await appendAuditLog(req, db, {
     action: "team.create",
     entityType: "team-member",
     entityId: member.id,
     summary: `Team member created: ${member.fullName}`,
   });
-  writeStore(db);
   return res.status(201).json(sanitizeMember(member));
 });
 
-app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), (req, res) => {
+app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), async (req, res) => {
   const { id } = req.params;
   const { fullName, role = "", email = "", phone = "", password = "", bio = "", avatarDataUrl = "", appRole = "member", isActive = true, teamIds } = req.body ?? {};
   const payload = {
@@ -1501,7 +1570,7 @@ app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), (req, 
     return res.status(400).json({ message: "fullName and phone are required." });
   }
 
-  const db = readStore();
+  const db = await getCoreState();
   if (!ensurePermission(req, res, db, "teamUpdate", { allowSelf: true, selfId: id })) return;
   const index = db.teamMembers.findIndex((m) => m.id === id);
   if (index === -1) {
@@ -1560,19 +1629,19 @@ app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), (req, 
             : [],
     ...(payload.password.length >= 4 ? { passwordHash: hashPasswordForStore(payload.password) } : {}),
   };
-  addAuditLog(db, req, {
+  await updateTeamMember(db.teamMembers[index]);
+  await appendAuditLog(req, db, {
     action: "team.update",
     entityType: "team-member",
     entityId: id,
     summary: `Team member updated: ${payload.fullName}`,
   });
-  writeStore(db);
   return res.json(sanitizeMember(db.teamMembers[index]));
 });
 
-app.delete("/api/team-members/:id", requireRoles("admin", "manager"), (req, res) => {
+app.delete("/api/team-members/:id", requireRoles("admin", "manager"), async (req, res) => {
   const { id } = req.params;
-  const db = readStore();
+  const db = await getCoreState();
   if (!ensurePermission(req, res, db, "teamDelete")) return;
   const member = db.teamMembers.find((m) => m.id === id);
   if (!member) {
@@ -1606,28 +1675,28 @@ app.delete("/api/team-members/:id", requireRoles("admin", "manager"), (req, res)
   db.hrProfiles = normalizeHrProfiles(db.hrProfiles).filter((row) => row.memberId !== id);
   db.hrLeaveRequests = normalizeHrLeaveRequests(db.hrLeaveRequests).filter((row) => row.memberId !== id);
   db.hrAttendanceRecords = normalizeHrAttendanceRecords(db.hrAttendanceRecords).filter((row) => row.memberId !== id);
-  addAuditLog(db, req, {
+  await deleteTeamMember(id);
+  await appendAuditLog(req, db, {
     action: "team.delete",
     entityType: "team-member",
     entityId: id,
     summary: "Team member deleted.",
   });
-  writeStore(db);
   return res.status(204).send();
 });
 
-app.get("/api/hr/profiles", (req, res) => {
-  const db = readStore();
+app.get("/api/hr/profiles", async (req, res) => {
+  const db = await getCoreState();
   db.hrProfiles = normalizeHrProfiles(db.hrProfiles);
   const safeRole = normalizeAppRole(req.auth?.role);
   const scope = safeRole === "admin" ? new Set(db.teamMembers.map((m) => m.id)) : memberScopeForUser(db, req.auth?.userId, req.auth?.role);
   return res.json(db.hrProfiles.filter((row) => scope.has(row.memberId)));
 });
 
-app.put("/api/hr/profiles/:memberId", requireRoles("admin", "manager"), (req, res) => {
+app.put("/api/hr/profiles/:memberId", requireRoles("admin", "manager"), async (req, res) => {
   const memberId = String(req.params.memberId ?? "").trim();
   if (!memberId) return res.status(400).json({ message: "memberId is required." });
-  const db = readStore();
+  const db = await getCoreState();
   const member = db.teamMembers.find((m) => m.id === memberId);
   if (!member) return res.status(404).json({ message: "Team member not found." });
   if (!canAccessMemberByTeam(db, req.auth?.userId, req.auth?.role, memberId)) {
@@ -1666,18 +1735,18 @@ app.put("/api/hr/profiles/:memberId", requireRoles("admin", "manager"), (req, re
       updatedAt: now,
     };
   }
-  addAuditLog(db, req, {
+  await upsertHrProfile(db.hrProfiles.find((row) => row.memberId === memberId));
+  await appendAuditLog(req, db, {
     action: "hr.profile.upsert",
     entityType: "hr-profile",
     entityId: memberId,
     summary: `HR profile updated for ${member.fullName}`,
   });
-  writeStore(db);
   return res.json(db.hrProfiles.find((row) => row.memberId === memberId));
 });
 
-app.get("/api/hr/leaves", (req, res) => {
-  const db = readStore();
+app.get("/api/hr/leaves", async (req, res) => {
+  const db = await getCoreState();
   db.hrLeaveRequests = normalizeHrLeaveRequests(db.hrLeaveRequests);
   const memberIdFilter = String(req.query.memberId ?? "").trim();
   const safeRole = normalizeAppRole(req.auth?.role);
@@ -1689,8 +1758,8 @@ app.get("/api/hr/leaves", (req, res) => {
   return res.json(rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)));
 });
 
-app.post("/api/hr/leaves", (req, res) => {
-  const db = readStore();
+app.post("/api/hr/leaves", async (req, res) => {
+  const db = await getCoreState();
   db.hrLeaveRequests = normalizeHrLeaveRequests(db.hrLeaveRequests);
   const requestedMemberId = String(req.body?.memberId ?? "").trim();
   const memberId = canManageHr(req.auth?.role) ? requestedMemberId || String(req.auth?.userId ?? "") : String(req.auth?.userId ?? "");
@@ -1722,19 +1791,19 @@ app.post("/api/hr/leaves", (req, res) => {
     reviewedAt: "",
   };
   db.hrLeaveRequests.unshift(row);
-  addAuditLog(db, req, {
+  await createHrLeaveRequest(row);
+  await appendAuditLog(req, db, {
     action: "hr.leave.create",
     entityType: "hr-leave",
     entityId: row.id,
     summary: `Leave request created for ${member.fullName}`,
   });
-  writeStore(db);
   return res.status(201).json(row);
 });
 
-app.patch("/api/hr/leaves/:id/status", requireRoles("admin", "manager"), (req, res) => {
+app.patch("/api/hr/leaves/:id/status", requireRoles("admin", "manager"), async (req, res) => {
   const id = String(req.params.id ?? "").trim();
-  const db = readStore();
+  const db = await getCoreState();
   db.hrLeaveRequests = normalizeHrLeaveRequests(db.hrLeaveRequests);
   const index = db.hrLeaveRequests.findIndex((row) => row.id === id);
   if (index === -1) return res.status(404).json({ message: "Leave request not found." });
@@ -1750,18 +1819,18 @@ app.patch("/api/hr/leaves/:id/status", requireRoles("admin", "manager"), (req, r
     reviewNote: String(req.body?.reviewNote ?? "").trim().slice(0, 1200),
     reviewedAt: new Date().toISOString(),
   };
-  addAuditLog(db, req, {
+  await updateHrLeaveRequest(db.hrLeaveRequests[index]);
+  await appendAuditLog(req, db, {
     action: "hr.leave.review",
     entityType: "hr-leave",
     entityId: id,
     summary: `Leave request ${status}.`,
   });
-  writeStore(db);
   return res.json(db.hrLeaveRequests[index]);
 });
 
-app.get("/api/hr/attendance", (req, res) => {
-  const db = readStore();
+app.get("/api/hr/attendance", async (req, res) => {
+  const db = await getCoreState();
   db.hrAttendanceRecords = normalizeHrAttendanceRecords(db.hrAttendanceRecords);
   const month = String(req.query.month ?? "").trim();
   const memberIdFilter = String(req.query.memberId ?? "").trim();
@@ -1776,11 +1845,11 @@ app.get("/api/hr/attendance", (req, res) => {
   return res.json(rows.sort((a, b) => (a.date < b.date ? 1 : -1)));
 });
 
-app.put("/api/hr/attendance/:memberId/:date", requireRoles("admin"), (req, res) => {
+app.put("/api/hr/attendance/:memberId/:date", requireRoles("admin"), async (req, res) => {
   const memberId = String(req.params.memberId ?? "").trim();
   const date = normalizeIsoDate(req.params.date);
   if (!memberId || !date) return res.status(400).json({ message: "memberId and date are required." });
-  const db = readStore();
+  const db = await getCoreState();
   const member = db.teamMembers.find((m) => m.id === memberId);
   if (!member) return res.status(404).json({ message: "Team member not found." });
   db.hrAttendanceRecords = normalizeHrAttendanceRecords(db.hrAttendanceRecords);
@@ -1815,37 +1884,37 @@ app.put("/api/hr/attendance/:memberId/:date", requireRoles("admin"), (req, res) 
       updatedAt: now,
     };
   }
-  addAuditLog(db, req, {
+  await upsertHrAttendanceRecord(db.hrAttendanceRecords.find((row) => row.memberId === memberId && row.date === date));
+  await appendAuditLog(req, db, {
     action: "hr.attendance.upsert",
     entityType: "hr-attendance",
     entityId: `${memberId}:${date}`,
     summary: `Attendance updated for ${member.fullName} (${date})`,
   });
-  writeStore(db);
   return res.json(db.hrAttendanceRecords.find((row) => row.memberId === memberId && row.date === date));
 });
-app.delete("/api/hr/attendance/record/:id", requireRoles("admin"), (req, res) => {
+app.delete("/api/hr/attendance/record/:id", requireRoles("admin"), async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ message: "Attendance record id is required." });
-  const db = readStore();
+  const db = await getCoreState();
   db.hrAttendanceRecords = normalizeHrAttendanceRecords(db.hrAttendanceRecords);
   const index = db.hrAttendanceRecords.findIndex((row) => row.id === id);
   if (index === -1) return res.status(404).json({ message: "Attendance record not found." });
   const row = db.hrAttendanceRecords[index];
   const memberName = db.teamMembers.find((m) => m.id === row.memberId)?.fullName ?? "Unknown";
   db.hrAttendanceRecords.splice(index, 1);
-  addAuditLog(db, req, {
+  await deleteHrAttendanceRecord(id);
+  await appendAuditLog(req, db, {
     action: "hr.attendance.delete",
     entityType: "hr-attendance",
     entityId: id,
     summary: `Attendance deleted for ${memberName} (${row.date})`,
   });
-  writeStore(db);
   return res.status(204).send();
 });
 
-app.get("/api/hr/summary", (req, res) => {
-  const db = readStore();
+app.get("/api/hr/summary", async (req, res) => {
+  const db = await getCoreState();
   db.hrProfiles = normalizeHrProfiles(db.hrProfiles);
   db.hrLeaveRequests = normalizeHrLeaveRequests(db.hrLeaveRequests);
   db.hrAttendanceRecords = normalizeHrAttendanceRecords(db.hrAttendanceRecords);
@@ -1876,8 +1945,8 @@ app.get("/api/hr/summary", (req, res) => {
   });
 });
 
-app.get("/api/projects", (req, res) => {
-  const db = readStore();
+app.get("/api/projects", async (req, res) => {
+  const db = await getCoreState();
   const userId = String(req.auth?.userId ?? "").trim();
   const role = normalizeAppRole(req.auth?.role);
   const projects = Array.isArray(db.projects) ? db.projects : [];
@@ -1885,7 +1954,7 @@ app.get("/api/projects", (req, res) => {
   res.json(visibleProjects);
 });
 
-app.post("/api/projects", (req, res) => {
+app.post("/api/projects", async (req, res) => {
   const { name, description = "", ownerId, memberIds = [], workflowTemplateSteps = [] } = req.body ?? {};
   const cleanName = String(name ?? "").trim();
   const cleanOwnerId = String(ownerId ?? "").trim();
@@ -1898,7 +1967,7 @@ app.post("/api/projects", (req, res) => {
     return res.status(400).json({ message: "Project owner is required." });
   }
 
-  const db = readStore();
+  const db = await getCoreState();
   if (!ensurePermission(req, res, db, "projectCreate")) return;
   const memberScope = memberScopeForUser(db, req.auth?.userId, req.auth?.role);
   if (!memberScope.has(cleanOwnerId) || !allIdsWithinScope(cleanMemberIds, memberScope)) {
@@ -1929,13 +1998,13 @@ app.post("/api/projects", (req, res) => {
   };
 
   db.projects.unshift(project);
-  addAuditLog(db, req, {
+  await createProject(project);
+  await appendAuditLog(req, db, {
     action: "project.create",
     entityType: "project",
     entityId: project.id,
     summary: `Project created: ${project.name}`,
   });
-  writeStore(db);
   triggerWebhookEvent(db, "project.created", {
     projectId: project.id,
     name: project.name,
@@ -1944,7 +2013,7 @@ app.post("/api/projects", (req, res) => {
   return res.status(201).json(project);
 });
 
-app.patch("/api/projects/:id", (req, res) => {
+app.patch("/api/projects/:id", async (req, res) => {
   const { id } = req.params;
   const { name, description = "", ownerId, memberIds = [], workflowTemplateSteps = [] } = req.body ?? {};
   const payload = {
@@ -1961,7 +2030,7 @@ app.patch("/api/projects/:id", (req, res) => {
     return res.status(400).json({ message: "Project owner is required." });
   }
 
-  const db = readStore();
+  const db = await getCoreState();
   if (!ensurePermission(req, res, db, "projectUpdate")) return;
   const index = db.projects.findIndex((p) => p.id === id);
   if (index === -1) {
@@ -1994,13 +2063,13 @@ app.patch("/api/projects/:id", (req, res) => {
   if (oldName !== payload.name) {
     db.tasks = db.tasks.map((t) => (t.projectName === oldName ? { ...t, projectName: payload.name } : t));
   }
-  addAuditLog(db, req, {
+  await updateProject(db.projects[index]);
+  await appendAuditLog(req, db, {
     action: "project.update",
     entityType: "project",
     entityId: id,
     summary: `Project updated: ${payload.name}`,
   });
-  writeStore(db);
   triggerWebhookEvent(db, "project.updated", {
     projectId: id,
     name: db.projects[index].name,
@@ -2009,9 +2078,9 @@ app.patch("/api/projects/:id", (req, res) => {
   return res.json(db.projects[index]);
 });
 
-app.delete("/api/projects/:id", (req, res) => {
+app.delete("/api/projects/:id", async (req, res) => {
   const { id } = req.params;
-  const db = readStore();
+  const db = await getCoreState();
   if (!ensurePermission(req, res, db, "projectDelete")) return;
   const project = db.projects.find((p) => p.id === id);
   if (!project) {
@@ -2023,13 +2092,13 @@ app.delete("/api/projects/:id", (req, res) => {
 
   db.projects = db.projects.filter((p) => p.id !== id);
   db.tasks = db.tasks.filter((t) => t.projectName !== project.name);
-  addAuditLog(db, req, {
+  await deleteProject(id);
+  await appendAuditLog(req, db, {
     action: "project.delete",
     entityType: "project",
     entityId: id,
     summary: `Project deleted: ${project.name}`,
   });
-  writeStore(db);
   triggerWebhookEvent(db, "project.deleted", {
     projectId: id,
     name: project.name,
@@ -2037,8 +2106,8 @@ app.delete("/api/projects/:id", (req, res) => {
   return res.status(204).send();
 });
 
-app.get("/api/tasks", (req, res) => {
-  const db = readStore();
+app.get("/api/tasks", async (req, res) => {
+  const db = await getCoreState();
   const memberScope = memberScopeForUser(db, req.auth?.userId, req.auth?.role);
   const visible = (Array.isArray(db.tasks) ? db.tasks : []).filter((task) => {
     if (normalizeAppRole(req.auth?.role) === "admin") return true;
@@ -2197,7 +2266,7 @@ app.get("/api/inbox", (req, res) => {
   }
 });
 
-app.post("/api/tasks", (req, res) => {
+app.post("/api/tasks", async (req, res) => {
   const {
     title,
     description,
@@ -2239,7 +2308,7 @@ app.post("/api/tasks", (req, res) => {
   ) {
     return res.status(400).json({ message: "Missing required task fields." });
   }
-  const db = readStore();
+  const db = await getCoreState();
   cleanupTaskCreateIdempotency();
   const requesterId = String(req.auth?.userId ?? "").trim();
   const idempotencyKeyRaw = String(req.get("x-idempotency-key") ?? "").trim();
@@ -2337,13 +2406,13 @@ app.post("/api/tasks", (req, res) => {
   };
 
   db.tasks.unshift(task);
-  addAuditLog(db, req, {
+  await createTask(task);
+  await appendAuditLog(req, db, {
     action: "task.create",
     entityType: "task",
     entityId: task.id,
     summary: `Task created: ${task.title}`,
   });
-  writeStore(db);
   if (idempotencyLookupKey) {
     taskCreateIdempotencyMap.set(idempotencyLookupKey, { at: Date.now(), task });
   }
@@ -2357,10 +2426,10 @@ app.post("/api/tasks", (req, res) => {
   return res.status(201).json(task);
 });
 
-app.patch("/api/tasks/:id", (req, res) => {
+app.patch("/api/tasks/:id", async (req, res) => {
   const { id } = req.params;
   const body = req.body ?? {};
-  const db = readStore();
+  const db = await getCoreState();
   const settings = db.settings ?? getDefaultSettings();
   const index = db.tasks.findIndex((t) => t.id === id);
   if (index === -1) {
@@ -2388,13 +2457,13 @@ app.patch("/api/tasks/:id", (req, res) => {
           ? nowIso
           : String(db.tasks[index]?.lastStatusChangedAt ?? db.tasks[index]?.updatedAt ?? db.tasks[index]?.createdAt ?? nowIso),
     };
-    addAuditLog(db, req, {
+    await updateTask(db.tasks[index]);
+    await appendAuditLog(req, db, {
       action: "task.status.update",
       entityType: "task",
       entityId: id,
       summary: `Task status changed to ${nextStatus}.`,
     });
-    writeStore(db);
     triggerWebhookEvent(db, "task.updated", {
       taskId: id,
       title: db.tasks[index]?.title,
@@ -2428,13 +2497,13 @@ app.patch("/api/tasks/:id", (req, res) => {
           ? nowIso
           : String(db.tasks[index]?.lastStatusChangedAt ?? db.tasks[index]?.updatedAt ?? db.tasks[index]?.createdAt ?? nowIso),
     };
-    addAuditLog(db, req, {
+    await updateTask(db.tasks[index]);
+    await appendAuditLog(req, db, {
       action: "task.status.update",
       entityType: "task",
       entityId: id,
       summary: `Task status changed to ${status}.`,
     });
-    writeStore(db);
     triggerWebhookEvent(db, "task.updated", {
       taskId: id,
       title: db.tasks[index]?.title,
@@ -2542,13 +2611,13 @@ app.patch("/api/tasks/:id", (req, res) => {
         ? nowIso
         : String(db.tasks[index]?.lastStatusChangedAt ?? db.tasks[index]?.updatedAt ?? db.tasks[index]?.createdAt ?? nowIso),
   };
-  addAuditLog(db, req, {
+  await updateTask(db.tasks[index]);
+  await appendAuditLog(req, db, {
     action: "task.update",
     entityType: "task",
     entityId: id,
     summary: `Task updated: ${payload.title}`,
   });
-  writeStore(db);
   triggerWebhookEvent(db, "task.updated", {
     taskId: id,
     title: db.tasks[index]?.title,
@@ -2562,13 +2631,13 @@ app.patch("/api/tasks/:id", (req, res) => {
   return res.json(db.tasks[index]);
 });
 
-app.post("/api/tasks/:id/workflow/comments", (req, res) => {
+app.post("/api/tasks/:id/workflow/comments", async (req, res) => {
   const { id } = req.params;
   const stepId = String(req.body?.stepId ?? "").trim();
   const text = String(req.body?.text ?? "").trim();
   if (!stepId) return res.status(400).json({ message: "stepId is required." });
   if (!text) return res.status(400).json({ message: "Comment text is required." });
-  const db = readStore();
+  const db = await getCoreState();
   const index = db.tasks.findIndex((t) => t.id === id);
   if (index === -1) return res.status(404).json({ message: "Task not found." });
   const task = db.tasks[index];
@@ -2600,13 +2669,13 @@ app.post("/api/tasks/:id/workflow/comments", (req, res) => {
     workflowStepComments: next,
     updatedAt: nowIso,
   };
-  addAuditLog(db, req, {
+  await updateTask(db.tasks[index]);
+  await appendAuditLog(req, db, {
     action: "task.workflow.comment",
     entityType: "task",
     entityId: id,
     summary: `Workflow comment added on step ${stepId}`,
   });
-  writeStore(db);
   triggerWebhookEvent(db, "task.updated", {
     taskId: id,
     title: db.tasks[index]?.title,
@@ -2615,9 +2684,9 @@ app.post("/api/tasks/:id/workflow/comments", (req, res) => {
   return res.json(db.tasks[index]);
 });
 
-app.post("/api/tasks/:id/workflow/advance", (req, res) => {
+app.post("/api/tasks/:id/workflow/advance", async (req, res) => {
   const { id } = req.params;
-  const db = readStore();
+  const db = await getCoreState();
   const index = db.tasks.findIndex((t) => t.id === id);
   if (index === -1) return res.status(404).json({ message: "Task not found." });
   if (!ensurePermission(req, res, db, "taskChangeStatus")) return;
@@ -2655,7 +2724,8 @@ app.post("/api/tasks/:id/workflow/advance", (req, res) => {
     updatedAt: nowIso,
     lastStatusChangedAt: nowIso,
   };
-  addAuditLog(db, req, {
+  await updateTask(db.tasks[index]);
+  await appendAuditLog(req, db, {
     action: "task.workflow.advance",
     entityType: "task",
     entityId: id,
@@ -2667,7 +2737,6 @@ app.post("/api/tasks/:id/workflow/advance", (req, res) => {
       completed,
     },
   });
-  writeStore(db);
   triggerWebhookEvent(db, "task.updated", {
     taskId: id,
     title: db.tasks[index]?.title,
@@ -2676,13 +2745,13 @@ app.post("/api/tasks/:id/workflow/advance", (req, res) => {
   return res.json(db.tasks[index]);
 });
 
-app.post("/api/tasks/:id/workflow/decision", (req, res) => {
+app.post("/api/tasks/:id/workflow/decision", async (req, res) => {
   const { id } = req.params;
   const decision = String(req.body?.decision ?? "").trim();
   if (decision !== "approve" && decision !== "reject") {
     return res.status(400).json({ message: "decision must be approve or reject." });
   }
-  const db = readStore();
+  const db = await getCoreState();
   const index = db.tasks.findIndex((t) => t.id === id);
   if (index === -1) return res.status(404).json({ message: "Task not found." });
   if (!ensurePermission(req, res, db, "taskChangeStatus")) return;
@@ -2730,7 +2799,8 @@ app.post("/api/tasks/:id/workflow/decision", (req, res) => {
     updatedAt: nowIso,
     lastStatusChangedAt: nowIso,
   };
-  addAuditLog(db, req, {
+  await updateTask(db.tasks[index]);
+  await appendAuditLog(req, db, {
     action: "task.workflow.decision",
     entityType: "task",
     entityId: id,
@@ -2742,7 +2812,6 @@ app.post("/api/tasks/:id/workflow/decision", (req, res) => {
       completed,
     },
   });
-  writeStore(db);
   triggerWebhookEvent(db, "task.updated", {
     taskId: id,
     title: db.tasks[index]?.title,
@@ -2751,9 +2820,9 @@ app.post("/api/tasks/:id/workflow/decision", (req, res) => {
   return res.json(db.tasks[index]);
 });
 
-app.delete("/api/tasks/:id", (req, res) => {
+app.delete("/api/tasks/:id", async (req, res) => {
   const { id } = req.params;
-  const db = readStore();
+  const db = await getCoreState();
   if (!ensurePermission(req, res, db, "taskDelete")) return;
   const exists = db.tasks.some((t) => t.id === id);
   if (!exists) {
@@ -2761,13 +2830,13 @@ app.delete("/api/tasks/:id", (req, res) => {
   }
   const task = db.tasks.find((t) => t.id === id);
   db.tasks = db.tasks.filter((t) => t.id !== id);
-  addAuditLog(db, req, {
+  await deleteTask(id);
+  await appendAuditLog(req, db, {
     action: "task.delete",
     entityType: "task",
     entityId: id,
     summary: "Task deleted.",
   });
-  writeStore(db);
   triggerWebhookEvent(db, "task.deleted", {
     taskId: id,
     title: String(task?.title ?? ""),
@@ -2902,11 +2971,10 @@ const migrateLegacyAccountingForUser = (db, userId) => {
   return changed;
 };
 
-app.get("/api/accounting/transactions", (req, res) => {
+app.get("/api/accounting/transactions", async (req, res) => {
   const userId = getAccountingUserId(req);
-  const db = readStore();
-  if (migrateLegacyAccountingForUser(db, userId)) writeStore(db);
-  const rows = (Array.isArray(db.accountingTransactions) ? db.accountingTransactions : [])
+  const accounting = await getAccountingState(userId);
+  const rows = (Array.isArray(accounting.transactions) ? accounting.transactions : [])
     .filter((t) => String(t?.ownerId ?? "") === userId)
     .map((t) => ({
       ...t,
@@ -2915,14 +2983,13 @@ app.get("/api/accounting/transactions", (req, res) => {
   res.json(rows);
 });
 
-app.get("/api/accounting/accounts", (req, res) => {
+app.get("/api/accounting/accounts", async (req, res) => {
   const userId = getAccountingUserId(req);
-  const db = readStore();
-  if (migrateLegacyAccountingForUser(db, userId)) writeStore(db);
-  res.json((Array.isArray(db.accountingAccounts) ? db.accountingAccounts : []).filter((a) => String(a?.ownerId ?? "") === userId));
+  const accounting = await getAccountingState(userId);
+  res.json((Array.isArray(accounting.accounts) ? accounting.accounts : []).filter((a) => String(a?.ownerId ?? "") === userId));
 });
 
-app.post("/api/accounting/accounts", (req, res) => {
+app.post("/api/accounting/accounts", async (req, res) => {
   const userId = getAccountingUserId(req);
   const { name, bankName = "", cardLast4 = "" } = req.body ?? {};
   const payload = {
@@ -2938,9 +3005,8 @@ app.post("/api/accounting/accounts", (req, res) => {
     return res.status(400).json({ message: "cardLast4 must be 4 digits." });
   }
 
-  const db = readStore();
-  if (migrateLegacyAccountingForUser(db, userId)) writeStore(db);
-  const exists = db.accountingAccounts.some((a) => a.name === payload.name && String(a?.ownerId ?? "") === userId);
+  const accounting = await getAccountingState(userId);
+  const exists = accounting.accounts.some((a) => a.name === payload.name && String(a?.ownerId ?? "") === userId);
   if (exists) {
     return res.status(409).json({ message: "Account already exists." });
   }
@@ -2951,18 +3017,17 @@ app.post("/api/accounting/accounts", (req, res) => {
     ownerId: userId,
     createdAt: new Date().toISOString(),
   };
-  db.accountingAccounts.unshift(account);
-  addAuditLog(db, req, {
+  await createAccountingAccount(account);
+  await appendAuditLog(req, await getCoreState(), {
     action: "account.create",
     entityType: "accounting-account",
     entityId: account.id,
     summary: `Accounting account created: ${account.name}`,
   });
-  writeStore(db);
   return res.status(201).json(account);
 });
 
-app.patch("/api/accounting/accounts/:id", (req, res) => {
+app.patch("/api/accounting/accounts/:id", async (req, res) => {
   const userId = getAccountingUserId(req);
   const { id } = req.params;
   const { name, bankName = "", cardLast4 = "" } = req.body ?? {};
@@ -2979,54 +3044,51 @@ app.patch("/api/accounting/accounts/:id", (req, res) => {
     return res.status(400).json({ message: "cardLast4 must be 4 digits." });
   }
 
-  const db = readStore();
-  if (migrateLegacyAccountingForUser(db, userId)) writeStore(db);
-  const index = db.accountingAccounts.findIndex((a) => a.id === id && String(a?.ownerId ?? "") === userId);
+  const accounting = await getAccountingState(userId);
+  const index = accounting.accounts.findIndex((a) => a.id === id && String(a?.ownerId ?? "") === userId);
   if (index === -1) {
     return res.status(404).json({ message: "Account not found." });
   }
-  const duplicate = db.accountingAccounts.some((a) => a.id !== id && a.name === payload.name && String(a?.ownerId ?? "") === userId);
+  const duplicate = accounting.accounts.some((a) => a.id !== id && a.name === payload.name && String(a?.ownerId ?? "") === userId);
   if (duplicate) {
     return res.status(409).json({ message: "Account already exists." });
   }
 
-  db.accountingAccounts[index] = { ...db.accountingAccounts[index], ...payload };
-  addAuditLog(db, req, {
+  accounting.accounts[index] = { ...accounting.accounts[index], ...payload };
+  await updateAccountingAccount(accounting.accounts[index]);
+  await appendAuditLog(req, await getCoreState(), {
     action: "account.update",
     entityType: "accounting-account",
     entityId: id,
     summary: `Accounting account updated: ${payload.name}`,
   });
-  writeStore(db);
-  return res.json(db.accountingAccounts[index]);
+  return res.json(accounting.accounts[index]);
 });
 
-app.delete("/api/accounting/accounts/:id", (req, res) => {
+app.delete("/api/accounting/accounts/:id", async (req, res) => {
   const userId = getAccountingUserId(req);
   const { id } = req.params;
-  const db = readStore();
-  if (migrateLegacyAccountingForUser(db, userId)) writeStore(db);
-  const account = db.accountingAccounts.find((a) => a.id === id && String(a?.ownerId ?? "") === userId);
+  const accounting = await getAccountingState(userId);
+  const account = accounting.accounts.find((a) => a.id === id && String(a?.ownerId ?? "") === userId);
   if (!account) {
     return res.status(404).json({ message: "Account not found." });
   }
-  const hasTransactions = db.accountingTransactions.some((t) => t.accountId === id && String(t?.ownerId ?? "") === userId);
+  const hasTransactions = accounting.transactions.some((t) => t.accountId === id && String(t?.ownerId ?? "") === userId);
   if (hasTransactions) {
     return res.status(409).json({ message: "Account has transactions and cannot be removed." });
   }
 
-  db.accountingAccounts = db.accountingAccounts.filter((a) => !(a.id === id && String(a?.ownerId ?? "") === userId));
-  addAuditLog(db, req, {
+  await deleteAccountingAccount(id);
+  await appendAuditLog(req, await getCoreState(), {
     action: "account.delete",
     entityType: "accounting-account",
     entityId: id,
     summary: `Accounting account deleted: ${account.name}`,
   });
-  writeStore(db);
   return res.status(204).send();
 });
 
-app.post("/api/accounting/transactions", (req, res) => {
+app.post("/api/accounting/transactions", async (req, res) => {
   const userId = getAccountingUserId(req);
   const { type, title, amount, category, date, time = "", note = "", accountId } = req.body ?? {};
   const normalizedTime = normalizeTimeHHMM(time);
@@ -3057,9 +3119,8 @@ app.post("/api/accounting/transactions", (req, res) => {
     return res.status(400).json({ message: "Field 'time' must be in HH:mm format." });
   }
 
-  const db = readStore();
-  if (migrateLegacyAccountingForUser(db, userId)) writeStore(db);
-  const accountExists = db.accountingAccounts.some((a) => a.id === payload.accountId && String(a?.ownerId ?? "") === userId);
+  const accounting = await getAccountingState(userId);
+  const accountExists = accounting.accounts.some((a) => a.id === payload.accountId && String(a?.ownerId ?? "") === userId);
   if (!accountExists) {
     return res.status(400).json({ message: "Selected account does not exist." });
   }
@@ -3070,18 +3131,17 @@ app.post("/api/accounting/transactions", (req, res) => {
     createdAt: new Date().toISOString(),
   };
 
-  db.accountingTransactions.unshift(transaction);
-  addAuditLog(db, req, {
+  await createAccountingTransaction(transaction);
+  await appendAuditLog(req, await getCoreState(), {
     action: "transaction.create",
     entityType: "accounting-transaction",
     entityId: transaction.id,
     summary: `Transaction created: ${transaction.title}`,
   });
-  writeStore(db);
   return res.status(201).json(transaction);
 });
 
-app.patch("/api/accounting/transactions/:id", (req, res) => {
+app.patch("/api/accounting/transactions/:id", async (req, res) => {
   const userId = getAccountingUserId(req);
   const { id } = req.params;
   const { type, title, amount, category, date, time = "", note = "", accountId } = req.body ?? {};
@@ -3110,80 +3170,75 @@ app.patch("/api/accounting/transactions/:id", (req, res) => {
     return res.status(400).json({ message: "Field 'time' must be in HH:mm format." });
   }
 
-  const db = readStore();
-  if (migrateLegacyAccountingForUser(db, userId)) writeStore(db);
-  const accountExists = db.accountingAccounts.some((a) => a.id === payload.accountId && String(a?.ownerId ?? "") === userId);
+  const accounting = await getAccountingState(userId);
+  const accountExists = accounting.accounts.some((a) => a.id === payload.accountId && String(a?.ownerId ?? "") === userId);
   if (!accountExists) {
     return res.status(400).json({ message: "Selected account does not exist." });
   }
-  const index = db.accountingTransactions.findIndex((t) => t.id === id && String(t?.ownerId ?? "") === userId);
+  const index = accounting.transactions.findIndex((t) => t.id === id && String(t?.ownerId ?? "") === userId);
   if (index === -1) {
     return res.status(404).json({ message: "Transaction not found." });
   }
   payload.time =
     payload.time ||
-    normalizeTimeHHMM(db.accountingTransactions[index]?.time) ||
+    normalizeTimeHHMM(accounting.transactions[index]?.time) ||
     currentTimeHHMMLocal();
 
-  db.accountingTransactions[index] = {
-    ...db.accountingTransactions[index],
+  accounting.transactions[index] = {
+    ...accounting.transactions[index],
     ...payload,
   };
-  addAuditLog(db, req, {
+  await updateAccountingTransaction(accounting.transactions[index]);
+  await appendAuditLog(req, await getCoreState(), {
     action: "transaction.update",
     entityType: "accounting-transaction",
     entityId: id,
     summary: `Transaction updated: ${payload.title}`,
   });
-  writeStore(db);
-  return res.json(db.accountingTransactions[index]);
+  return res.json(accounting.transactions[index]);
 });
 
-app.delete("/api/accounting/transactions/:id", (req, res) => {
+app.delete("/api/accounting/transactions/:id", async (req, res) => {
   const userId = getAccountingUserId(req);
   const { id } = req.params;
-  const db = readStore();
-  if (migrateLegacyAccountingForUser(db, userId)) writeStore(db);
-  const exists = db.accountingTransactions.some((t) => t.id === id && String(t?.ownerId ?? "") === userId);
+  const accounting = await getAccountingState(userId);
+  const exists = accounting.transactions.some((t) => t.id === id && String(t?.ownerId ?? "") === userId);
   if (!exists) {
     return res.status(404).json({ message: "Transaction not found." });
   }
-  db.accountingTransactions = db.accountingTransactions.filter((t) => !(t.id === id && String(t?.ownerId ?? "") === userId));
-  addAuditLog(db, req, {
+  await deleteAccountingTransaction(id);
+  await appendAuditLog(req, await getCoreState(), {
     action: "transaction.delete",
     entityType: "accounting-transaction",
     entityId: id,
     summary: "Transaction deleted.",
   });
-  writeStore(db);
   return res.status(204).send();
 });
 
-app.get("/api/accounting/budgets/:month", (req, res) => {
+app.get("/api/accounting/budgets/:month", async (req, res) => {
   const userId = getAccountingUserId(req);
   const { month } = req.params;
   if (!/^\d{4}-\d{2}$/.test(month)) {
     return res.status(400).json({ message: "Month must be in YYYY-MM format." });
   }
 
-  const db = readStore();
-  if (migrateLegacyAccountingForUser(db, userId)) writeStore(db);
-  const amount = Number(db.accountingBudgets?.[budgetKeyForUser(userId, month)] ?? 0);
+  const accounting = await getAccountingState(userId);
+  const amount = Number(accounting.budgets?.[budgetKeyForUser(userId, month)] ?? 0);
   return res.json({ month, amount: Number.isFinite(amount) ? amount : 0 });
 });
 
-app.get("/api/accounting/budgets-history", (req, res) => {
+app.get("/api/accounting/budgets-history", async (req, res) => {
   const userId = getAccountingUserId(req);
   const month = String(req.query.month ?? "").trim();
-  const db = readStore();
-  if (migrateLegacyAccountingForUser(db, userId)) writeStore(db);
-  const rows = Array.isArray(db.accountingBudgetHistory) ? db.accountingBudgetHistory : [];
+  const accounting = await getAccountingState(userId);
+  const rows = Array.isArray(accounting.budgetHistory) ? accounting.budgetHistory : [];
   const filtered = month ? rows.filter((x) => x.month === month && String(x?.ownerId ?? "") === userId) : rows.filter((x) => String(x?.ownerId ?? "") === userId);
   filtered.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   return res.json(filtered);
 });
 
-app.put("/api/accounting/budgets/:month", (req, res) => {
+app.put("/api/accounting/budgets/:month", async (req, res) => {
   const userId = getAccountingUserId(req);
   const { month } = req.params;
   const { amount } = req.body ?? {};
@@ -3195,35 +3250,24 @@ app.put("/api/accounting/budgets/:month", (req, res) => {
     return res.status(400).json({ message: "Budget amount must be a non-negative number." });
   }
 
-  const db = readStore();
-  if (migrateLegacyAccountingForUser(db, userId)) writeStore(db);
+  const accounting = await getAccountingState(userId);
   const budgetKey = budgetKeyForUser(userId, month);
-  const previousAmount = Number(db.accountingBudgets[budgetKey] ?? 0);
-  db.accountingBudgets[budgetKey] = parsedAmount;
-  if (!Array.isArray(db.accountingBudgetHistory)) db.accountingBudgetHistory = [];
-  db.accountingBudgetHistory.unshift({
-    id: crypto.randomUUID(),
-    ownerId: userId,
-    month,
-    previousAmount: Number.isFinite(previousAmount) ? previousAmount : 0,
-    amount: parsedAmount,
-    updatedAt: new Date().toISOString(),
-  });
-  addAuditLog(db, req, {
+  const previousAmount = Number(accounting.budgets[budgetKey] ?? 0);
+  await setAccountingBudget({ userId, month, amount: parsedAmount, previousAmount: Number.isFinite(previousAmount) ? previousAmount : 0 });
+  await appendAuditLog(req, await getCoreState(), {
     action: "budget.update",
     entityType: "accounting-budget",
     entityId: month,
     summary: `Budget updated for ${month}`,
     meta: { previousAmount, amount: parsedAmount },
   });
-  writeStore(db);
   return res.json({ month, amount: parsedAmount });
 });
 
-app.get("/api/chat/conversations", (req, res) => {
+app.get("/api/chat/conversations", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
-    const db = readStore();
+    const db = await getCoreState();
     const conversations = normalizeChatConversations(db.chatConversations);
     const messages = normalizeChatMessages(db.chatMessages);
     const visible = conversations.filter((c) => c.participantIds.includes(userId));
@@ -3249,14 +3293,14 @@ app.get("/api/chat/conversations", (req, res) => {
   }
 });
 
-app.post("/api/chat/conversations/direct", (req, res) => {
+app.post("/api/chat/conversations/direct", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
     const memberId = String(req.body?.memberId ?? "").trim();
     if (!memberId || memberId === userId) {
       return res.status(400).json({ message: "Valid memberId is required." });
     }
-    const db = readStore();
+    const db = await getCoreState();
     if (!canAccessMemberByTeam(db, userId, req.auth?.role, memberId)) {
       return res.status(403).json({ message: "You can only chat with members in your team scope." });
     }
@@ -3281,15 +3325,14 @@ app.post("/api/chat/conversations/direct", (req, res) => {
       createdAt: now,
       updatedAt: now,
     };
-    db.chatConversations = [...conversations, conversation];
-    addAuditLog(db, req, {
+    await createChatConversation(conversation);
+    await appendAuditLog(req, db, {
       action: "conversation.create",
       entityType: "chat-conversation",
       entityId: conversation.id,
       summary: "Direct conversation created.",
       meta: { type: "direct", participantIds: conversation.participantIds },
     });
-    writeStore(db);
     return res.status(201).json(conversation);
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -3298,7 +3341,7 @@ app.post("/api/chat/conversations/direct", (req, res) => {
   }
 });
 
-app.post("/api/chat/conversations/group", (req, res) => {
+app.post("/api/chat/conversations/group", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
     const title = String(req.body?.title ?? "").trim();
@@ -3310,7 +3353,7 @@ app.post("/api/chat/conversations/group", (req, res) => {
     if (merged.length < 2) {
       return res.status(400).json({ message: "Group requires at least 2 members." });
     }
-    const db = readStore();
+    const db = await getCoreState();
     const memberScope = memberScopeForUser(db, userId, req.auth?.role);
     if (!allIdsWithinScope(merged, memberScope)) {
       return res.status(403).json({ message: "You can only create groups with members in your team scope." });
@@ -3330,15 +3373,14 @@ app.post("/api/chat/conversations/group", (req, res) => {
       createdAt: now,
       updatedAt: now,
     };
-    db.chatConversations = [...conversations, conversation];
-    addAuditLog(db, req, {
+    await createChatConversation(conversation);
+    await appendAuditLog(req, db, {
       action: "conversation.create",
       entityType: "chat-conversation",
       entityId: conversation.id,
       summary: `Group conversation created: ${title}`,
       meta: { type: "group", participantIds: conversation.participantIds },
     });
-    writeStore(db);
     return res.status(201).json(conversation);
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -3347,12 +3389,12 @@ app.post("/api/chat/conversations/group", (req, res) => {
   }
 });
 
-app.delete("/api/chat/conversations/:id", (req, res) => {
+app.delete("/api/chat/conversations/:id", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
     const userRole = normalizeAppRole(req.auth?.role);
     const { id } = req.params;
-    const db = readStore();
+    const db = await getCoreState();
     const conversations = normalizeChatConversations(db.chatConversations);
     const conversation = conversations.find((c) => c.id === id);
     if (!conversation) return res.status(404).json({ message: "Conversation not found." });
@@ -3363,18 +3405,15 @@ app.delete("/api/chat/conversations/:id", (req, res) => {
     if (!canDelete) {
       return res.status(403).json({ message: "Only conversation creator or admin can delete this conversation." });
     }
-    db.chatConversations = conversations.filter((c) => c.id !== id);
-    const messages = normalizeChatMessages(db.chatMessages);
-    db.chatMessages = messages.filter((m) => m.conversationId !== id);
     chatTypingByConversation.delete(id);
-    addAuditLog(db, req, {
+    await deleteChatConversation(id);
+    await appendAuditLog(req, db, {
       action: "conversation.delete",
       entityType: "chat-conversation",
       entityId: id,
       summary: "Conversation deleted.",
       meta: { participants: conversation.participantIds.length },
     });
-    writeStore(db);
     io.to(`conversation:${id}`).emit("chat:conversation:deleted", { conversationId: id });
     for (const participantId of conversation.participantIds) {
       io.to(`user:${participantId}`).emit("chat:conversation:deleted", { conversationId: id });
@@ -3387,11 +3426,11 @@ app.delete("/api/chat/conversations/:id", (req, res) => {
   }
 });
 
-app.get("/api/chat/conversations/:id/messages", (req, res) => {
+app.get("/api/chat/conversations/:id/messages", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
     const { id } = req.params;
-    const db = readStore();
+    const db = await getCoreState();
     const conversations = normalizeChatConversations(db.chatConversations);
     const messages = normalizeChatMessages(db.chatMessages);
     const conversation = conversations.find((c) => c.id === id);
@@ -3420,11 +3459,11 @@ app.get("/api/chat/conversations/:id/messages", (req, res) => {
   }
 });
 
-app.post("/api/chat/conversations/:id/messages", (req, res) => {
+app.post("/api/chat/conversations/:id/messages", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
     const { id } = req.params;
-    const db = readStore();
+    const db = await getCoreState();
     const conversations = normalizeChatConversations(db.chatConversations);
     const result = buildChatMessage({
       db,
@@ -3440,9 +3479,8 @@ app.post("/api/chat/conversations/:id/messages", (req, res) => {
     if (result.error) {
       return res.status(result.error.status).json({ message: result.error.message });
     }
-    db.chatMessages = result.updatedMessages;
-    db.chatConversations = result.updatedConversations;
-    addAuditLog(db, req, {
+    await createChatMessage(result.message);
+    await appendAuditLog(req, db, {
       action: "message.send",
       entityType: "chat-message",
       entityId: result.message.id,
@@ -3453,7 +3491,6 @@ app.post("/api/chat/conversations/:id/messages", (req, res) => {
         attachmentCount: Array.isArray(result.message.attachments) ? result.message.attachments.length : 0,
       },
     });
-    writeStore(db);
     triggerWebhookEvent(db, "chat.message.created", {
       messageId: result.message.id,
       conversationId: id,
@@ -3483,7 +3520,7 @@ app.post("/api/chat/conversations/:id/messages", (req, res) => {
   }
 });
 
-app.post("/api/chat/messages/:id/reactions", (req, res) => {
+app.post("/api/chat/messages/:id/reactions", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
     const messageId = String(req.params?.id ?? "").trim();
@@ -3491,7 +3528,7 @@ app.post("/api/chat/messages/:id/reactions", (req, res) => {
     if (!messageId) return res.status(400).json({ message: "Message id is required." });
     if (!emoji) return res.status(400).json({ message: "emoji is required." });
 
-    const db = readStore();
+    const db = await getCoreState();
     const conversations = normalizeChatConversations(db.chatConversations);
     const messages = normalizeChatMessages(db.chatMessages);
     const messageIndex = messages.findIndex((m) => m.id === messageId);
@@ -3522,8 +3559,8 @@ app.post("/api/chat/messages/:id/reactions", (req, res) => {
     }
 
     const updatedMessage = { ...current, reactions: nextReactions };
-    db.chatMessages = messages.map((m, idx) => (idx === messageIndex ? updatedMessage : m));
-    addAuditLog(db, req, {
+    await updateChatMessage(updatedMessage);
+    await appendAuditLog(req, db, {
       action: "message.react",
       entityType: "chat-message",
       entityId: updatedMessage.id,
@@ -3534,7 +3571,6 @@ app.post("/api/chat/messages/:id/reactions", (req, res) => {
         reactionsCount: nextReactions.length,
       },
     });
-    writeStore(db);
     io.to(`conversation:${updatedMessage.conversationId}`).emit("chat:message:reaction", {
       conversationId: updatedMessage.conversationId,
       messageId: updatedMessage.id,
@@ -3548,7 +3584,7 @@ app.post("/api/chat/messages/:id/reactions", (req, res) => {
   }
 });
 
-app.patch("/api/chat/messages/:id", (req, res) => {
+app.patch("/api/chat/messages/:id", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
     const messageId = String(req.params?.id ?? "").trim();
@@ -3557,7 +3593,7 @@ app.patch("/api/chat/messages/:id", (req, res) => {
     if (!text) return res.status(400).json({ message: "Message text is required." });
     if (text.length > 2000) return res.status(400).json({ message: "Message is too long." });
 
-    const db = readStore();
+    const db = await getCoreState();
     const conversations = normalizeChatConversations(db.chatConversations);
     const messages = normalizeChatMessages(db.chatMessages);
     const messageIndex = messages.findIndex((m) => m.id === messageId);
@@ -3573,15 +3609,14 @@ app.patch("/api/chat/messages/:id", (req, res) => {
 
     const nowIso = new Date().toISOString();
     const updatedMessage = { ...current, text, editedAt: nowIso };
-    db.chatMessages = messages.map((m, idx) => (idx === messageIndex ? updatedMessage : m));
-    addAuditLog(db, req, {
+    await updateChatMessage(updatedMessage);
+    await appendAuditLog(req, db, {
       action: "message.edit",
       entityType: "chat-message",
       entityId: updatedMessage.id,
       summary: "Message edited.",
       meta: { conversationId: updatedMessage.conversationId },
     });
-    writeStore(db);
     io.to(`conversation:${updatedMessage.conversationId}`).emit("chat:message:updated", {
       conversationId: updatedMessage.conversationId,
       message: updatedMessage,
@@ -3594,13 +3629,13 @@ app.patch("/api/chat/messages/:id", (req, res) => {
   }
 });
 
-app.delete("/api/chat/messages/:id", (req, res) => {
+app.delete("/api/chat/messages/:id", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
     const messageId = String(req.params?.id ?? "").trim();
     if (!messageId) return res.status(400).json({ message: "Message id is required." });
 
-    const db = readStore();
+    const db = await getCoreState();
     const conversations = normalizeChatConversations(db.chatConversations);
     const messages = normalizeChatMessages(db.chatMessages);
     const messageIndex = messages.findIndex((m) => m.id === messageId);
@@ -3626,15 +3661,14 @@ app.delete("/api/chat/messages/:id", (req, res) => {
       deletedById: userId,
       editedAt: nowIso,
     };
-    db.chatMessages = messages.map((m, idx) => (idx === messageIndex ? deletedMessage : m));
-    addAuditLog(db, req, {
+    await updateChatMessage(deletedMessage);
+    await appendAuditLog(req, db, {
       action: "message.delete",
       entityType: "chat-message",
       entityId: deletedMessage.id,
       summary: "Message deleted.",
       meta: { conversationId: deletedMessage.conversationId },
     });
-    writeStore(db);
     io.to(`conversation:${deletedMessage.conversationId}`).emit("chat:message:deleted", {
       conversationId: deletedMessage.conversationId,
       messageId: deletedMessage.id,
@@ -3649,26 +3683,18 @@ app.delete("/api/chat/messages/:id", (req, res) => {
   }
 });
 
-app.post("/api/chat/conversations/:id/read", (req, res) => {
+app.post("/api/chat/conversations/:id/read", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
     const { id } = req.params;
-    const db = readStore();
+    const db = await getCoreState();
     const conversations = normalizeChatConversations(db.chatConversations);
     const conversation = conversations.find((c) => c.id === id);
     if (!conversation) return res.status(404).json({ message: "Conversation not found." });
     if (!conversation.participantIds.includes(userId)) {
       return res.status(403).json({ message: "Forbidden." });
     }
-    const messages = normalizeChatMessages(db.chatMessages);
-    const changedMessageIds = [];
-    db.chatMessages = messages.map((m) => {
-      if (m.conversationId !== id) return m;
-      if (m.readByIds.includes(userId)) return m;
-      changedMessageIds.push(m.id);
-      return { ...m, readByIds: [...m.readByIds, userId] };
-    });
-    writeStore(db);
+    const changedMessageIds = await markConversationRead(id, userId);
     if (changedMessageIds.length > 0) {
       io.to(`conversation:${id}`).emit("chat:message:read", {
         conversationId: id,
@@ -3730,11 +3756,11 @@ app.get("/api/chat/conversations/:id/typing", (req, res) => {
   }
 });
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const authToken = String(socket.handshake.auth?.token ?? "").trim();
   const headerToken = parseBearerToken(socket.handshake.headers?.authorization);
   const token = authToken || headerToken;
-  const auth = resolveAuthUserFromToken(token);
+  const auth = await resolveAuthUserFromToken(token);
   if (!auth) return next(new Error("Unauthorized"));
   socket.data.auth = { userId: auth.userId, role: auth.role };
   return next();
@@ -3756,10 +3782,10 @@ io.on("connection", (socket) => {
   socket.data.joinedConversations = new Set();
   emitPresenceUpdate(userId);
 
-  socket.on("chat:join", ({ conversationId }) => {
+  socket.on("chat:join", async ({ conversationId }) => {
     const id = String(conversationId ?? "").trim();
     if (!id) return;
-    const db = readStore();
+    const db = await getCoreState();
     const { conversation } = getConversationForMember(db, id, userId);
     if (!conversation) return;
     socket.join(`conversation:${id}`);
@@ -3775,10 +3801,10 @@ io.on("connection", (socket) => {
     if (socket.data.joinedConversations) socket.data.joinedConversations.delete(id);
   });
 
-  socket.on("chat:typing", ({ conversationId, isTyping }) => {
+  socket.on("chat:typing", async ({ conversationId, isTyping }) => {
     const id = String(conversationId ?? "").trim();
     if (!id) return;
-    const db = readStore();
+    const db = await getCoreState();
     const { conversation } = getConversationForMember(db, id, userId);
     if (!conversation) return;
     const member = db.teamMembers.find((m) => m.id === userId);
@@ -3797,22 +3823,14 @@ io.on("connection", (socket) => {
     emitTypingUpdate(id);
   });
 
-  socket.on("chat:read", ({ conversationId }) => {
+  socket.on("chat:read", async ({ conversationId }) => {
     const id = String(conversationId ?? "").trim();
     if (!id) return;
-    const db = readStore();
+    const db = await getCoreState();
     const conversations = normalizeChatConversations(db.chatConversations);
     const conversation = conversations.find((c) => c.id === id);
     if (!conversation || !conversation.participantIds.includes(userId)) return;
-    const messages = normalizeChatMessages(db.chatMessages);
-    const changedMessageIds = [];
-    db.chatMessages = messages.map((m) => {
-      if (m.conversationId !== id) return m;
-      if (m.readByIds.includes(userId)) return m;
-      changedMessageIds.push(m.id);
-      return { ...m, readByIds: [...m.readByIds, userId] };
-    });
-    writeStore(db);
+    const changedMessageIds = await markConversationRead(id, userId);
     if (changedMessageIds.length > 0) {
       io.to(`conversation:${id}`).emit("chat:message:read", {
         conversationId: id,
@@ -3822,14 +3840,14 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("chat:send", (payload, callback) => {
+  socket.on("chat:send", async (payload, callback) => {
     try {
       const conversationId = String(payload?.conversationId ?? "").trim();
       if (!conversationId) {
         if (typeof callback === "function") callback({ ok: false, message: "Missing conversationId." });
         return;
       }
-      const db = readStore();
+      const db = await getCoreState();
       const conversations = normalizeChatConversations(db.chatConversations);
       const result = buildChatMessage({
         db,
@@ -3846,9 +3864,8 @@ io.on("connection", (socket) => {
         if (typeof callback === "function") callback({ ok: false, message: result.error.message });
         return;
       }
-      db.chatMessages = result.updatedMessages;
-      db.chatConversations = result.updatedConversations;
-      addAuditLog(db, { auth: { userId, role: String(socket.data.auth?.role ?? "member") } }, {
+      await createChatMessage(result.message);
+      await appendAuditLog({ auth: { userId, role: String(socket.data.auth?.role ?? "member") } }, db, {
         action: "message.send",
         entityType: "chat-message",
         entityId: result.message.id,
@@ -3859,7 +3876,6 @@ io.on("connection", (socket) => {
           attachmentCount: Array.isArray(result.message.attachments) ? result.message.attachments.length : 0,
         },
       });
-      writeStore(db);
       triggerWebhookEvent(db, "chat.message.created", {
         messageId: result.message.id,
         conversationId,
@@ -3913,11 +3929,13 @@ io.on("connection", (socket) => {
   });
 });
 
-app.use(express.static(CLIENT_DIST));
+if (SERVE_CLIENT) {
+  app.use(express.static(CLIENT_DIST));
 
-app.get(/.*/, (_req, res) => {
-  res.sendFile(path.join(CLIENT_DIST, "index.html"));
-});
+  app.get(/.*/, (_req, res) => {
+    res.sendFile(path.join(CLIENT_DIST, "index.html"));
+  });
+}
 
 process.on("unhandledRejection", (reason) => {
   logServer("error", "process.unhandledRejection", {
@@ -3929,7 +3947,32 @@ process.on("uncaughtException", (error) => {
     error: String(error?.stack ?? error?.message ?? error),
   });
 });
-
-httpServer.listen(PORT, "0.0.0.0", () => {
-  logServer("info", "server.started", { url: `http://0.0.0.0:${PORT}` });
+process.on("SIGTERM", () => {
+  void disconnectDatabase().finally(() => process.exit(0));
 });
+process.on("SIGINT", () => {
+  void disconnectDatabase().finally(() => process.exit(0));
+});
+
+connectDatabase()
+  .then((dbState) => {
+    if (dbState.provider === "postgresql" && !dbState.connected) {
+      logServer("warn", "database.connect.failed", dbState);
+    } else {
+      logServer("info", "database.ready", dbState);
+    }
+  })
+  .catch((error) => {
+    logServer("warn", "database.connect.exception", {
+      error: String(error?.message ?? error),
+    });
+  })
+  .finally(() => {
+    httpServer.listen(PORT, "0.0.0.0", () => {
+      logServer("info", "server.started", {
+        url: `http://0.0.0.0:${PORT}`,
+        serveClient: SERVE_CLIENT,
+        mode: SERVE_CLIENT ? "fullstack" : "api-only",
+      });
+    });
+  });
