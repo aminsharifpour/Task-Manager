@@ -12,7 +12,15 @@ type ProjectDraft = {
 type Args = {
   apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
   pushToast: (message: string, tone?: "success" | "error") => void;
-  canPerform: (action: any, targetMemberId?: string) => boolean;
+  scheduleUndoableDelete: (options: {
+    message: string;
+    onRemoveLocal: () => void;
+    onRestoreLocal: () => void;
+    onCommit: () => Promise<void>;
+    errorMessage: string;
+    restoredMessage?: string;
+  }) => void;
+  canPerform: (action: any, target?: any) => boolean;
   confirmAction: (message: string, options?: any) => Promise<boolean>;
   parseWorkflowStepsText: (text: string) => any[];
   workflowStepsToDraftText: (steps: any[]) => string;
@@ -20,6 +28,7 @@ type Args = {
   activeTeamMembers: any[];
   teamMembers: any[];
   projects: any[];
+  tasks: any[];
   setProjects: Dispatch<SetStateAction<any[]>>;
   setTasks: Dispatch<SetStateAction<any[]>>;
   projectDraft: ProjectDraft;
@@ -48,6 +57,7 @@ const emptyProjectDraft = (activeTeamMembers: any[], teamMembers: any[]): Projec
 export const useProjectActions = ({
   apiRequest,
   pushToast,
+  scheduleUndoableDelete,
   canPerform,
   confirmAction,
   parseWorkflowStepsText,
@@ -56,6 +66,7 @@ export const useProjectActions = ({
   activeTeamMembers,
   teamMembers,
   projects,
+  tasks,
   setProjects,
   setTasks,
   projectDraft,
@@ -124,7 +135,8 @@ export const useProjectActions = ({
 
   const updateProject = async () => {
     if (!editingProjectId) return;
-    if (!canPerform("projectUpdate")) {
+    const targetProject = projects.find((project) => project.id === editingProjectId);
+    if (!canPerform("projectUpdate", { project: targetProject })) {
       pushToast("دسترسی ویرایش پروژه را ندارید.", "error");
       return;
     }
@@ -171,7 +183,8 @@ export const useProjectActions = ({
   };
 
   const removeProject = async (projectId: string) => {
-    if (!canPerform("projectDelete")) {
+    const targetProject = projects.find((project) => project.id === projectId);
+    if (!canPerform("projectDelete", { project: targetProject })) {
       pushToast("دسترسی حذف پروژه را ندارید.", "error");
       return;
     }
@@ -184,10 +197,21 @@ export const useProjectActions = ({
     });
     if (!confirmed) return;
     try {
-      await apiRequest<void>(`/api/projects/${projectId}`, { method: "DELETE" });
-      setProjects((prev) => prev.filter((project) => project.id !== projectId));
-      setTasks((prev) => prev.filter((task) => task.projectName !== projectName));
-      pushToast("پروژه حذف شد.");
+      const previousProjects = projects;
+      const previousTasks = tasks;
+      scheduleUndoableDelete({
+        message: "پروژه حذف شد.",
+        onRemoveLocal: () => {
+          setProjects((prev) => prev.filter((project) => project.id !== projectId));
+          setTasks((prev) => prev.filter((task) => task.projectName !== projectName));
+        },
+        onRestoreLocal: () => {
+          setProjects(previousProjects);
+          setTasks(previousTasks);
+        },
+        onCommit: () => apiRequest<void>(`/api/projects/${projectId}`, { method: "DELETE" }),
+        errorMessage: "حذف پروژه ناموفق بود.",
+      });
     } catch {
       pushToast("حذف پروژه ناموفق بود.", "error");
     }

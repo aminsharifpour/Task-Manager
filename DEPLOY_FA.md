@@ -42,7 +42,16 @@
    ```bash
    npm run build
    ```
-3. برای استقرار جدا:
+3. قبل از launch، preflight کامل را اجرا کن:
+   ```bash
+   npm run verify:launch
+   ```
+   این دستور این موارد را چک می‌کند:
+   - syntax بک‌اند
+   - typecheck فرانت
+   - build production
+   - smoke test end-to-end
+4. برای استقرار جدا:
    - فرانت: `npm run build:web`
    - بک‌اند: `npm run start:api`
 
@@ -134,6 +143,13 @@
    ```
 
 ## ۷. راهکارهای امنیتی و پایداری
+- اگر `SERVE_CLIENT=false` است و بک‌اند را جداگانه سرو می‌کنی، در production باید `CORS_ORIGIN` را صریح تنظیم کنی.
+- قبل از قرار دادن سرویس پشت load balancer یا reverse proxy، در صورت نیاز `TRUST_PROXY=1` را برای API تنظیم کن.
+- برای readiness، علاوه بر health از این endpoint استفاده کن:
+  ```bash
+  curl http://127.0.0.1:8787/api/ready
+  ```
+  `api/health` فقط زنده‌بودن سرویس را نشان می‌دهد، ولی `api/ready` پیش‌نیازهای runtime را هم اعتبارسنجی می‌کند.
 - فعال کردن فایروال UFW فقط برای HTTP/HTTPS/SSH:
   ```bash
   sudo ufw allow OpenSSH

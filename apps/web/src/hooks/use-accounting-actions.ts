@@ -3,6 +3,14 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 type Args = {
   apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
   pushToast: (message: string, tone?: "success" | "error") => void;
+  scheduleUndoableDelete: (options: {
+    message: string;
+    onRemoveLocal: () => void;
+    onRestoreLocal: () => void;
+    onCommit: () => Promise<void>;
+    errorMessage: string;
+    restoredMessage?: string;
+  }) => void;
   confirmAction: (message: string, options?: any) => Promise<boolean>;
   todayIso: () => string;
   currentTimeHHMM: () => string;
@@ -48,6 +56,7 @@ type Args = {
 export const useAccountingActions = ({
   apiRequest,
   pushToast,
+  scheduleUndoableDelete,
   confirmAction,
   todayIso,
   currentTimeHHMM,
@@ -115,6 +124,7 @@ export const useAccountingActions = ({
       errors: next,
       payload: {
         type: draft.type,
+        status: "pending",
         title: draft.title.trim(),
         amount: parsedAmount,
         category: normalizedCategory,
@@ -214,11 +224,24 @@ export const useAccountingActions = ({
     });
     if (!confirmed) return;
     try {
-      await apiRequest<void>(`/api/accounting/accounts/${id}`, { method: "DELETE" });
-      setAccounts((prev) => prev.filter((account) => account.id !== id));
-      setTransactionDraft((prev: any) => (prev.accountId === id ? { ...prev, accountId: "" } : prev));
-      setTransactionEditDraft((prev: any) => (prev.accountId === id ? { ...prev, accountId: "" } : prev));
-      pushToast("حساب بانکی حذف شد.");
+      const previousAccounts = accounts;
+      const previousTransactionDraft = transactionDraft;
+      const previousTransactionEditDraft = transactionEditDraft;
+      scheduleUndoableDelete({
+        message: "حساب بانکی حذف شد.",
+        onRemoveLocal: () => {
+          setAccounts((prev) => prev.filter((account) => account.id !== id));
+          setTransactionDraft((prev: any) => (prev.accountId === id ? { ...prev, accountId: "" } : prev));
+          setTransactionEditDraft((prev: any) => (prev.accountId === id ? { ...prev, accountId: "" } : prev));
+        },
+        onRestoreLocal: () => {
+          setAccounts(previousAccounts);
+          setTransactionDraft(previousTransactionDraft);
+          setTransactionEditDraft(previousTransactionEditDraft);
+        },
+        onCommit: () => apiRequest<void>(`/api/accounting/accounts/${id}`, { method: "DELETE" }),
+        errorMessage: "حذف حساب بانکی ناموفق بود.",
+      });
     } catch {
       setAccountErrors({ name: "حذف حساب ممکن نیست. ابتدا تراکنش‌های مرتبط را مدیریت کن." });
       pushToast("حذف حساب بانکی ناموفق بود.", "error");
@@ -298,7 +321,13 @@ export const useAccountingActions = ({
     try {
       const updated = await apiRequest<any>(`/api/accounting/transactions/${editingTransactionId}`, {
         method: "PATCH",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          status:
+            transactions.find((transaction) => transaction.id === editingTransactionId)?.status === "approved"
+              ? "approved"
+              : "pending",
+        }),
       });
       setTransactions((prev) => prev.map((transaction) => (transaction.id === editingTransactionId ? updated : transaction)));
       setTransactionEditOpen(false);
@@ -320,11 +349,69 @@ export const useAccountingActions = ({
     });
     if (!confirmed) return;
     try {
-      await apiRequest<void>(`/api/accounting/transactions/${id}`, { method: "DELETE" });
-      setTransactions((prev) => prev.filter((transaction) => transaction.id !== id));
-      pushToast("تراکنش حذف شد.");
+      const previousTransactions = transactions;
+      scheduleUndoableDelete({
+        message: "تراکنش حذف شد.",
+        onRemoveLocal: () => setTransactions((prev) => prev.filter((transaction) => transaction.id !== id)),
+        onRestoreLocal: () => setTransactions(previousTransactions),
+        onCommit: () => apiRequest<void>(`/api/accounting/transactions/${id}`, { method: "DELETE" }),
+        errorMessage: "حذف تراکنش ناموفق بود.",
+      });
     } catch {
       pushToast("حذف تراکنش ناموفق بود.", "error");
+    }
+  };
+
+  const approveTransactionsBulk = async (ids: string[]) => {
+    const normalizedIds = Array.from(new Set(ids.map((id) => String(id ?? "").trim()).filter(Boolean)));
+    if (normalizedIds.length === 0) return false;
+    const confirmed = await confirmAction(`${normalizedIds.length} تراکنش تایید شوند؟`, {
+      title: "تایید گروهی تراکنش‌ها",
+      confirmLabel: "تایید",
+    });
+    if (!confirmed) return false;
+    try {
+      const updated = await apiRequest<any[]>("/api/accounting/transactions/bulk-status", {
+        method: "POST",
+        body: JSON.stringify({ ids: normalizedIds, status: "approved" }),
+      });
+      const updatedMap = new Map(updated.map((row) => [row.id, row]));
+      setTransactions((prev) => prev.map((transaction) => updatedMap.get(transaction.id) ?? transaction));
+      pushToast(`${normalizedIds.length} تراکنش تایید شد.`);
+      return true;
+    } catch {
+      pushToast("تایید گروهی تراکنش‌ها ناموفق بود.", "error");
+      return false;
+    }
+  };
+
+  const removeTransactionsBulk = async (ids: string[]) => {
+    const normalizedIds = Array.from(new Set(ids.map((id) => String(id ?? "").trim()).filter(Boolean)));
+    if (normalizedIds.length === 0) return false;
+    const confirmed = await confirmAction(`${normalizedIds.length} تراکنش حذف شوند؟`, {
+      title: "حذف گروهی تراکنش‌ها",
+      confirmLabel: "حذف",
+      destructive: true,
+    });
+    if (!confirmed) return false;
+    try {
+      const previousTransactions = transactions;
+      const deletedSet = new Set(normalizedIds);
+      scheduleUndoableDelete({
+        message: `${normalizedIds.length} تراکنش حذف شد.`,
+        onRemoveLocal: () => setTransactions((prev) => prev.filter((transaction) => !deletedSet.has(transaction.id))),
+        onRestoreLocal: () => setTransactions(previousTransactions),
+        onCommit: () =>
+          apiRequest<void>("/api/accounting/transactions/bulk-delete", {
+            method: "POST",
+            body: JSON.stringify({ ids: normalizedIds }),
+          }),
+        errorMessage: "حذف گروهی تراکنش‌ها ناموفق بود.",
+      });
+      return true;
+    } catch {
+      pushToast("حذف گروهی تراکنش‌ها ناموفق بود.", "error");
+      return false;
     }
   };
 
@@ -369,6 +456,8 @@ export const useAccountingActions = ({
     openTransactionDetails,
     updateTransaction,
     removeTransaction,
+    approveTransactionsBulk,
+    removeTransactionsBulk,
     saveMonthlyBudget,
   };
 };

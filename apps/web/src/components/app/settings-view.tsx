@@ -9,6 +9,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { resolveAssetUrl } from "@/lib/asset-url";
 
+const ACCESS_SCOPE_ITEMS = [
+  { value: "none", label: "ندارد" },
+  { value: "self", label: "فقط خود" },
+  { value: "owner", label: "مالک" },
+  { value: "assigned", label: "مسئول مرحله/تسک" },
+  { value: "project", label: "اعضای پروژه" },
+  { value: "team", label: "اعضای تیم" },
+  { value: "all", label: "همه" },
+];
+const POLICY_ENTITY_ITEMS = [
+  { key: "project", label: "پروژه" },
+  { key: "task", label: "تسک" },
+  { key: "teamMember", label: "عضو تیم" },
+];
+const POLICY_OPERATION_ITEMS = [
+  { key: "view", label: "مشاهده" },
+  { key: "create", label: "ایجاد" },
+  { key: "update", label: "ویرایش" },
+  { key: "delete", label: "حذف" },
+  { key: "approve", label: "تایید" },
+];
+
 export default function SettingsView(props: any) {
   const {
     settingsDraft,
@@ -24,6 +46,7 @@ export default function SettingsView(props: any) {
     removeTransactionCategory,
     PERMISSION_ITEMS,
     setTeamPermission,
+    setTeamPolicyScope,
     TASK_STATUS_ITEMS,
     setWorkflowTransition,
     WEBHOOK_EVENT_ITEMS,
@@ -188,6 +211,48 @@ export default function SettingsView(props: any) {
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+            <div className="mb-3">
+              <p className="text-sm font-semibold">ماتریس دسترسی حرفه‌ای</p>
+              <p className="text-xs text-muted-foreground">برای هر نقش مشخص کن روی هر موجودیت چه سطحی از مشاهده، ایجاد، ویرایش، حذف یا تایید مجاز است.</p>
+            </div>
+            <div className="space-y-4">
+              {["admin", "manager", "member"].map((roleKey) => (
+                <div key={`policy-role-${roleKey}`} className="rounded-2xl border bg-background/80 p-3">
+                  <p className="mb-3 text-sm font-semibold">{roleKey === "admin" ? "ادمین" : roleKey === "manager" ? "مدیر" : "عضو"}</p>
+                  <div className="space-y-3">
+                    {POLICY_ENTITY_ITEMS.map((entity) => (
+                      <div key={`policy-entity-${roleKey}-${entity.key}`} className="rounded-xl border p-3">
+                        <p className="mb-3 text-xs font-semibold text-muted-foreground">{entity.label}</p>
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                          {POLICY_OPERATION_ITEMS.map((operation) => (
+                            <div key={`policy-op-${roleKey}-${entity.key}-${operation.key}`} className="space-y-1">
+                              <p className="text-[11px] text-muted-foreground">{operation.label}</p>
+                              <Select
+                                value={settingsDraft.team.policyMatrix?.[roleKey]?.[entity.key]?.[operation.key] ?? "none"}
+                                onValueChange={(value) => setTeamPolicyScope(roleKey, entity.key, operation.key, value)}
+                              >
+                                <SelectTrigger className="h-9">
+                                  <SelectValue placeholder="سطح دسترسی" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {ACCESS_SCOPE_ITEMS.map((scope) => (
+                                    <SelectItem key={`scope-${roleKey}-${entity.key}-${operation.key}-${scope.value}`} value={scope.value}>
+                                      {scope.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>

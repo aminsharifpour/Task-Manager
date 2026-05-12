@@ -24,8 +24,6 @@ export default class AppErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // eslint-disable-next-line no-console
-    console.error("[ui/runtime] uncaught render error:", error, errorInfo);
     this.props.onErrorLog?.({
       message: String(error?.message ?? ""),
       stack: String(error?.stack ?? ""),
@@ -35,12 +33,19 @@ export default class AppErrorBoundary extends Component<Props, State> {
 
   render() {
     if (!this.state.hasError) return this.props.children;
+    const isDynamicImportError = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(
+      this.state.message,
+    );
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-2xl items-center justify-center px-4 py-8">
         <Card className="w-full">
           <CardHeader>
             <CardTitle>خطای رابط کاربری</CardTitle>
-            <CardDescription>یک خطای غیرمنتظره رخ داده است. لطفا صفحه را رفرش کنید.</CardDescription>
+            <CardDescription>
+              {isDynamicImportError
+                ? "بارگذاری بخشی از نرم‌افزار کامل نشد. معمولا با رفرش صفحه یا پایدار شدن اتصال شبکه حل می‌شود."
+                : "یک خطای غیرمنتظره رخ داده است. لطفا صفحه را رفرش کنید."}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="rounded-md border bg-muted p-2 text-xs text-muted-foreground">{this.state.message || "Unknown UI error"}</p>

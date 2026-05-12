@@ -41,9 +41,16 @@
       "ownerId": "c8077ec3-7de0-4082-8efc-4d19357d29a8",
       "memberIds": [
         "c8077ec3-7de0-4082-8efc-4d19357d29a8",
-        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+        "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "73bfaf7c-3a43-40fd-81e2-120ef0fffd1f",
+        "d3f07335-5137-4d21-bd8f-6d8c6ae4b4c8",
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "307396b9-8da6-4865-be06-65b24a341310",
+        "cd7e522d-731d-44fb-9932-a583d62601f8",
+        "10a049f0-50aa-4bf6-b821-341c4a858f2e"
       ],
-      "createdAt": "2026-02-28T04:36:47.316Z"
+      "createdAt": "2026-02-28T04:36:47.316Z",
+      "workflowTemplateSteps": []
     },
     {
       "id": "f02222b4-a566-47d1-be29-d74f6e21bde6",
@@ -94,126 +101,30 @@
   ],
   "tasks": [
     {
-      "id": "285a6244-b0aa-48f6-a649-39ad71288163",
-      "title": "توسعه ماژول شعب برای سیستم ERPجدید",
-      "description": "توسعه ماژول شعب",
-      "assignerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
-      "assigneePrimaryId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
-      "assigneeSecondaryId": "ef7043e5-e25b-4d71-8ef1-b7756a0bac9c",
-      "projectName": "توسعه ERP جدید",
-      "announceDate": "2026-03-08",
-      "executionDate": "2026-03-20",
-      "status": "done",
+      "id": "c6116cc1-5240-4ac2-a2b7-736dc89381f9",
+      "title": "توسعه بکند",
+      "description": "بکند پروژه داشبورد گزارش دهی باید تکمیل گردد",
+      "assignerId": "c8077ec3-7de0-4082-8efc-4d19357d29a8",
+      "assigneePrimaryId": "cd7e522d-731d-44fb-9932-a583d62601f8",
+      "assigneeSecondaryId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "predecessorTaskIds": [],
+      "projectName": "توسعه داشبورد گزارش دهی سیستم ERP",
+      "announceDate": "2026-04-22",
+      "executionDate": "2026-05-02",
+      "status": "todo",
       "blockedReason": "",
-      "workflowSteps": [
-        {
-          "id": "step-mmhr94yg-wwu4b",
-          "title": "تحلیل سیستم شعب",
-          "assigneeType": "task_assignee_primary",
-          "assigneeRole": "",
-          "assigneeMemberId": "",
-          "requiresApproval": true,
-          "approvalAssigneeType": "task_assigner",
-          "approvalAssigneeRole": "",
-          "approvalAssigneeMemberId": "",
-          "onApprove": "next",
-          "onReject": "stay",
-          "stageStatus": "doing",
-          "comments": [],
-          "canvasX": 632,
-          "canvasY": 100
-        },
-        {
-          "id": "step-mmhra2x9-iank0",
-          "title": "طراحی رابط کاربری",
-          "assigneeType": "task_assignee_secondary",
-          "assigneeRole": "",
-          "assigneeMemberId": "",
-          "requiresApproval": true,
-          "approvalAssigneeType": "task_assigner",
-          "approvalAssigneeRole": "",
-          "approvalAssigneeMemberId": "",
-          "onApprove": "next",
-          "onReject": "stay",
-          "stageStatus": "todo",
-          "comments": [],
-          "canvasX": 347,
-          "canvasY": 88.6796875
-        },
-        {
-          "id": "step-mmhraxix-i0r8p",
-          "title": "نوشتن Endpointها بر اساس رابط کاربری",
-          "assigneeType": "project_members",
-          "assigneeRole": "",
-          "assigneeMemberId": "",
-          "requiresApproval": true,
-          "approvalAssigneeType": "project_owner",
-          "approvalAssigneeRole": "",
-          "approvalAssigneeMemberId": "",
-          "onApprove": "next",
-          "onReject": "previous",
-          "stageStatus": "todo",
-          "comments": [],
-          "canvasX": 68,
-          "canvasY": 90.6796875
-        }
-      ],
-      "workflowCurrentStep": 2,
+      "workflowSteps": [],
+      "workflowCurrentStep": -1,
       "workflowPendingAssigneeIds": [],
       "workflowStepComments": [],
       "workflowCompletedAt": "",
-      "assigner": "ادمین سیستم",
-      "assigneePrimary": "علی فلاح",
-      "assigneeSecondary": "روزبه تندکار",
-      "done": true,
-      "createdAt": "2026-03-08T12:57:55.398Z",
-      "updatedAt": "2026-03-08T13:02:43.830Z",
-      "lastStatusChangedAt": "2026-03-08T13:02:43.830Z"
-    },
-    {
-      "id": "46862484-2d87-401d-a8a5-6d33181e4d74",
-      "title": "افزایش آگاهی",
-      "description": "شسی",
-      "assignerId": "c8077ec3-7de0-4082-8efc-4d19357d29a8",
-      "assigneePrimaryId": "c8077ec3-7de0-4082-8efc-4d19357d29a8",
-      "assigneeSecondaryId": "",
-      "projectName": "توسعه داشبورد گزارش دهی سیستم ERP",
-      "announceDate": "2026-03-08",
-      "executionDate": "2026-03-08",
-      "status": "done",
-      "blockedReason": "",
-      "workflowSteps": [
-        "[object Object]"
-      ],
-      "workflowCurrentStep": 0,
-      "workflowCompletedAt": "2026-03-08T11:31:02.388Z",
       "assigner": "نویان نگین پارسیان",
-      "assigneePrimary": "نویان نگین پارسیان",
-      "assigneeSecondary": "",
-      "done": true,
-      "createdAt": "2026-03-08T11:30:45.826Z",
-      "updatedAt": "2026-03-08T11:31:11.208Z",
-      "lastStatusChangedAt": "2026-03-08T11:31:02.388Z"
-    },
-    {
-      "id": "38b69f82-7ae4-4fd6-a4ba-3f3a35faa871",
-      "title": "تغییرات داشبورد گزارش دهی",
-      "description": "تغییرات اعلام شده در جلسه پنجشنبه ۷ اسفند ۱۴۰۴",
-      "assignerId": "c8077ec3-7de0-4082-8efc-4d19357d29a8",
-      "assigneePrimaryId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
-      "assigneeSecondaryId": "",
-      "projectName": "توسعه داشبورد گزارش دهی سیستم ERP",
-      "announceDate": "2026-02-26",
-      "executionDate": "2026-03-03",
-      "status": "done",
-      "blockedReason": "",
-      "assigner": "نویان نگین پارسیان",
-      "assigneePrimary": "ادمین سیستم",
-      "assigneeSecondary": "",
-      "done": true,
-      "createdAt": "2026-02-28T04:37:38.295Z",
-      "updatedAt": "2026-03-04T05:42:58.491Z",
-      "lastStatusChangedAt": "2026-03-04T05:42:58.491Z"
+      "assigneePrimary": "ملیکا بحرانی",
+      "assigneeSecondary": "علی فلاح",
+      "done": false,
+      "createdAt": "2026-04-22T10:21:09.079Z",
+      "updatedAt": "2026-04-22T10:21:09.079Z",
+      "lastStatusChangedAt": "2026-04-22T10:21:09.079Z"
     }
   ],
   "teamMembers": [
@@ -276,7 +187,7 @@
       "bio": "",
       "avatarDataUrl": "/uploads/avatars/avatar-02aa50c3-6358-4172-8554-d740b59cfbf6.jpg",
       "appRole": "member",
-      "isActive": true,
+      "isActive": false,
       "passwordHash": "sha256$a4798ed6671be8b43084b10b0573306159cd4d42e45711f250f70a7973f94790",
       "createdAt": "2026-02-23T12:27:17.255Z",
       "teamIds": [
@@ -379,7 +290,7 @@
       "bio": "",
       "avatarDataUrl": "/uploads/avatars/avatar-92047f9f-2dd6-4b62-8a9f-75dda825b875.jpg",
       "appRole": "member",
-      "isActive": true,
+      "isActive": false,
       "passwordHash": "sha256$f4dbfcd6f7537e62c712ee62886623b26c0ee7f3fc7d1c755999b79421eb1e16",
       "createdAt": "2026-02-23T12:23:21.326Z",
       "teamIds": [
@@ -394,7 +305,7 @@
       "email": "admin@local",
       "phone": "09124770700",
       "bio": "حساب پیش فرض ادمین",
-      "avatarDataUrl": "/uploads/avatars/avatar-4382484b-3ae1-4c7d-bf88-448b46063b62.jpg",
+      "avatarDataUrl": "/uploads/avatars/avatar-d8b15224-a26e-49c9-84f3-953cb4819d81.jpg",
       "appRole": "admin",
       "isActive": true,
       "passwordHash": "bcrypt$$2b$10$iYHUnxI7e6EQqI/PeoiwOuM8EpBzdyr5zhtQ7LxKhz8c3ATqUJfP2",
@@ -448,7 +359,7 @@
       "timezone": "Asia/Tehran",
       "weekStartsOn": "saturday",
       "theme": "light",
-      "currentMemberId": ""
+      "currentMemberId": "2c6bb859-e715-442b-b644-6cde90a31fbd"
     },
     "notifications": {
       "enabledDueToday": true,
@@ -524,7 +435,79 @@
           "teamUpdate": false,
           "teamDelete": false
         }
-      }
+      },
+      "policyMatrix": {
+        "admin": {
+          "project": {
+            "view": "all",
+            "create": "all",
+            "update": "all",
+            "delete": "all",
+            "approve": "all"
+          },
+          "task": {
+            "view": "all",
+            "create": "all",
+            "update": "all",
+            "delete": "all",
+            "approve": "all"
+          },
+          "teamMember": {
+            "view": "all",
+            "create": "all",
+            "update": "all",
+            "delete": "all",
+            "approve": "all"
+          }
+        },
+        "manager": {
+          "project": {
+            "view": "team",
+            "create": "team",
+            "update": "owner",
+            "delete": "none",
+            "approve": "none"
+          },
+          "task": {
+            "view": "team",
+            "create": "team",
+            "update": "team",
+            "delete": "none",
+            "approve": "team"
+          },
+          "teamMember": {
+            "view": "team",
+            "create": "none",
+            "update": "team",
+            "delete": "none",
+            "approve": "none"
+          }
+        },
+        "member": {
+          "project": {
+            "view": "project",
+            "create": "none",
+            "update": "none",
+            "delete": "none",
+            "approve": "none"
+          },
+          "task": {
+            "view": "project",
+            "create": "none",
+            "update": "assigned",
+            "delete": "none",
+            "approve": "assigned"
+          },
+          "teamMember": {
+            "view": "team",
+            "create": "none",
+            "update": "self",
+            "delete": "none",
+            "approve": "none"
+          }
+        }
+      },
+      "accessPresets": []
     },
     "workflow": {
       "requireBlockedReason": true,
@@ -562,8 +545,994 @@
       }
     }
   },
-  "meetingMinutes": [],
+  "notifications": [
+    {
+      "id": "f365bf71-a760-424e-8805-f39a043cb60d",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از علی فلاح",
+      "description": "نمل",
+      "createdAt": "2026-04-28T06:45:24.596Z",
+      "seenAt": "2026-04-28T07:26:37.721Z",
+      "readAt": "2026-05-12T07:30:05.681Z",
+      "dismissedAt": "2026-05-12T07:30:06.993Z",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "775c096f-3851-478e-9c21-26d94bd90df4",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:775c096f-3851-478e-9c21-26d94bd90df4:2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "meta": {}
+    },
+    {
+      "id": "04539c28-c89b-46e5-ab5c-a5b1712dde93",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از علی فلاح",
+      "description": "مهم سیماس",
+      "createdAt": "2026-04-28T06:44:33.229Z",
+      "seenAt": "2026-04-28T06:45:02.546Z",
+      "readAt": "2026-05-12T07:30:05.681Z",
+      "dismissedAt": "2026-05-12T07:30:06.993Z",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "fb7a070b-0c8e-4bf4-8f8c-b1dbdad34b3a",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:fb7a070b-0c8e-4bf4-8f8c-b1dbdad34b3a:2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "meta": {}
+    },
+    {
+      "id": "4f47f2a3-dcfb-4e7a-8118-655185fa0ead",
+      "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از ادمین سیستم",
+      "description": "مهم تصویره",
+      "createdAt": "2026-04-28T06:44:21.199Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "1806f29b-b125-41f6-afd7-d3684ccf7fa1",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:1806f29b-b125-41f6-afd7-d3684ccf7fa1:700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "meta": {}
+    },
+    {
+      "id": "2bee7d11-fc0c-4b67-a257-e2dde1052a63",
+      "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از ادمین سیستم",
+      "description": "ولش کن صدا مهم نیست",
+      "createdAt": "2026-04-28T06:44:19.487Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "ab7451f4-36d8-4fd3-b7b1-211c4b02ade6",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:ab7451f4-36d8-4fd3-b7b1-211c4b02ade6:700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "meta": {}
+    },
+    {
+      "id": "6609615a-6852-4935-8c8b-64ebe9e01472",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از علی فلاح",
+      "description": "سایلنت هیل 😂 😂 😂",
+      "createdAt": "2026-04-28T06:44:05.962Z",
+      "seenAt": "2026-04-28T06:45:02.546Z",
+      "readAt": "2026-05-12T07:30:05.681Z",
+      "dismissedAt": "2026-05-12T07:30:06.993Z",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "ef2081e1-bc96-47cf-814e-a1cec41021f5",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:ef2081e1-bc96-47cf-814e-a1cec41021f5:2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "meta": {}
+    },
+    {
+      "id": "51fcaf8a-ac21-410f-ac3d-8c6fc44556d7",
+      "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از ادمین سیستم",
+      "description": "چی میگی تو",
+      "createdAt": "2026-04-28T06:43:03.724Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "909a0fdd-0fd9-45a1-ba5d-acbafdd5933e",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:909a0fdd-0fd9-45a1-ba5d-acbafdd5933e:700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "meta": {}
+    },
+    {
+      "id": "1b9e9ca0-1075-4449-af65-e6e026e15411",
+      "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از ادمین سیستم",
+      "description": "میاد بابا",
+      "createdAt": "2026-04-28T06:42:55.515Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "a4dae7e7-af6a-40f9-855a-0aa7a6a9698c",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:a4dae7e7-af6a-40f9-855a-0aa7a6a9698c:700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "meta": {}
+    },
+    {
+      "id": "f480c3d9-71e6-4836-8cb0-e05ebb71ed78",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از علی فلاح",
+      "description": "فکر کنم نمیاد",
+      "createdAt": "2026-04-28T06:41:47.389Z",
+      "seenAt": "2026-04-28T06:45:02.546Z",
+      "readAt": "2026-05-12T07:30:05.681Z",
+      "dismissedAt": "2026-05-12T07:30:06.993Z",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "38727e14-007a-42b6-9c36-8ef3be5ed262",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:38727e14-007a-42b6-9c36-8ef3be5ed262:2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "meta": {}
+    },
+    {
+      "id": "69e0761e-ea6d-41a4-a781-12411868d34a",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از علی فلاح",
+      "description": "پیااااامممم میاددددد؟؟؟",
+      "createdAt": "2026-04-28T06:41:40.213Z",
+      "seenAt": "2026-04-28T06:45:02.546Z",
+      "readAt": "2026-05-12T07:30:05.681Z",
+      "dismissedAt": "2026-05-12T07:30:06.993Z",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "80724da2-fd46-4c03-a809-40401fb98082",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:80724da2-fd46-4c03-a809-40401fb98082:2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "meta": {}
+    },
+    {
+      "id": "ec654659-e0fd-41b6-8e9c-65cbd0b28885",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از علی فلاح",
+      "description": "سلااااام",
+      "createdAt": "2026-04-28T06:38:35.869Z",
+      "seenAt": "2026-04-28T06:45:02.546Z",
+      "readAt": "2026-05-12T07:30:05.681Z",
+      "dismissedAt": "2026-05-12T07:30:06.993Z",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "e078516c-2165-4e4b-8793-b24bd61a1eec",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:e078516c-2165-4e4b-8793-b24bd61a1eec:2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "meta": {}
+    },
+    {
+      "id": "04422a98-161d-48f8-9d28-b65770032c0d",
+      "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "kind": "task",
+      "category": "task.assigned",
+      "title": "تسک جدید: توسعه بکند",
+      "description": "یک تسک به شما ارجاع شده است.",
+      "createdAt": "2026-04-22T10:21:09.110Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "tasks",
+      "entityType": "task",
+      "entityId": "c6116cc1-5240-4ac2-a2b7-736dc89381f9",
+      "conversationId": "",
+      "taskId": "c6116cc1-5240-4ac2-a2b7-736dc89381f9",
+      "projectId": "",
+      "actionLabel": "مشاهده تسک",
+      "dedupeKey": "task-assigned:c6116cc1-5240-4ac2-a2b7-736dc89381f9:700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "meta": {}
+    },
+    {
+      "id": "a11f2b67-805d-49c1-8bf1-52063f2d2330",
+      "userId": "cd7e522d-731d-44fb-9932-a583d62601f8",
+      "kind": "task",
+      "category": "task.assigned",
+      "title": "تسک جدید: توسعه بکند",
+      "description": "یک تسک به شما ارجاع شده است.",
+      "createdAt": "2026-04-22T10:21:09.102Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "tasks",
+      "entityType": "task",
+      "entityId": "c6116cc1-5240-4ac2-a2b7-736dc89381f9",
+      "conversationId": "",
+      "taskId": "c6116cc1-5240-4ac2-a2b7-736dc89381f9",
+      "projectId": "",
+      "actionLabel": "مشاهده تسک",
+      "dedupeKey": "task-assigned:c6116cc1-5240-4ac2-a2b7-736dc89381f9:cd7e522d-731d-44fb-9932-a583d62601f8",
+      "meta": {}
+    },
+    {
+      "id": "9776e688-a40e-4457-b746-75a1efb681e1",
+      "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از ادمین سیستم",
+      "description": "سلام خوشگله",
+      "createdAt": "2026-04-21T12:30:07.379Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "8ed5a7fd-8ea7-4f59-b662-4bc9c93441f4",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:8ed5a7fd-8ea7-4f59-b662-4bc9c93441f4:700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "meta": {}
+    },
+    {
+      "id": "966c50e1-140b-4033-978a-f1abe3f7e375",
+      "userId": "d3f07335-5137-4d21-bd8f-6d8c6ae4b4c8",
+      "kind": "task",
+      "category": "task.assigned",
+      "title": "تسک جدید: توسعه فرانت علی فلاح",
+      "description": "یک تسک به شما ارجاع شده است.",
+      "createdAt": "2026-04-06T10:15:04.432Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "tasks",
+      "entityType": "task",
+      "entityId": "594956d7-86ca-41b8-9391-ac488a6ee0a1",
+      "conversationId": "",
+      "taskId": "594956d7-86ca-41b8-9391-ac488a6ee0a1",
+      "projectId": "",
+      "actionLabel": "مشاهده تسک",
+      "dedupeKey": "task-assigned:594956d7-86ca-41b8-9391-ac488a6ee0a1:d3f07335-5137-4d21-bd8f-6d8c6ae4b4c8",
+      "meta": {}
+    },
+    {
+      "id": "ff8fa592-f445-402c-b781-7afba568e863",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "task",
+      "category": "task.assigned",
+      "title": "تسک جدید: توسعه فرانت علی فلاح",
+      "description": "یک تسک به شما ارجاع شده است.",
+      "createdAt": "2026-04-06T10:15:04.427Z",
+      "seenAt": "2026-04-06T10:16:06.437Z",
+      "readAt": "2026-04-18T08:12:30.733Z",
+      "dismissedAt": "2026-04-08T07:00:51.097Z",
+      "targetView": "tasks",
+      "entityType": "task",
+      "entityId": "594956d7-86ca-41b8-9391-ac488a6ee0a1",
+      "conversationId": "",
+      "taskId": "594956d7-86ca-41b8-9391-ac488a6ee0a1",
+      "projectId": "",
+      "actionLabel": "مشاهده تسک",
+      "dedupeKey": "task-assigned:594956d7-86ca-41b8-9391-ac488a6ee0a1:2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "meta": {}
+    },
+    {
+      "id": "ef56644b-7f7c-4b08-b970-055f1dfd0dc6",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "task",
+      "category": "workflow.pending",
+      "title": "اقدام روی تسک: توسعه فرانت علی فلاح",
+      "description": "مرحله \"مرحله 1\" منتظر اقدام شماست.",
+      "createdAt": "2026-04-06T10:15:04.416Z",
+      "seenAt": "2026-04-08T06:54:00.625Z",
+      "readAt": "2026-04-08T07:00:51.945Z",
+      "dismissedAt": "2026-04-08T07:00:51.945Z",
+      "targetView": "inbox",
+      "entityType": "task",
+      "entityId": "594956d7-86ca-41b8-9391-ac488a6ee0a1",
+      "conversationId": "",
+      "taskId": "594956d7-86ca-41b8-9391-ac488a6ee0a1",
+      "projectId": "faa739e9-1fbb-498d-944b-6493b887a576",
+      "actionLabel": "اقدام",
+      "dedupeKey": "workflow:594956d7-86ca-41b8-9391-ac488a6ee0a1:0:2c6bb859-e715-442b-b644-6cde90a31fbd:pending",
+      "meta": {}
+    },
+    {
+      "id": "a8a08680-54dc-40e1-8c25-71ae6b8d6dee",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "approval",
+      "category": "workflow.approval",
+      "title": "نیاز به تایید: پیاده سازی داشبورد گزارش پورسانت",
+      "description": "مرحله \"تحلیل نیازهای سیستم گزارش دهی کمیسیون توسط تیم تحلیل\" منتظر تایید شماست.",
+      "createdAt": "2026-03-15T04:52:13.837Z",
+      "seenAt": "2026-03-15T05:18:03.463Z",
+      "readAt": "2026-03-15T11:45:58.687Z",
+      "dismissedAt": "2026-03-15T11:46:00.131Z",
+      "targetView": "inbox",
+      "entityType": "task",
+      "entityId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "conversationId": "",
+      "taskId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "projectId": "a3d4bc1c-24d8-45f5-ae19-5421ceb0ad56",
+      "actionLabel": "بررسی",
+      "dedupeKey": "workflow:95e0608f-d07f-410d-87f2-0916480fe05e:0:2c6bb859-e715-442b-b644-6cde90a31fbd:approval",
+      "meta": {}
+    },
+    {
+      "id": "2d068b19-a453-4d19-95f5-f4b1aba6ac9e",
+      "userId": "d3f07335-5137-4d21-bd8f-6d8c6ae4b4c8",
+      "kind": "task",
+      "category": "task.assigned",
+      "title": "تسک جدید: پیاده سازی داشبورد گزارش پورسانت",
+      "description": "یک تسک به شما ارجاع شده است.",
+      "createdAt": "2026-03-15T04:53:15.477Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "tasks",
+      "entityType": "task",
+      "entityId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "conversationId": "",
+      "taskId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "projectId": "",
+      "actionLabel": "مشاهده تسک",
+      "dedupeKey": "task-assigned:95e0608f-d07f-410d-87f2-0916480fe05e:d3f07335-5137-4d21-bd8f-6d8c6ae4b4c8",
+      "meta": {}
+    },
+    {
+      "id": "7a9995c5-779c-4005-b1d4-2c8f80e63e88",
+      "userId": "73bfaf7c-3a43-40fd-81e2-120ef0fffd1f",
+      "kind": "task",
+      "category": "task.assigned",
+      "title": "تسک جدید: پیاده سازی داشبورد گزارش پورسانت",
+      "description": "یک تسک به شما ارجاع شده است.",
+      "createdAt": "2026-03-15T04:53:15.471Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "tasks",
+      "entityType": "task",
+      "entityId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "conversationId": "",
+      "taskId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "projectId": "",
+      "actionLabel": "مشاهده تسک",
+      "dedupeKey": "task-assigned:95e0608f-d07f-410d-87f2-0916480fe05e:73bfaf7c-3a43-40fd-81e2-120ef0fffd1f",
+      "meta": {}
+    },
+    {
+      "id": "90c964bb-d86f-480e-9593-76e51ce9da12",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "task",
+      "category": "task.assigned",
+      "title": "تسک جدید: پیاده سازی داشبورد گزارش پورسانت",
+      "description": "یک تسک به شما ارجاع شده است.",
+      "createdAt": "2026-03-15T04:52:13.847Z",
+      "seenAt": "2026-03-15T05:18:03.463Z",
+      "readAt": "2026-03-15T11:45:58.687Z",
+      "dismissedAt": "2026-03-15T11:46:00.131Z",
+      "targetView": "tasks",
+      "entityType": "task",
+      "entityId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "conversationId": "",
+      "taskId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "projectId": "",
+      "actionLabel": "مشاهده تسک",
+      "dedupeKey": "task-assigned:95e0608f-d07f-410d-87f2-0916480fe05e:2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "meta": {}
+    },
+    {
+      "id": "df4ccb37-17b1-4f60-aec9-7c1d758102af",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از علی فلاح",
+      "description": "😂 😂 😂 😂 😂 😂",
+      "createdAt": "2026-03-10T12:31:23.052Z",
+      "seenAt": "2026-03-14T04:41:17.843Z",
+      "readAt": "2026-03-14T05:43:22.888Z",
+      "dismissedAt": "2026-03-14T05:43:22.888Z",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "3a64e318-613b-4c92-abf1-11f47d9e5df1",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:3a64e318-613b-4c92-abf1-11f47d9e5df1:2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "meta": {}
+    },
+    {
+      "id": "301dce04-48a5-4d94-9234-a9883a97f149",
+      "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "kind": "mention",
+      "category": "chat.mention",
+      "title": "منشن جدید از ادمین سیستم",
+      "description": "@علی فلاح با توام",
+      "createdAt": "2026-03-10T12:25:00.410Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "c7c31a05-ebce-496e-aaae-2dd3fc6bc8a6",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "mention:c7c31a05-ebce-496e-aaae-2dd3fc6bc8a6:700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "meta": {}
+    },
+    {
+      "id": "2816b000-ea61-4a50-946a-041c0de105f5",
+      "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از ادمین سیستم",
+      "description": "کسکش میخاست منو بگا بده",
+      "createdAt": "2026-03-10T12:22:48.613Z",
+      "seenAt": "",
+      "readAt": "",
+      "dismissedAt": "",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "bed67bd5-9e6d-4972-bb04-c4b7b8da3b86",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:bed67bd5-9e6d-4972-bb04-c4b7b8da3b86:700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "meta": {}
+    },
+    {
+      "id": "d9ffd060-e9d0-429e-a08f-63ef642a7d39",
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "kind": "chat",
+      "category": "chat.message",
+      "title": "پیام جدید از علی فلاح",
+      "description": "میگه بخور سرحال میشی 😂 😂 😂 😂",
+      "createdAt": "2026-03-10T11:53:43.638Z",
+      "seenAt": "2026-03-10T11:57:05.214Z",
+      "readAt": "2026-03-10T12:22:15.832Z",
+      "dismissedAt": "2026-03-14T05:43:23.942Z",
+      "targetView": "chat",
+      "entityType": "chat-message",
+      "entityId": "17fe177d-ebf1-4371-8e21-55d8e50d506c",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "taskId": "",
+      "projectId": "",
+      "actionLabel": "مشاهده گفتگو",
+      "dedupeKey": "chat:17fe177d-ebf1-4371-8e21-55d8e50d506c:2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "meta": {}
+    }
+  ],
+  "notificationPreferences": [
+    {
+      "userId": "d3f07335-5137-4d21-bd8f-6d8c6ae4b4c8",
+      "channels": {
+        "task": true,
+        "project": true,
+        "chat": true,
+        "mention": true,
+        "approval": true,
+        "system": true
+      },
+      "delivery": {
+        "task": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "project": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "chat": {
+          "center": true,
+          "toast": true,
+          "sound": true
+        },
+        "mention": {
+          "center": true,
+          "toast": true,
+          "sound": true
+        },
+        "approval": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "system": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        }
+      },
+      "mutedKinds": [],
+      "mutedCategories": [],
+      "updatedAt": "2026-03-15T04:53:15.477Z"
+    },
+    {
+      "userId": "73bfaf7c-3a43-40fd-81e2-120ef0fffd1f",
+      "channels": {
+        "task": true,
+        "project": true,
+        "chat": true,
+        "mention": true,
+        "approval": true,
+        "system": true
+      },
+      "delivery": {
+        "task": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "project": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "chat": {
+          "center": true,
+          "toast": true,
+          "sound": true
+        },
+        "mention": {
+          "center": true,
+          "toast": true,
+          "sound": true
+        },
+        "approval": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "system": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        }
+      },
+      "mutedKinds": [],
+      "mutedCategories": [],
+      "updatedAt": "2026-03-15T04:53:15.471Z"
+    },
+    {
+      "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "channels": {
+        "task": true,
+        "project": true,
+        "chat": true,
+        "mention": true,
+        "approval": true,
+        "system": true
+      },
+      "delivery": {
+        "task": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "project": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "chat": {
+          "center": true,
+          "toast": true,
+          "sound": true
+        },
+        "mention": {
+          "center": true,
+          "toast": true,
+          "sound": true
+        },
+        "approval": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "system": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        }
+      },
+      "mutedKinds": [],
+      "mutedCategories": [],
+      "updatedAt": "2026-03-10T12:22:48.613Z"
+    },
+    {
+      "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "channels": {
+        "task": true,
+        "project": true,
+        "chat": true,
+        "mention": true,
+        "approval": true,
+        "system": true
+      },
+      "delivery": {
+        "task": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "project": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "chat": {
+          "center": true,
+          "toast": true,
+          "sound": true
+        },
+        "mention": {
+          "center": true,
+          "toast": true,
+          "sound": true
+        },
+        "approval": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        },
+        "system": {
+          "center": true,
+          "toast": true,
+          "sound": false
+        }
+      },
+      "mutedKinds": [],
+      "mutedCategories": [],
+      "updatedAt": "2026-04-08T06:54:12.341Z"
+    }
+  ],
+  "meetingMinutes": [
+    {
+      "id": "9bc921b4-4df3-425c-88de-48e2a6453a4c",
+      "title": "صورتجلسه مرور هفتگی",
+      "date": "2026-04-23",
+      "attendees": "مهندس قاسمی٬ تجریشی٬ مشایخی٬ شریف پور٬ فرزانگی",
+      "summary": "بررسی تسک های هفتگی و پیشرفت پروژه های در دست اقدام:\nدر داشبورد مربوط به کمیسیون ها باید ماژول دسترسی یوزر توسعه پیدا کنه.\nبه تفکیک مناطق بازاریابی و فروش هم باید قابل مشاهده باشه.\nفرمول محاسبه کمی ها باید به تائید مهندس برسه سپس باید در دستور کار تیم فناوری اطلاعات قرار بگیره.\nانتقال اسناد حساب نیمه دوم سال ۱۴۰۴ نیاز به معادل سازی کدینگ حساب بین مشاوران و نویان لند دارد در هفته آینده انجام خواهد شد.\nتسک مربوط به شیفت های کاری منابع انسانی که قبل از ساعت ۷ و بعد از ساعت ۶:۳۰ باید اصلاح شود. درخواست اضافه کاری فعلا به صورت دستی انجام بشه.\nبحث عملیات حسابداری نیاز به توسعه های جدید دارد.\nاصلاحات زیر ساختی مربوط به دسترسی ها داشتیم.\nبعد از عملیات حسابداری باید بریم سراغ خزانه داری و برنامه ریزی توسعه این قسمت را انجام را خواهیم داد.\nعملیات حسابداری تا اواسط ماه تکمیل خواهد شد.\nدسترسی پیش فاکتورها به آقای احمدیان داده شود که تائید کنند و قیمت ها رو کنترل کنند.\nبستن بکاپ توسط بحرانی به کجا رسید؟",
+      "decisions": "",
+      "followUps": "",
+      "createdAt": "2026-04-23T05:31:37.813Z"
+    },
+    {
+      "id": "96b9edaf-d5ae-4fbe-a71c-5ee465f85988",
+      "title": "بررسی تسک های برنامه نویسی",
+      "date": "2026-04-16",
+      "attendees": "مهندس قاسمی٬ شریف پور ٬ مشایخی٬ فرزانگی",
+      "summary": "در ابتدای جلسه یک توضیحی درباره تسک های سیستم فعلی و آینده دریافت شده است",
+      "decisions": "تسک ۱۲۳۶ مربوط به اسناد حسابداری و اصلاح حساب معین نیاز تائید مهندس صالحی دارد و لازم است در سیستم ERP  تسک گذاشته شود.\nتسک ۱۲۳۷ مربوط به غیرفعال سازی حساب های معین نزد بانک که این مورد هم باید در تسک گذاشته شود.\nتسک ۱۲۳۹ تحلیل KPI فرایند کمیسیون های شرکت انجام شده است.",
+      "followUps": "",
+      "createdAt": "2026-04-16T07:07:42.861Z"
+    }
+  ],
   "accountingTransactions": [
+    {
+      "id": "6b8eb096-de20-4dc0-b0ea-5435527d878d",
+      "type": "expense",
+      "title": "سفارش از اسنپ فود",
+      "amount": 497100,
+      "category": "خوراک",
+      "date": "2026-03-15",
+      "time": "20:59",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-16T05:05:20.033Z"
+    },
+    {
+      "id": "7994a813-eae4-4b82-9f51-30309f059f62",
+      "type": "income",
+      "title": "حقوق بیمه ای نویان",
+      "amount": 13198000,
+      "category": "حقوق",
+      "date": "2026-03-15",
+      "time": "19:46",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-16T05:04:51.728Z"
+    },
+    {
+      "id": "2328d4d9-afdd-4085-a3c3-9ce373d87ee7",
+      "type": "expense",
+      "title": "خرید پماد و دارو",
+      "amount": 187000,
+      "category": "درمان",
+      "date": "2026-03-15",
+      "time": "17:31",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-16T05:04:05.694Z"
+    },
+    {
+      "id": "7cd0740a-27d8-47e6-bb6c-59d03bfbee29",
+      "type": "expense",
+      "title": "شارژ سیم کارت مژگان",
+      "amount": 100000,
+      "category": "قبوض",
+      "date": "2026-03-15",
+      "time": "16:53",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-16T05:03:32.923Z"
+    },
+    {
+      "id": "645d3f07-4335-421b-a0f5-913d353a23c0",
+      "type": "expense",
+      "title": "خرید دارو",
+      "amount": 207000,
+      "category": "درمان",
+      "date": "2026-03-15",
+      "time": "16:38",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-16T05:03:04.715Z"
+    },
+    {
+      "id": "91f0ff92-cb65-40c7-a6da-6f2d8ac2aaea",
+      "type": "expense",
+      "title": "خرید نوشابه و ماست",
+      "amount": 160000,
+      "category": "خوراک",
+      "date": "2026-03-15",
+      "time": "12:45",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-15T12:35:46.398Z"
+    },
+    {
+      "id": "b683d843-5770-4183-be73-208902b9505a",
+      "type": "income",
+      "title": "عیدی نویان",
+      "amount": 20800000,
+      "category": "حقوق",
+      "date": "2026-03-15",
+      "time": "13:44",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-15T12:35:04.814Z"
+    },
+    {
+      "id": "dcbceeee-47e7-4b54-8aa1-718dd3e2717c",
+      "type": "expense",
+      "title": "بنزین",
+      "amount": 50000,
+      "category": "حمل‌ونقل",
+      "date": "2026-03-15",
+      "time": "07:14",
+      "note": "",
+      "accountId": "4f7da6c7-bcab-4009-b8ee-4e82257c63e4",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-15T04:35:00.563Z"
+    },
+    {
+      "id": "63a1d8d5-55cf-44cd-803a-049816fbb8de",
+      "type": "expense",
+      "title": "خرید نان",
+      "amount": 82450,
+      "category": "خوراک",
+      "date": "2026-03-13",
+      "time": "11:25",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:42:06.894Z"
+    },
+    {
+      "id": "aad2021e-d30f-4a5c-a38b-facb181972a7",
+      "type": "expense",
+      "title": "خرید نان",
+      "amount": 60000,
+      "category": "خوراک",
+      "date": "2026-03-13",
+      "time": "11:23",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:40:58.397Z"
+    },
+    {
+      "id": "deb73784-2722-4169-9f2c-304b0b4b2b05",
+      "type": "expense",
+      "title": "خرید از فروشگاه",
+      "amount": 580000,
+      "category": "خوراک",
+      "date": "2026-03-13",
+      "time": "11:06",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:40:31.445Z"
+    },
+    {
+      "id": "9ec8a02f-2296-4397-b813-4bb2018edd76",
+      "type": "expense",
+      "title": "هزینه اسنپ",
+      "amount": 100000,
+      "category": "حمل‌ونقل",
+      "date": "2026-03-10",
+      "time": "07:21",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:39:26.258Z"
+    },
+    {
+      "id": "3f771ad8-559f-40bf-a617-a569d2659626",
+      "type": "expense",
+      "title": "خرید از داروخانه روشا",
+      "amount": 1634200,
+      "category": "درمان",
+      "date": "2026-03-09",
+      "time": "22:48",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:38:33.631Z"
+    },
+    {
+      "id": "ec3e3bf0-d1a7-4433-93a8-27fb2c7e3275",
+      "type": "expense",
+      "title": "خرید نوشابه",
+      "amount": 85000,
+      "category": "خوراک",
+      "date": "2026-03-09",
+      "time": "20:42",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:37:08.150Z"
+    },
+    {
+      "id": "37cee630-cc16-4d99-8441-ebbb08fd4cc9",
+      "type": "expense",
+      "title": "خرید قهوه اسپرسو",
+      "amount": 154000,
+      "category": "خوراک",
+      "date": "2026-03-09",
+      "time": "20:29",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:36:34.820Z"
+    },
+    {
+      "id": "f51ec6b0-4085-4032-b17b-67cdfbbcd600",
+      "type": "expense",
+      "title": "سفارش صبحانه",
+      "amount": 150000,
+      "category": "خوراک",
+      "date": "2026-03-09",
+      "time": "10:00",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:35:55.767Z"
+    },
+    {
+      "id": "8766651d-fee1-4eef-b6c5-c8c3f63ee8c5",
+      "type": "expense",
+      "title": "خرید از نانوایی",
+      "amount": 119000,
+      "category": "خوراک",
+      "date": "2026-03-09",
+      "time": "07:40",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:35:24.127Z"
+    },
+    {
+      "id": "562dd805-107f-499e-99d4-5b3a86375b93",
+      "type": "expense",
+      "title": "خرید سوپرمارکت",
+      "amount": 400000,
+      "category": "خوراک",
+      "date": "2026-03-08",
+      "time": "17:47",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:34:50.483Z"
+    },
+    {
+      "id": "64ee4ac4-167a-4223-b246-81b0e94200d4",
+      "type": "expense",
+      "title": "الباقی هزینه تعمیر ماشین",
+      "amount": 5400000,
+      "category": "حمل‌ونقل",
+      "date": "2026-03-08",
+      "time": "15:24",
+      "note": "کارت به کارت برای دایی ممد برای تعمیر ماشین",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:34:15.634Z"
+    },
+    {
+      "id": "a805df29-4f77-45f4-a69e-edd3b61a2e4a",
+      "type": "expense",
+      "title": "هزینه اسنپ",
+      "amount": 116000,
+      "category": "حمل‌ونقل",
+      "date": "2026-03-08",
+      "time": "15:10",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:33:20.599Z"
+    },
+    {
+      "id": "2d0134f6-045a-45f2-bf63-36c6f8cede8a",
+      "type": "expense",
+      "title": "هزینه تعمیر ماشین",
+      "amount": 2000000,
+      "category": "حمل‌ونقل",
+      "date": "2026-03-08",
+      "time": "14:49",
+      "note": "",
+      "accountId": "b7702bb6-9381-4134-b935-2e54afa95827",
+      "ownerId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "createdAt": "2026-03-14T05:31:53.232Z"
+    },
     {
       "id": "8adbd5d3-dc2f-48b6-98b7-c3cff07b1633",
       "type": "expense",
@@ -1499,6 +2468,90 @@
   ],
   "hrAttendanceRecords": [
     {
+      "id": "d4b672d4-f726-49c2-9646-f047729d1690",
+      "memberId": "10a049f0-50aa-4bf6-b821-341c4a858f2e",
+      "date": "2026-03-10",
+      "checkIn": "09:10",
+      "checkOut": "16:30",
+      "status": "present",
+      "workHours": 7.33,
+      "note": "",
+      "createdAt": "2026-03-10T11:43:43.928Z",
+      "updatedAt": "2026-03-10T11:43:43.928Z"
+    },
+    {
+      "id": "d6413bfe-cf8d-461e-90bd-84b5d0a35228",
+      "memberId": "060e9f8a-61cd-42c2-8f07-2352aeb1f8cc",
+      "date": "2026-03-10",
+      "checkIn": "08:00",
+      "checkOut": "16:30",
+      "status": "present",
+      "workHours": 8.5,
+      "note": "",
+      "createdAt": "2026-03-10T11:41:56.619Z",
+      "updatedAt": "2026-03-10T11:41:56.619Z"
+    },
+    {
+      "id": "f651d19d-a372-4835-a1ba-601a41bc8a8c",
+      "memberId": "73bfaf7c-3a43-40fd-81e2-120ef0fffd1f",
+      "date": "2026-03-10",
+      "checkIn": "08:00",
+      "checkOut": "16:30",
+      "status": "present",
+      "workHours": 8.5,
+      "note": "",
+      "createdAt": "2026-03-10T11:41:30.912Z",
+      "updatedAt": "2026-03-10T11:41:30.912Z"
+    },
+    {
+      "id": "62c2f487-45d5-46db-a48c-4e301efe0c1e",
+      "memberId": "a97a014d-efbb-4eff-b706-45c6b3b9e684",
+      "date": "2026-03-10",
+      "checkIn": "08:10",
+      "checkOut": "16:30",
+      "status": "present",
+      "workHours": 8.33,
+      "note": "",
+      "createdAt": "2026-03-10T11:41:19.467Z",
+      "updatedAt": "2026-03-10T11:41:19.467Z"
+    },
+    {
+      "id": "61c9528b-c172-4f26-bb09-4b7da205090f",
+      "memberId": "ba4e1305-f701-485b-931e-889c6f7de1be",
+      "date": "2026-03-10",
+      "checkIn": "08:00",
+      "checkOut": "16:30",
+      "status": "present",
+      "workHours": 8.5,
+      "note": "",
+      "createdAt": "2026-03-10T11:40:59.781Z",
+      "updatedAt": "2026-03-10T11:40:59.781Z"
+    },
+    {
+      "id": "3472027c-e241-49f3-abef-69ab2a69549b",
+      "memberId": "307396b9-8da6-4865-be06-65b24a341310",
+      "date": "2026-03-10",
+      "checkIn": "10:55",
+      "checkOut": "16:30",
+      "status": "present",
+      "workHours": 5.58,
+      "note": "",
+      "createdAt": "2026-03-10T11:40:51.484Z",
+      "updatedAt": "2026-03-10T11:40:51.484Z"
+    },
+    {
+      "id": "d3dc3d70-6353-43c3-9c9f-8ef428e1d256",
+      "memberId": "cd7e522d-731d-44fb-9932-a583d62601f8",
+      "date": "2026-03-10",
+      "checkIn": "08:15",
+      "checkOut": "16:30",
+      "status": "present",
+      "workHours": 8.25,
+      "note": "",
+      "createdAt": "2026-03-10T11:40:38.221Z",
+      "updatedAt": "2026-03-10T11:40:38.221Z"
+    },
+    {
       "id": "b41437ed-6f93-4242-822c-bf1eb082fd77",
       "memberId": "307396b9-8da6-4865-be06-65b24a341310",
       "date": "2026-03-09",
@@ -2029,18 +3082,6 @@
   ],
   "chatConversations": [
     {
-      "id": "c13169b5-6bbe-4f79-8b08-556e53195240",
-      "type": "direct",
-      "title": "",
-      "participantIds": [
-        "2c6bb859-e715-442b-b644-6cde90a31fbd",
-        "d3f07335-5137-4d21-bd8f-6d8c6ae4b4c8"
-      ],
-      "createdById": "2c6bb859-e715-442b-b644-6cde90a31fbd",
-      "createdAt": "2026-03-04T06:46:13.865Z",
-      "updatedAt": "2026-03-04T06:46:13.865Z"
-    },
-    {
       "id": "0e1482fc-189d-4288-84ab-572587cb9433",
       "type": "direct",
       "title": "",
@@ -2050,19 +3091,21 @@
       ],
       "createdById": "2c6bb859-e715-442b-b644-6cde90a31fbd",
       "createdAt": "2026-03-05T06:03:10.976Z",
-      "updatedAt": "2026-03-09T06:40:45.222Z"
+      "updatedAt": "2026-04-28T06:45:24.577Z",
+      "avatarDataUrl": ""
     },
     {
-      "id": "c0384a04-9b25-49c6-a314-747d4ff86168",
-      "type": "direct",
-      "title": "",
+      "id": "860fe877-80c9-425f-a4cc-6600e3b7de09",
+      "type": "group",
+      "title": "گروه فرانت اند",
       "participantIds": [
         "2c6bb859-e715-442b-b644-6cde90a31fbd",
-        "ef7043e5-e25b-4d71-8ef1-b7756a0bac9c"
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff"
       ],
       "createdById": "2c6bb859-e715-442b-b644-6cde90a31fbd",
-      "createdAt": "2026-03-05T07:04:51.540Z",
-      "updatedAt": "2026-03-05T07:05:00.414Z"
+      "createdAt": "2026-03-14T05:58:29.605Z",
+      "updatedAt": "2026-03-15T09:06:44.215Z",
+      "avatarDataUrl": ""
     }
   ],
   "chatMessages": [
@@ -2304,52 +3347,6 @@
       "deletedById": "",
       "editedAt": "",
       "createdAt": "2026-03-05T07:00:34.686Z"
-    },
-    {
-      "id": "c51bda6a-9728-408d-94eb-f542767121a8",
-      "conversationId": "c0384a04-9b25-49c6-a314-747d4ff86168",
-      "text": "سلام",
-      "attachments": [],
-      "senderId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
-      "senderName": "ادمین سیستم",
-      "senderAvatarDataUrl": "/uploads/avatars/avatar-e46577d0-e4f8-44fd-9658-ac45f693acc8.jpg",
-      "readByIds": [
-        "2c6bb859-e715-442b-b644-6cde90a31fbd"
-      ],
-      "replyToMessageId": "",
-      "forwardFromMessageId": "",
-      "forwardedFromSenderName": "",
-      "forwardedFromConversationId": "",
-      "mentionMemberIds": [],
-      "reactions": [],
-      "isDeleted": false,
-      "deletedAt": "",
-      "deletedById": "",
-      "editedAt": "",
-      "createdAt": "2026-03-05T07:04:58.376Z"
-    },
-    {
-      "id": "e8d44639-293a-4244-a09e-8d4f5c427373",
-      "conversationId": "c0384a04-9b25-49c6-a314-747d4ff86168",
-      "text": "چطوری",
-      "attachments": [],
-      "senderId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
-      "senderName": "ادمین سیستم",
-      "senderAvatarDataUrl": "/uploads/avatars/avatar-3cfe2eb2-e9e5-49cd-9813-668525689201.jpg",
-      "readByIds": [
-        "2c6bb859-e715-442b-b644-6cde90a31fbd"
-      ],
-      "replyToMessageId": "",
-      "forwardFromMessageId": "",
-      "forwardedFromSenderName": "",
-      "forwardedFromConversationId": "",
-      "mentionMemberIds": [],
-      "reactions": [],
-      "isDeleted": false,
-      "deletedAt": "",
-      "deletedById": "",
-      "editedAt": "",
-      "createdAt": "2026-03-05T07:05:00.414Z"
     },
     {
       "id": "f76a7d23-3470-4af1-a6c3-7a8309a75d52",
@@ -2686,9 +3683,1674 @@
       "deletedById": "",
       "editedAt": "",
       "createdAt": "2026-03-09T06:40:45.222Z"
+    },
+    {
+      "id": "17fe177d-ebf1-4371-8e21-55d8e50d506c",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "میگه بخور سرحال میشی 😂 😂 😂 😂",
+      "attachments": [],
+      "senderId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "senderName": "علی فلاح",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-1f24b55a-cd5c-47a4-898c-dae0d39807ff.jpg",
+      "readByIds": [
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-03-10T11:53:43.630Z"
+    },
+    {
+      "id": "bed67bd5-9e6d-4972-bb04-c4b7b8da3b86",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "کسکش میخاست منو بگا بده",
+      "attachments": [],
+      "senderId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "senderName": "ادمین سیستم",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-4382484b-3ae1-4c7d-bf88-448b46063b62.jpg",
+      "readByIds": [
+        "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-03-10T12:22:48.605Z"
+    },
+    {
+      "id": "c7c31a05-ebce-496e-aaae-2dd3fc6bc8a6",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "@علی فلاح با توام",
+      "attachments": [],
+      "senderId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "senderName": "ادمین سیستم",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-4382484b-3ae1-4c7d-bf88-448b46063b62.jpg",
+      "readByIds": [
+        "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff"
+      ],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-03-10T12:25:00.397Z"
+    },
+    {
+      "id": "3a64e318-613b-4c92-abf1-11f47d9e5df1",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "😂 😂 😂 😂 😂 😂",
+      "attachments": [],
+      "senderId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "senderName": "علی فلاح",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-1f24b55a-cd5c-47a4-898c-dae0d39807ff.jpg",
+      "readByIds": [
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [
+        {
+          "emoji": "👍",
+          "memberIds": [
+            "2c6bb859-e715-442b-b644-6cde90a31fbd"
+          ]
+        }
+      ],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-03-10T12:31:23.037Z"
+    },
+    {
+      "id": "8ed5a7fd-8ea7-4f59-b662-4bc9c93441f4",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "سلام خوشگله",
+      "attachments": [],
+      "senderId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "senderName": "ادمین سیستم",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-4382484b-3ae1-4c7d-bf88-448b46063b62.jpg",
+      "readByIds": [
+        "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-04-21T12:30:07.354Z"
+    },
+    {
+      "id": "e078516c-2165-4e4b-8793-b24bd61a1eec",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "سلااااام",
+      "attachments": [],
+      "senderId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "senderName": "علی فلاح",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-1f24b55a-cd5c-47a4-898c-dae0d39807ff.jpg",
+      "readByIds": [
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-04-28T06:38:35.842Z"
+    },
+    {
+      "id": "80724da2-fd46-4c03-a809-40401fb98082",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "پیااااامممم میاددددد؟؟؟",
+      "attachments": [],
+      "senderId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "senderName": "علی فلاح",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-1f24b55a-cd5c-47a4-898c-dae0d39807ff.jpg",
+      "readByIds": [
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-04-28T06:41:40.188Z"
+    },
+    {
+      "id": "38727e14-007a-42b6-9c36-8ef3be5ed262",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "فکر کنم نمیاد",
+      "attachments": [],
+      "senderId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "senderName": "علی فلاح",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-1f24b55a-cd5c-47a4-898c-dae0d39807ff.jpg",
+      "readByIds": [
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-04-28T06:41:47.365Z"
+    },
+    {
+      "id": "a4dae7e7-af6a-40f9-855a-0aa7a6a9698c",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "میاد بابا",
+      "attachments": [],
+      "senderId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "senderName": "ادمین سیستم",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-4382484b-3ae1-4c7d-bf88-448b46063b62.jpg",
+      "readByIds": [
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-04-28T06:42:55.490Z"
+    },
+    {
+      "id": "909a0fdd-0fd9-45a1-ba5d-acbafdd5933e",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "چی میگی تو",
+      "attachments": [],
+      "senderId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "senderName": "ادمین سیستم",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-4382484b-3ae1-4c7d-bf88-448b46063b62.jpg",
+      "readByIds": [
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-04-28T06:43:03.703Z"
+    },
+    {
+      "id": "ef2081e1-bc96-47cf-814e-a1cec41021f5",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "سایلنت هیل 😂 😂 😂",
+      "attachments": [],
+      "senderId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "senderName": "علی فلاح",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-1f24b55a-cd5c-47a4-898c-dae0d39807ff.jpg",
+      "readByIds": [
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-04-28T06:44:05.937Z"
+    },
+    {
+      "id": "ab7451f4-36d8-4fd3-b7b1-211c4b02ade6",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "ولش کن صدا مهم نیست",
+      "attachments": [],
+      "senderId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "senderName": "ادمین سیستم",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-4382484b-3ae1-4c7d-bf88-448b46063b62.jpg",
+      "readByIds": [
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-04-28T06:44:19.462Z"
+    },
+    {
+      "id": "1806f29b-b125-41f6-afd7-d3684ccf7fa1",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "مهم تصویره",
+      "attachments": [],
+      "senderId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "senderName": "ادمین سیستم",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-4382484b-3ae1-4c7d-bf88-448b46063b62.jpg",
+      "readByIds": [
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-04-28T06:44:21.179Z"
+    },
+    {
+      "id": "fb7a070b-0c8e-4bf4-8f8c-b1dbdad34b3a",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "مهم سیماس",
+      "attachments": [],
+      "senderId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "senderName": "علی فلاح",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-1f24b55a-cd5c-47a4-898c-dae0d39807ff.jpg",
+      "readByIds": [
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-04-28T06:44:33.203Z"
+    },
+    {
+      "id": "775c096f-3851-478e-9c21-26d94bd90df4",
+      "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+      "text": "نمل",
+      "attachments": [],
+      "senderId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+      "senderName": "علی فلاح",
+      "senderAvatarDataUrl": "/uploads/avatars/avatar-1f24b55a-cd5c-47a4-898c-dae0d39807ff.jpg",
+      "readByIds": [
+        "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "2c6bb859-e715-442b-b644-6cde90a31fbd"
+      ],
+      "replyToMessageId": "",
+      "forwardFromMessageId": "",
+      "forwardedFromSenderName": "",
+      "forwardedFromConversationId": "",
+      "mentionMemberIds": [],
+      "reactions": [],
+      "isDeleted": false,
+      "deletedAt": "",
+      "deletedById": "",
+      "editedAt": "",
+      "createdAt": "2026-04-28T06:45:24.577Z"
     }
   ],
   "auditLogs": [
+    {
+      "id": "998983c0-1d5a-4408-a9d7-1ccfc82b75ca",
+      "createdAt": "2026-04-28T07:38:06.046Z",
+      "action": "settings.update",
+      "entityType": "settings",
+      "entityId": "app",
+      "summary": "Application settings updated.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "a6426a3a-5ef3-4ecc-afcd-36bdc4bf8c8b",
+      "createdAt": "2026-04-28T07:38:04.537Z",
+      "action": "team.update",
+      "entityType": "team-member",
+      "entityId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "summary": "Team member updated: ادمین سیستم",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "093f4742-ad39-44f3-9234-f1eb2f3171b2",
+      "createdAt": "2026-04-28T06:45:24.590Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "775c096f-3851-478e-9c21-26d94bd90df4",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "fullName": "علی فلاح",
+        "role": "member"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "6168809b-ef7f-43a1-9195-7f92f980335b",
+      "createdAt": "2026-04-28T06:44:33.218Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "fb7a070b-0c8e-4bf4-8f8c-b1dbdad34b3a",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "fullName": "علی فلاح",
+        "role": "member"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "9688ae13-1b1e-47b5-8dfe-36f6c70aa77e",
+      "createdAt": "2026-04-28T06:44:21.190Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "1806f29b-b125-41f6-afd7-d3684ccf7fa1",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "83a81c25-728e-4445-8917-4bef8e6a4382",
+      "createdAt": "2026-04-28T06:44:19.476Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "ab7451f4-36d8-4fd3-b7b1-211c4b02ade6",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "3919a011-b8e9-4674-9e68-01f4fa9b2f85",
+      "createdAt": "2026-04-28T06:44:05.951Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "ef2081e1-bc96-47cf-814e-a1cec41021f5",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "fullName": "علی فلاح",
+        "role": "member"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "4244a43f-a844-4bfb-a6c2-47f950418b65",
+      "createdAt": "2026-04-28T06:43:03.715Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "909a0fdd-0fd9-45a1-ba5d-acbafdd5933e",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "10869085-de25-4ce8-b6d0-b08b40b17f65",
+      "createdAt": "2026-04-28T06:42:55.505Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "a4dae7e7-af6a-40f9-855a-0aa7a6a9698c",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "5d46e59c-26be-47a2-8729-3c0f4fd249a3",
+      "createdAt": "2026-04-28T06:41:47.379Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "38727e14-007a-42b6-9c36-8ef3be5ed262",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "fullName": "علی فلاح",
+        "role": "member"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "541f2868-fcaf-4343-9a36-18b70c2a5c30",
+      "createdAt": "2026-04-28T06:41:40.203Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "80724da2-fd46-4c03-a809-40401fb98082",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "fullName": "علی فلاح",
+        "role": "member"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "ce8bfcad-e7fb-4201-9aee-0b88ea71d0c7",
+      "createdAt": "2026-04-28T06:38:35.858Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "e078516c-2165-4e4b-8793-b24bd61a1eec",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "fullName": "علی فلاح",
+        "role": "member"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "da699c6b-83e7-44b2-a6c9-2f74cd6f23e1",
+      "createdAt": "2026-04-23T05:41:29.261Z",
+      "action": "minute.update",
+      "entityType": "minute",
+      "entityId": "9bc921b4-4df3-425c-88de-48e2a6453a4c",
+      "summary": "Meeting minute updated: صورتجلسه مرور هفتگی",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "3364983c-1794-4ae6-88eb-f3703a412c2f",
+      "createdAt": "2026-04-23T05:39:58.339Z",
+      "action": "minute.update",
+      "entityType": "minute",
+      "entityId": "9bc921b4-4df3-425c-88de-48e2a6453a4c",
+      "summary": "Meeting minute updated: صورتجلسه مرور هفتگی",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "70c3dd4a-7039-4b1c-bf4f-4315c4796199",
+      "createdAt": "2026-04-23T05:31:37.813Z",
+      "action": "minute.create",
+      "entityType": "minute",
+      "entityId": "9bc921b4-4df3-425c-88de-48e2a6453a4c",
+      "summary": "Meeting minute created: صورتجلسه مرور هفتگی",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "44958500-1b61-429e-912a-d9b0c6d23479",
+      "createdAt": "2026-04-22T12:22:13.736Z",
+      "action": "settings.update",
+      "entityType": "settings",
+      "entityId": "app",
+      "summary": "Application settings updated.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "5d99d999-c3df-4e8c-9464-77dbf24a9808",
+      "createdAt": "2026-04-22T10:21:09.091Z",
+      "action": "task.create",
+      "entityType": "task",
+      "entityId": "c6116cc1-5240-4ac2-a2b7-736dc89381f9",
+      "summary": "Task created: توسعه بکند",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "dd2bce51-4637-4e0a-a18d-cf3ee43fdf46",
+      "createdAt": "2026-04-22T10:16:24.386Z",
+      "action": "settings.update",
+      "entityType": "settings",
+      "entityId": "app",
+      "summary": "Application settings updated.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "0829fd4a-d5c6-41e9-9705-f9c1a81c65b3",
+      "createdAt": "2026-04-21T12:33:15.138Z",
+      "action": "message.react",
+      "entityType": "chat-message",
+      "entityId": "3a64e318-613b-4c92-abf1-11f47d9e5df1",
+      "summary": "Message reaction updated.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "emoji": "👍",
+        "reactionsCount": 1
+      }
+    },
+    {
+      "id": "189d1252-58f9-4811-90b9-81eeef2a1f2f",
+      "createdAt": "2026-04-21T12:33:11.979Z",
+      "action": "message.react",
+      "entityType": "chat-message",
+      "entityId": "8ed5a7fd-8ea7-4f59-b662-4bc9c93441f4",
+      "summary": "Message reaction updated.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "emoji": "❤️",
+        "reactionsCount": 0
+      }
+    },
+    {
+      "id": "f2630e9a-9c9e-4f6f-b066-8b043b5e2b6b",
+      "createdAt": "2026-04-21T12:33:07.748Z",
+      "action": "message.react",
+      "entityType": "chat-message",
+      "entityId": "8ed5a7fd-8ea7-4f59-b662-4bc9c93441f4",
+      "summary": "Message reaction updated.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "emoji": "❤️",
+        "reactionsCount": 1
+      }
+    },
+    {
+      "id": "c3422ce5-d9c2-40d0-aefa-76ccc29c6d2b",
+      "createdAt": "2026-04-21T12:30:07.368Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "8ed5a7fd-8ea7-4f59-b662-4bc9c93441f4",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "f6487cfd-be25-4e92-bfc6-1dde979352bd",
+      "createdAt": "2026-04-16T07:12:15.830Z",
+      "action": "minute.update",
+      "entityType": "minute",
+      "entityId": "96b9edaf-d5ae-4fbe-a71c-5ee465f85988",
+      "summary": "Meeting minute updated: بررسی تسک های برنامه نویسی",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "5bc92456-47fe-42dc-bfbf-839a42e6a352",
+      "createdAt": "2026-04-16T07:07:42.861Z",
+      "action": "minute.create",
+      "entityType": "minute",
+      "entityId": "96b9edaf-d5ae-4fbe-a71c-5ee465f85988",
+      "summary": "Meeting minute created: بررسی تسک های برنامه نویسی",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "9ba946b2-bd06-4b55-a0ea-0c17cec2f6af",
+      "createdAt": "2026-04-16T06:59:56.381Z",
+      "action": "task.delete",
+      "entityType": "task",
+      "entityId": "594956d7-86ca-41b8-9391-ac488a6ee0a1",
+      "summary": "Task deleted.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "b54fd4c4-942d-40b6-8c02-3d538015faa3",
+      "createdAt": "2026-04-12T12:43:07.399Z",
+      "action": "task.delete",
+      "entityType": "task",
+      "entityId": "d1272406-6b1c-4704-9088-740e996419fa",
+      "summary": "Task deleted.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "23c8eca6-4572-493e-a3ab-04c2b056ef1d",
+      "createdAt": "2026-04-12T12:43:03.324Z",
+      "action": "task.create",
+      "entityType": "task",
+      "entityId": "d1272406-6b1c-4704-9088-740e996419fa",
+      "summary": "Task created: asdas",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "0e7f570b-cf26-4797-96fe-f06810a22084",
+      "createdAt": "2026-04-12T12:33:35.852Z",
+      "action": "settings.update",
+      "entityType": "settings",
+      "entityId": "app",
+      "summary": "Application settings updated.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "037dc6f1-2d5c-48a1-bf3b-eed3ef62752e",
+      "createdAt": "2026-04-12T12:33:35.193Z",
+      "action": "team.update",
+      "entityType": "team-member",
+      "entityId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "summary": "Team member updated: ادمین سیستم",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "bd5bc276-61fd-44e0-8006-70c1b2cd6cdb",
+      "createdAt": "2026-04-12T12:32:43.744Z",
+      "action": "settings.update",
+      "entityType": "settings",
+      "entityId": "app",
+      "summary": "Application settings updated.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "5a7d5d99-09c8-4bbd-adb2-f25ff4c55f8d",
+      "createdAt": "2026-04-12T12:32:42.528Z",
+      "action": "team.update",
+      "entityType": "team-member",
+      "entityId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+      "summary": "Team member updated: ادمین سیستم",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "788eddd4-9e54-4931-9cc4-446600e94b21",
+      "createdAt": "2026-04-12T12:24:14.915Z",
+      "action": "task.schedule.update",
+      "entityType": "task",
+      "entityId": "594956d7-86ca-41b8-9391-ac488a6ee0a1",
+      "summary": "Task schedule updated: توسعه فرانت علی فلاح",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "76749661-33a2-4e60-897f-7baf0350c785",
+      "createdAt": "2026-04-12T12:24:13.698Z",
+      "action": "task.schedule.update",
+      "entityType": "task",
+      "entityId": "594956d7-86ca-41b8-9391-ac488a6ee0a1",
+      "summary": "Task schedule updated: توسعه فرانت علی فلاح",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "16f4b23e-3b0b-4ce1-a1fa-caff089decf3",
+      "createdAt": "2026-04-08T06:29:29.650Z",
+      "action": "team.update",
+      "entityType": "team-member",
+      "entityId": "307396b9-8da6-4865-be06-65b24a341310",
+      "summary": "Team member updated: سامر کور",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "2070b20f-75c3-4d15-b6bb-2483bb9e984e",
+      "createdAt": "2026-04-08T06:29:24.104Z",
+      "action": "team.update",
+      "entityType": "team-member",
+      "entityId": "ef7043e5-e25b-4d71-8ef1-b7756a0bac9c",
+      "summary": "Team member updated: روزبه تندکار",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "0a2be91c-e5ae-410f-8f27-0b882344e0af",
+      "createdAt": "2026-04-08T06:28:59.403Z",
+      "action": "team.update",
+      "entityType": "team-member",
+      "entityId": "ef7043e5-e25b-4d71-8ef1-b7756a0bac9c",
+      "summary": "Team member updated: روزبه تندکار",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "6afcc52a-7b9d-48e5-84f6-4fbb1528b0b8",
+      "createdAt": "2026-04-08T06:28:48.932Z",
+      "action": "team.update",
+      "entityType": "team-member",
+      "entityId": "307396b9-8da6-4865-be06-65b24a341310",
+      "summary": "Team member updated: سامر کور",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "534ad905-db26-41a4-b472-f4e6b356794d",
+      "createdAt": "2026-04-06T10:15:04.408Z",
+      "action": "task.create",
+      "entityType": "task",
+      "entityId": "594956d7-86ca-41b8-9391-ac488a6ee0a1",
+      "summary": "Task created: توسعه فرانت علی فلاح",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "4a133fff-cb62-4fe1-9e99-ee9c2c094932",
+      "createdAt": "2026-04-06T08:28:24.064Z",
+      "action": "task.delete",
+      "entityType": "task",
+      "entityId": "38b69f82-7ae4-4fd6-a4ba-3f3a35faa871",
+      "summary": "Task deleted.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "fb5cc86b-7223-4060-bab7-7bc43085cd03",
+      "createdAt": "2026-04-06T08:28:21.485Z",
+      "action": "task.delete",
+      "entityType": "task",
+      "entityId": "46862484-2d87-401d-a8a5-6d33181e4d74",
+      "summary": "Task deleted.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "abcb51dc-2ce1-4c7e-91bf-3d168778b6fb",
+      "createdAt": "2026-04-06T08:28:15.144Z",
+      "action": "task.delete",
+      "entityType": "task",
+      "entityId": "285a6244-b0aa-48f6-a649-39ad71288163",
+      "summary": "Task deleted.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "359e2d3d-ba70-497d-be92-7ca4d7a2e103",
+      "createdAt": "2026-04-06T08:28:12.657Z",
+      "action": "task.delete",
+      "entityType": "task",
+      "entityId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "summary": "Task deleted.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "e00bec12-9bdb-4432-aaed-83e6c2a4a9fd",
+      "createdAt": "2026-03-29T07:19:04.545Z",
+      "action": "task.status.update",
+      "entityType": "task",
+      "entityId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "summary": "Task status changed to doing.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "8273c686-bec9-4be2-ac78-a9c4002fccf6",
+      "createdAt": "2026-03-29T07:19:01.323Z",
+      "action": "task.workflow.decision",
+      "entityType": "task",
+      "entityId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "summary": "Workflow step approveed for task: پیاده سازی داشبورد گزارش پورسانت",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "decision": "approve",
+        "currentStepIndex": 0,
+        "targetStepIndex": 1,
+        "completed": false
+      }
+    },
+    {
+      "id": "c4a3dc2c-da4f-418d-acdc-65db35e9a24a",
+      "createdAt": "2026-03-16T05:05:20.041Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "6b8eb096-de20-4dc0-b0ea-5435527d878d",
+      "summary": "Transaction created: سفارش از اسنپ فود",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "0e7d61fe-b995-4315-9727-98f5539ed759",
+      "createdAt": "2026-03-16T05:04:51.737Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "7994a813-eae4-4b82-9f51-30309f059f62",
+      "summary": "Transaction created: حقوق بیمه ای نویان",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "b941668a-405a-4346-b540-2ad858abdc0d",
+      "createdAt": "2026-03-16T05:04:05.704Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "2328d4d9-afdd-4085-a3c3-9ce373d87ee7",
+      "summary": "Transaction created: خرید پماد و دارو",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "89ab7b35-4d66-44af-bc33-742f67ade6ec",
+      "createdAt": "2026-03-16T05:03:32.933Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "7cd0740a-27d8-47e6-bb6c-59d03bfbee29",
+      "summary": "Transaction created: شارژ سیم کارت مژگان",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "d76d476a-7a84-4726-8b51-54128e3ee84b",
+      "createdAt": "2026-03-16T05:03:04.725Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "645d3f07-4335-421b-a0f5-913d353a23c0",
+      "summary": "Transaction created: خرید دارو",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "792f59df-f806-4391-b6ff-89f1054618aa",
+      "createdAt": "2026-03-15T12:35:46.409Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "91f0ff92-cb65-40c7-a6da-6f2d8ac2aaea",
+      "summary": "Transaction created: خرید نوشابه و ماست",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "e95c222e-ff3f-4498-bd14-b0d8d2a8f260",
+      "createdAt": "2026-03-15T12:35:04.824Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "b683d843-5770-4183-be73-208902b9505a",
+      "summary": "Transaction created: عیدی نویان",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "03729501-5479-45bb-973e-e3c6c47cf579",
+      "createdAt": "2026-03-15T04:53:15.464Z",
+      "action": "task.update",
+      "entityType": "task",
+      "entityId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "summary": "Task updated: پیاده سازی داشبورد گزارش پورسانت",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "39b4c589-c4f0-4c94-a245-7947924a3657",
+      "createdAt": "2026-03-15T04:52:47.688Z",
+      "action": "project.update",
+      "entityType": "project",
+      "entityId": "a3d4bc1c-24d8-45f5-ae19-5421ceb0ad56",
+      "summary": "Project updated: توسعه داشبورد گزارش دهی سیستم ERP",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "a59383ed-b311-4c7c-a6dc-ea897f177d88",
+      "createdAt": "2026-03-15T04:52:13.829Z",
+      "action": "task.create",
+      "entityType": "task",
+      "entityId": "95e0608f-d07f-410d-87f2-0916480fe05e",
+      "summary": "Task created: پیاده سازی داشبورد گزارش پورسانت",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "467a890b-2040-4685-90db-7c78dcfbdfa6",
+      "createdAt": "2026-03-15T04:35:00.572Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "dcbceeee-47e7-4b54-8aa1-718dd3e2717c",
+      "summary": "Transaction created: بنزین",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "d3207444-0dbb-4acc-9483-7648b78cabc2",
+      "createdAt": "2026-03-14T05:59:06.612Z",
+      "action": "conversation.delete",
+      "entityType": "chat-conversation",
+      "entityId": "c13169b5-6bbe-4f79-8b08-556e53195240",
+      "summary": "Conversation deleted.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "participants": 2
+      }
+    },
+    {
+      "id": "e17871a1-5e93-4b46-81d2-2809cf0f4bb1",
+      "createdAt": "2026-03-14T05:59:03.218Z",
+      "action": "conversation.delete",
+      "entityType": "chat-conversation",
+      "entityId": "c0384a04-9b25-49c6-a314-747d4ff86168",
+      "summary": "Conversation deleted.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "participants": 2
+      }
+    },
+    {
+      "id": "6c5578c8-7f46-49b3-80f4-7730dc67da94",
+      "createdAt": "2026-03-14T05:59:01.021Z",
+      "action": "conversation.delete",
+      "entityType": "chat-conversation",
+      "entityId": "08f91cdd-6717-43a7-9297-1bd6fc95be8f",
+      "summary": "Conversation deleted.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "participants": 2
+      }
+    },
+    {
+      "id": "42976319-8ea8-47f4-aa70-d0209cbf6f07",
+      "createdAt": "2026-03-14T05:58:29.613Z",
+      "action": "conversation.create",
+      "entityType": "chat-conversation",
+      "entityId": "860fe877-80c9-425f-a4cc-6600e3b7de09",
+      "summary": "Group conversation created: گروه فرانت اند",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "type": "group",
+        "participantIds": [
+          "2c6bb859-e715-442b-b644-6cde90a31fbd",
+          "ef7043e5-e25b-4d71-8ef1-b7756a0bac9c",
+          "700d3687-754f-474b-8f03-9d6ba9a5a3ff"
+        ]
+      }
+    },
+    {
+      "id": "a7e08b63-cd52-48ee-a20c-3694ed34299e",
+      "createdAt": "2026-03-14T05:42:06.903Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "63a1d8d5-55cf-44cd-803a-049816fbb8de",
+      "summary": "Transaction created: خرید نان",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "14161f4c-8faf-4cc8-9419-b9bc66ce56e4",
+      "createdAt": "2026-03-14T05:40:58.407Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "aad2021e-d30f-4a5c-a38b-facb181972a7",
+      "summary": "Transaction created: خرید نان",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "9651e64a-e37c-485a-b17b-4254022698b4",
+      "createdAt": "2026-03-14T05:40:31.454Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "deb73784-2722-4169-9f2c-304b0b4b2b05",
+      "summary": "Transaction created: خرید از فروشگاه",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "772664b0-0332-4888-b216-71b6cf50f8cf",
+      "createdAt": "2026-03-14T05:39:26.267Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "9ec8a02f-2296-4397-b813-4bb2018edd76",
+      "summary": "Transaction created: هزینه اسنپ",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "3c5ccfc9-cd0e-4ca9-88a3-78f19e77d969",
+      "createdAt": "2026-03-14T05:38:33.640Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "3f771ad8-559f-40bf-a617-a569d2659626",
+      "summary": "Transaction created: خرید از داروخانه روشا",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "49f62269-d560-4d7b-88d2-c6e9f0779cd3",
+      "createdAt": "2026-03-14T05:37:43.828Z",
+      "action": "transaction.update",
+      "entityType": "accounting-transaction",
+      "entityId": "64ee4ac4-167a-4223-b246-81b0e94200d4",
+      "summary": "Transaction updated: الباقی هزینه تعمیر ماشین",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "d6fba2f8-13be-4144-ac93-2a4527d9a7f2",
+      "createdAt": "2026-03-14T05:37:32.528Z",
+      "action": "transaction.update",
+      "entityType": "accounting-transaction",
+      "entityId": "2d0134f6-045a-45f2-bf63-36c6f8cede8a",
+      "summary": "Transaction updated: هزینه تعمیر ماشین",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "0e0323bf-d3a0-4f3f-bb35-299bf1860e9d",
+      "createdAt": "2026-03-14T05:37:08.160Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "ec3e3bf0-d1a7-4433-93a8-27fb2c7e3275",
+      "summary": "Transaction created: خرید نوشابه",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "153c91e5-ce92-49ef-a350-95eb35e536c6",
+      "createdAt": "2026-03-14T05:36:34.829Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "37cee630-cc16-4d99-8441-ebbb08fd4cc9",
+      "summary": "Transaction created: خرید قهوه اسپرسو",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "e2533f2b-91d7-41ab-8878-f5431dcb2e16",
+      "createdAt": "2026-03-14T05:35:55.777Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "f51ec6b0-4085-4032-b17b-67cdfbbcd600",
+      "summary": "Transaction created: سفارش صبحانه",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "6b21e6a5-7983-4218-9f5d-04571a1a9609",
+      "createdAt": "2026-03-14T05:35:24.137Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "8766651d-fee1-4eef-b6c5-c8c3f63ee8c5",
+      "summary": "Transaction created: خرید از نانوایی",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "b7a492c4-58a6-4cf6-935d-8a95a749c0b6",
+      "createdAt": "2026-03-14T05:34:50.492Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "562dd805-107f-499e-99d4-5b3a86375b93",
+      "summary": "Transaction created: خرید سوپرمارکت",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "f5373016-d34b-429b-b225-d6fd4a738ea7",
+      "createdAt": "2026-03-14T05:34:15.643Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "64ee4ac4-167a-4223-b246-81b0e94200d4",
+      "summary": "Transaction created: الباقی هزینه تعمیر ماشین",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "7b864ae3-b35b-41e7-94ea-53d5e77d83a4",
+      "createdAt": "2026-03-14T05:33:20.607Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "a805df29-4f77-45f4-a69e-edd3b61a2e4a",
+      "summary": "Transaction created: هزینه اسنپ",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "b522d734-6dec-4d90-b08c-3df692b59ff6",
+      "createdAt": "2026-03-14T05:31:53.242Z",
+      "action": "transaction.create",
+      "entityType": "accounting-transaction",
+      "entityId": "2d0134f6-045a-45f2-bf63-36c6f8cede8a",
+      "summary": "Transaction created: هزینه تعمیر ماشین",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "ff0fd519-c773-412c-92ef-dde4c12ae124",
+      "createdAt": "2026-03-10T12:31:23.046Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "3a64e318-613b-4c92-abf1-11f47d9e5df1",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "fullName": "علی فلاح",
+        "role": "member"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "00647f4c-c590-40c0-8c62-e66e78817f14",
+      "createdAt": "2026-03-10T12:25:00.406Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "c7c31a05-ebce-496e-aaae-2dd3fc6bc8a6",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "f754fdb1-6301-4ac2-95f8-27c4071a2de3",
+      "createdAt": "2026-03-10T12:22:48.609Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "bed67bd5-9e6d-4972-bb04-c4b7b8da3b86",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "74668ecc-6300-4fb0-9514-f8332c438190",
+      "createdAt": "2026-03-10T12:00:44.616Z",
+      "action": "conversation.create",
+      "entityType": "chat-conversation",
+      "entityId": "08f91cdd-6717-43a7-9297-1bd6fc95be8f",
+      "summary": "Direct conversation created.",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {
+        "type": "direct",
+        "participantIds": [
+          "2c6bb859-e715-442b-b644-6cde90a31fbd",
+          "c8077ec3-7de0-4082-8efc-4d19357d29a8"
+        ]
+      }
+    },
+    {
+      "id": "96038b25-5d10-40e5-89c0-7e6c1f8954fb",
+      "createdAt": "2026-03-10T11:53:43.635Z",
+      "action": "message.send",
+      "entityType": "chat-message",
+      "entityId": "17fe177d-ebf1-4371-8e21-55d8e50d506c",
+      "summary": "Message sent.",
+      "actor": {
+        "userId": "700d3687-754f-474b-8f03-9d6ba9a5a3ff",
+        "fullName": "علی فلاح",
+        "role": "member"
+      },
+      "meta": {
+        "conversationId": "0e1482fc-189d-4288-84ab-572587cb9433",
+        "hasText": true,
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "4eace00a-6c9f-4c0a-b3fa-96c6fe9ebada",
+      "createdAt": "2026-03-10T11:43:43.932Z",
+      "action": "hr.attendance.upsert",
+      "entityType": "hr-attendance",
+      "entityId": "10a049f0-50aa-4bf6-b821-341c4a858f2e:2026-03-10",
+      "summary": "Attendance updated for غزل وطن خواه (2026-03-10)",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "1bb29578-110b-4378-95df-530cb165ed14",
+      "createdAt": "2026-03-10T11:41:56.622Z",
+      "action": "hr.attendance.upsert",
+      "entityType": "hr-attendance",
+      "entityId": "060e9f8a-61cd-42c2-8f07-2352aeb1f8cc:2026-03-10",
+      "summary": "Attendance updated for پویا طالعی نیا (2026-03-10)",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "aec26cb8-48b8-4637-914c-32df2411e99f",
+      "createdAt": "2026-03-10T11:41:30.915Z",
+      "action": "hr.attendance.upsert",
+      "entityType": "hr-attendance",
+      "entityId": "73bfaf7c-3a43-40fd-81e2-120ef0fffd1f:2026-03-10",
+      "summary": "Attendance updated for محمد امیری (2026-03-10)",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "3f073e57-0bf1-404f-b37b-56fbc98b8bcd",
+      "createdAt": "2026-03-10T11:41:19.470Z",
+      "action": "hr.attendance.upsert",
+      "entityType": "hr-attendance",
+      "entityId": "a97a014d-efbb-4eff-b706-45c6b3b9e684:2026-03-10",
+      "summary": "Attendance updated for دانیال صادقی (2026-03-10)",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "aa92f1a5-e3cc-44f0-9bdf-822144b80e52",
+      "createdAt": "2026-03-10T11:40:59.785Z",
+      "action": "hr.attendance.upsert",
+      "entityType": "hr-attendance",
+      "entityId": "ba4e1305-f701-485b-931e-889c6f7de1be:2026-03-10",
+      "summary": "Attendance updated for مهراس بهروزی (2026-03-10)",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "1227f161-2541-4b04-99cb-7435311b97c4",
+      "createdAt": "2026-03-10T11:40:51.487Z",
+      "action": "hr.attendance.upsert",
+      "entityType": "hr-attendance",
+      "entityId": "307396b9-8da6-4865-be06-65b24a341310:2026-03-10",
+      "summary": "Attendance updated for سامر کور (2026-03-10)",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
+    {
+      "id": "0b2b055e-f8e4-48e5-8e38-d05187d85efb",
+      "createdAt": "2026-03-10T11:40:38.225Z",
+      "action": "hr.attendance.upsert",
+      "entityType": "hr-attendance",
+      "entityId": "cd7e522d-731d-44fb-9932-a583d62601f8:2026-03-10",
+      "summary": "Attendance updated for ملیکا بحرانی (2026-03-10)",
+      "actor": {
+        "userId": "2c6bb859-e715-442b-b644-6cde90a31fbd",
+        "fullName": "ادمین سیستم",
+        "role": "admin"
+      },
+      "meta": {}
+    },
     {
       "id": "35b62c02-7949-48bb-9f53-cf4e8f479213",
       "createdAt": "2026-03-09T06:40:45.222Z",

@@ -55,6 +55,8 @@ export const usePresenceSync = ({
   const [adminPresenceRows, setAdminPresenceRows] = useState<PresenceRow[]>([]);
   const [myPresenceStatus, setMyPresenceStatus] = useState<"online" | "in_meeting">("online");
 
+  const isDocumentVisible = () => typeof document === "undefined" || document.visibilityState === "visible";
+
   const applyIncomingPresenceUpdate = useCallback(
     (payload: PresenceRow) => {
       const userId = String(payload?.userId ?? "");
@@ -125,6 +127,7 @@ export const usePresenceSync = ({
     if (!authToken) return;
     let timer: number | null = null;
     const sendPing = async () => {
+      if (!isDocumentVisible()) return;
       try {
         await apiRequest<{ ok: boolean }>("/api/presence/ping", {
           method: "POST",
@@ -137,7 +140,7 @@ export const usePresenceSync = ({
     void sendPing();
     timer = window.setInterval(() => {
       void sendPing();
-    }, 45_000);
+    }, 90_000);
     return () => {
       if (timer) window.clearInterval(timer);
     };
@@ -147,6 +150,7 @@ export const usePresenceSync = ({
     if (!authToken || currentAppRole !== "admin") return;
     let timer: number | null = null;
     const refreshAdminPresence = async () => {
+      if (!isDocumentVisible()) return;
       try {
         const rows = await apiRequest<PresenceRow[]>("/api/presence/admin");
         if (Array.isArray(rows) && rows.length > 0) {
@@ -160,7 +164,7 @@ export const usePresenceSync = ({
     void refreshAdminPresence();
     timer = window.setInterval(() => {
       void refreshAdminPresence();
-    }, 45_000);
+    }, 90_000);
     return () => {
       if (timer) window.clearInterval(timer);
     };

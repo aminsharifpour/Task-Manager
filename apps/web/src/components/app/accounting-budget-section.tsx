@@ -36,7 +36,7 @@ export default function AccountingBudgetSection({
 }: AccountingBudgetSectionProps) {
   return (
     <>
-      <Card className="liquid-glass lift-on-hover">
+      <Card className="oneui-accounting-shell liquid-glass">
         <CardHeader>
           <CardTitle>بودجه ماهانه</CardTitle>
           <CardDescription>برای هر ماه بودجه ثبت کن تا هشدار عبور از سقف هزینه داشته باشی.</CardDescription>
@@ -57,15 +57,15 @@ export default function AccountingBudgetSection({
           </div>
           {budgetErrors.amount && <p className="text-xs text-destructive">{normalizeUiMessage(budgetErrors.amount, "خطا در بارگذاری بودجه ماهانه.")}</p>}
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border p-3">
+            <div className="oneui-task-summary-card rounded-[1.2rem] border p-3">
               <p className="text-xs text-muted-foreground">درآمد ماه انتخاب‌شده</p>
               <p className="text-sm font-semibold text-emerald-600">{formatMoney(budgetStats.monthIncome)}</p>
             </div>
-            <div className="rounded-lg border p-3">
+            <div className="oneui-task-summary-card rounded-[1.2rem] border p-3">
               <p className="text-xs text-muted-foreground">هزینه ماه انتخاب‌شده</p>
               <p className="text-sm font-semibold text-rose-600">{formatMoney(budgetStats.monthExpense)}</p>
             </div>
-            <div className="rounded-lg border p-3">
+            <div className="oneui-task-summary-card rounded-[1.2rem] border p-3">
               <p className="text-xs text-muted-foreground">مانده بودجه</p>
               <p className={`text-sm font-semibold ${budgetStats.remaining >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                 {formatMoney(budgetStats.remaining)}
@@ -90,7 +90,7 @@ export default function AccountingBudgetSection({
         </CardContent>
       </Card>
 
-      <Card className="liquid-glass lift-on-hover">
+      <Card className="oneui-accounting-shell liquid-glass">
         <CardHeader>
           <CardTitle>تاریخچه تغییرات بودجه</CardTitle>
           <CardDescription>آخرین تغییرات بودجه برای ماه انتخاب‌شده</CardDescription>
@@ -100,7 +100,7 @@ export default function AccountingBudgetSection({
             <p className="text-sm text-muted-foreground">هنوز تغییری برای این ماه ثبت نشده است.</p>
           ) : (
             visibleBudgetHistory.map((row) => (
-              <div key={row.id} className="rounded-lg border p-3 text-sm">
+              <div key={row.id} className="oneui-task-meta-block rounded-[1.2rem] border p-3 text-sm">
                 <p>
                   از {formatMoney(row.previousAmount)} به {formatMoney(row.amount)}
                 </p>

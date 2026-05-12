@@ -4,6 +4,14 @@ import { normalizeUiMessage } from "@/lib/api-client";
 type Args = {
   apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
   pushToast: (message: string, tone?: "success" | "error") => void;
+  scheduleUndoableDelete: (options: {
+    message: string;
+    onRemoveLocal: () => void;
+    onRestoreLocal: () => void;
+    onCommit: () => Promise<void>;
+    errorMessage: string;
+    restoredMessage?: string;
+  }) => void;
   confirmAction: (message: string, options?: any) => Promise<boolean>;
   authUserId: string;
   selectedConversationId: string;
@@ -13,6 +21,7 @@ type Args = {
   chatConversations: any[];
   groupTitleDraft: string;
   groupMembersDraft: string[];
+  groupAvatarDraft: string;
   directConversationByMemberId: Map<string, any>;
   chatEditMessageId: string;
   chatEditDraft: string;
@@ -60,6 +69,7 @@ type Args = {
   setGroupOpen: (open: boolean) => void;
   setGroupTitleDraft: (value: string) => void;
   setGroupMembersDraft: (value: string[]) => void;
+  setGroupAvatarDraft: (value: string) => void;
   setNewChatOpen: (open: boolean) => void;
   setNewChatSearch: (value: string) => void;
   setChatEditMessageId: (value: string) => void;
@@ -70,6 +80,7 @@ type Args = {
 export const useChatActions = ({
   apiRequest,
   pushToast,
+  scheduleUndoableDelete,
   confirmAction,
   authUserId,
   selectedConversationId,
@@ -79,6 +90,7 @@ export const useChatActions = ({
   chatConversations,
   groupTitleDraft,
   groupMembersDraft,
+  groupAvatarDraft,
   directConversationByMemberId,
   chatEditMessageId,
   chatEditDraft,
@@ -126,12 +138,22 @@ export const useChatActions = ({
   setGroupOpen,
   setGroupTitleDraft,
   setGroupMembersDraft,
+  setGroupAvatarDraft,
   setNewChatOpen,
   setNewChatSearch,
   setChatEditMessageId,
   setChatEditDraft,
   setChatMessageMenuOpenId,
 }: Args) => {
+  const sendChatMessageViaHttp = async (payload: Record<string, unknown>) => {
+    const created = await apiRequest<any>(`/api/chat/conversations/${selectedConversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    setChatMessages((prev) => (prev.some((row) => row.id === created?.id) ? prev : [...prev, created]));
+    return created;
+  };
+
   const selectConversation = async (conversationId: string) => {
     stopTypingSignal();
     setChatReplyTo(null);
@@ -218,26 +240,16 @@ export const useChatActions = ({
     if (!forwardSourceMessage || !forwardTargetConversationId) return;
     setChatBusy(true);
     try {
-      const socket = socketRef.current;
       const payload = {
         conversationId: forwardTargetConversationId,
         text: "",
         attachments: [],
         forwardFromMessageId: forwardSourceMessage.id,
       };
-      if (socket?.connected) {
-        await new Promise<void>((resolve, reject) => {
-          socket.emit("chat:send", payload, (ack: { ok: boolean; message?: string }) => {
-            if (ack?.ok) resolve();
-            else reject(new Error(ack?.message || "فوروارد پیام ناموفق بود."));
-          });
-        });
-      } else {
-        await apiRequest(`/api/chat/conversations/${forwardTargetConversationId}/messages`, {
-          method: "POST",
-          body: JSON.stringify({ text: "", attachments: [], forwardFromMessageId: forwardSourceMessage.id }),
-        });
-      }
+      await apiRequest(`/api/chat/conversations/${forwardTargetConversationId}/messages`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
       const refreshed = await apiRequest<any[]>("/api/chat/conversations");
       setChatConversations(normalizeChatConversations(refreshed));
       setForwardOpen(false);
@@ -260,22 +272,37 @@ export const useChatActions = ({
         destructive: true,
       }))
     ) return;
-    setChatBusy(true);
     try {
-      await apiRequest<{ ok: boolean }>(`/api/chat/conversations/${conversation.id}`, { method: "DELETE" });
-      setChatConversations((prev) => prev.filter((c) => c.id !== conversation.id));
-      if (selectedConversationId === conversation.id) {
-        setSelectedConversationId("");
-        setChatMessages([]);
-        setTypingUsers([]);
-        setChatReplyTo(null);
-      }
-      pushToast("گفتگو حذف شد.");
+      const previousConversations = chatConversations;
+      const previousMessages = chatMessages;
+      const previousSelectedConversationId = selectedConversationId;
+      const previousReplyTo = chatReplyTo;
+      scheduleUndoableDelete({
+        message: "گفتگو حذف شد.",
+        onRemoveLocal: () => {
+          setChatConversations((prev) => prev.filter((c) => c.id !== conversation.id));
+          if (selectedConversationId === conversation.id) {
+            setSelectedConversationId("");
+            setChatMessages([]);
+            setTypingUsers([]);
+            setChatReplyTo(null);
+          }
+        },
+        onRestoreLocal: () => {
+          setChatConversations(previousConversations);
+          setSelectedConversationId(previousSelectedConversationId);
+          if (previousSelectedConversationId === conversation.id) {
+            setChatMessages(previousMessages);
+            setTypingUsers([]);
+            setChatReplyTo(previousReplyTo);
+          }
+        },
+        onCommit: () => apiRequest<{ ok: boolean }>(`/api/chat/conversations/${conversation.id}`, { method: "DELETE" }).then(() => undefined),
+        errorMessage: "حذف گفتگو ناموفق بود.",
+      });
     } catch (error) {
       const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "حذف گفتگو ناموفق بود.");
       pushToast(msg || "حذف گفتگو ناموفق بود.", "error");
-    } finally {
-      setChatBusy(false);
     }
   };
 
@@ -309,7 +336,7 @@ export const useChatActions = ({
     try {
       const createdRaw = await apiRequest<any>("/api/chat/conversations/group", {
         method: "POST",
-        body: JSON.stringify({ title, participantIds }),
+        body: JSON.stringify({ title, participantIds, avatarDataUrl: groupAvatarDraft || "" }),
       });
       const created = normalizeChatConversation(createdRaw);
       if (!created) throw new Error("Invalid conversation payload.");
@@ -318,11 +345,56 @@ export const useChatActions = ({
       setGroupOpen(false);
       setGroupTitleDraft("");
       setGroupMembersDraft([]);
+      setGroupAvatarDraft("");
       await selectConversation(created.id);
       pushToast("گروه جدید ایجاد شد.");
     } catch (error) {
       const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "ساخت گروه ناموفق بود.");
       pushToast(msg || "ساخت گروه ناموفق بود.", "error");
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
+  const updateGroupConversation = async (conversationId: string, payload: { title: string; participantIds: string[]; avatarDataUrl?: string }) => {
+    const safeConversationId = String(conversationId ?? "").trim();
+    if (!safeConversationId) return null;
+    setChatBusy(true);
+    try {
+      const previousConversation = chatConversations.find((row) => row.id === safeConversationId);
+      const previousParticipantIds: string[] = Array.isArray(previousConversation?.participantIds)
+        ? previousConversation.participantIds.map((id: unknown) => String(id))
+        : [];
+      const nextParticipantIds: string[] = Array.isArray(payload.participantIds)
+        ? payload.participantIds.map((id: string) => String(id))
+        : [];
+      const removedCount = previousParticipantIds.filter((id) => !nextParticipantIds.includes(id)).length;
+      const addedCount = nextParticipantIds.filter((id) => !previousParticipantIds.includes(id)).length;
+      const titleChanged = String(previousConversation?.title ?? "").trim() !== String(payload.title ?? "").trim();
+      const avatarChanged = String(previousConversation?.avatarDataUrl ?? "") !== String(payload.avatarDataUrl ?? "");
+      const updatedRaw = await apiRequest<any>(`/api/chat/conversations/${safeConversationId}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      const updated = normalizeChatConversation(updatedRaw);
+      if (!updated) throw new Error("Invalid conversation payload.");
+      setChatConversations((prev) => prev.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)));
+      if (removedCount > 0 && addedCount === 0) {
+        pushToast(`${removedCount} عضو از گروه حذف شد.`);
+      } else if (addedCount > 0 && removedCount === 0) {
+        pushToast(`${addedCount} عضو به گروه اضافه شد.`);
+      } else if (addedCount > 0 || removedCount > 0) {
+        pushToast(`اعضای گروه به‌روزرسانی شدند. ${addedCount > 0 ? `${addedCount} عضو اضافه شد.` : ""} ${removedCount > 0 ? `${removedCount} عضو حذف شد.` : ""}`.trim());
+      } else if (titleChanged || avatarChanged) {
+        pushToast("اطلاعات گروه ذخیره شد.");
+      } else {
+        pushToast("تغییری در گروه ثبت نشد.");
+      }
+      return updated;
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "ذخیره گروه ناموفق بود.");
+      pushToast(msg || "ذخیره گروه ناموفق بود.", "error");
+      return null;
     } finally {
       setChatBusy(false);
     }
@@ -385,17 +457,30 @@ export const useChatActions = ({
     }
     if (!(await confirmAction("این پیام حذف شود؟", { title: "حذف پیام", confirmLabel: "حذف", destructive: true }))) return;
     try {
-      await apiRequest<{ ok: boolean }>(`/api/chat/messages/${message.id}`, { method: "DELETE" });
-      setChatMessages((prev) =>
-        prev.map((m) =>
-          m.id === message.id
-            ? { ...m, text: "", attachments: [], mentionMemberIds: [], reactions: [], isDeleted: true, deletedAt: new Date().toISOString(), deletedById: authUserId }
-            : m,
-        ),
-      );
-      const refreshed = await apiRequest<any[]>("/api/chat/conversations");
-      setChatConversations(normalizeChatConversations(refreshed));
-      pushToast("پیام حذف شد.");
+      const previousMessages = chatMessages;
+      const previousConversations = chatConversations;
+      scheduleUndoableDelete({
+        message: "پیام حذف شد.",
+        onRemoveLocal: () => {
+          setChatMessages((prev) =>
+            prev.map((m) =>
+              m.id === message.id
+                ? { ...m, text: "", attachments: [], mentionMemberIds: [], reactions: [], isDeleted: true, deletedAt: new Date().toISOString(), deletedById: authUserId }
+                : m,
+            ),
+          );
+        },
+        onRestoreLocal: () => {
+          setChatMessages(previousMessages);
+          setChatConversations(previousConversations);
+        },
+        onCommit: async () => {
+          await apiRequest<{ ok: boolean }>(`/api/chat/messages/${message.id}`, { method: "DELETE" });
+          const refreshed = await apiRequest<any[]>("/api/chat/conversations");
+          setChatConversations(normalizeChatConversations(refreshed));
+        },
+        errorMessage: "حذف پیام ناموفق بود.",
+      });
     } catch (error) {
       const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "حذف پیام ناموفق بود.");
       pushToast(msg || "حذف پیام ناموفق بود.", "error");
@@ -442,21 +527,7 @@ export const useChatActions = ({
         replyToMessageId: chatReplyTo?.id || undefined,
         mentionMemberIds: chatMentionDraftIds,
       };
-      const socket = socketRef.current;
-      if (socket?.connected) {
-        await new Promise<void>((resolve, reject) => {
-          socket.emit("chat:send", payload, (ack: { ok: boolean; message?: string }) => {
-            if (ack?.ok) resolve();
-            else reject(new Error(ack?.message || "ارسال پیام ناموفق بود."));
-          });
-        });
-      } else {
-        const created = await apiRequest<any>(`/api/chat/conversations/${selectedConversationId}/messages`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        setChatMessages((prev) => [...prev, created]);
-      }
+      await sendChatMessageViaHttp(payload);
       resetComposer();
       setChatReplyTo(null);
       const refreshed = await apiRequest<any[]>("/api/chat/conversations");
@@ -478,6 +549,7 @@ export const useChatActions = ({
     removeConversation,
     openDirectConversation,
     createGroupConversation,
+    updateGroupConversation,
     startChatWithMember,
     canModifyChatMessage,
     openEditChatMessage,

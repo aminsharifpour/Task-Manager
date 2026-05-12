@@ -1,4 +1,4 @@
-﻿import { Suspense, lazy, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+﻿import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { jalaaliMonthLength, toGregorian, toJalaali } from "jalaali-js";
 import type { Dispatch, SetStateAction } from "react";
 import type { Socket } from "socket.io-client";
@@ -23,9 +23,11 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { OnboardingStepItem } from "@/components/app/onboarding-guide-dialog";
@@ -33,6 +35,7 @@ import AppErrorBoundary from "@/components/app/app-error-boundary";
 import AppGlobalOverlays from "@/components/app/app-global-overlays";
 import { requestJson, normalizeUiMessage } from "@/lib/api-client";
 import { resolveAssetUrl } from "@/lib/asset-url";
+import { lazyWithRetry } from "@/lib/lazy-with-retry";
 import { useVirtualRows, type VirtualWindow } from "@/hooks/use-virtual-rows";
 import { useAppDataRefresh } from "@/hooks/use-app-data-refresh";
 import { useAppBootstrapLoad } from "@/hooks/use-app-bootstrap-load";
@@ -58,24 +61,45 @@ import { useGlobalUiHandlers } from "@/hooks/use-global-ui-handlers";
 import { useTaskProjectMinuteUiState } from "@/hooks/use-task-project-minute-ui-state";
 import { useAccountingUiState } from "@/hooks/use-accounting-ui-state";
 import { useTeamHrUiState } from "@/hooks/use-team-hr-ui-state";
+import { readUiPreference, uiPreferenceSerializers, useUiPreference } from "@/stores/ui-preferences";
 
-const LazyLoginScreen = lazy(() => import("@/components/app/login-screen"));
-const LazyMobileBottomNav = lazy(() => import("@/components/app/mobile-bottom-nav"));
-const LazyOnboardingGuideDialog = lazy(() => import("@/components/app/onboarding-guide-dialog"));
-const LazyAuditTrailView = lazy(() => import("@/components/app/audit-trail-view"));
-const LazyReportsView = lazy(() => import("@/components/app/reports-view"));
-const LazyTasksView = lazy(() => import("@/components/app/tasks-view"));
-const LazyAccountingView = lazy(() => import("@/components/app/accounting-view"));
-const LazyTeamHrView = lazy(() => import("@/components/app/team-hr-view"));
-const LazySmartRemindersCard = lazy(() => import("@/components/app/smart-reminders-card"));
-const LazyWorkflowStepConfigDialog = lazy(() => import("@/components/app/workflow-step-config-dialog"));
-const LazyInboxView = lazy(() => import("@/components/app/inbox-view"));
-const LazyDashboardView = lazy(() => import("@/components/app/dashboard-view"));
-const LazyProjectsView = lazy(() => import("@/components/app/projects-view"));
-const LazyMinutesView = lazy(() => import("@/components/app/minutes-view"));
-const LazyCalendarView = lazy(() => import("@/components/app/calendar-view"));
-const LazySettingsView = lazy(() => import("@/components/app/settings-view"));
-const LazyChatView = lazy(() => import("@/components/app/chat-view"));
+const LazyLoginScreen = lazyWithRetry(() => import("@/components/app/login-screen"), "login-screen");
+const LazyMobileBottomNav = lazyWithRetry(() => import("@/components/app/mobile-bottom-nav"), "mobile-bottom-nav");
+const LazyOnboardingGuideDialog = lazyWithRetry(() => import("@/components/app/onboarding-guide-dialog"), "onboarding-guide-dialog");
+const LazyAuditTrailView = lazyWithRetry(() => import("@/components/app/audit-trail-view"), "audit-trail-view");
+const LazyReportsView = lazyWithRetry(() => import("@/components/app/reports-view"), "reports-view");
+const LazyTasksView = lazyWithRetry(() => import("@/components/app/tasks-view"), "tasks-view");
+const LazyAccountingView = lazyWithRetry(() => import("@/components/app/accounting-view"), "accounting-view");
+const LazyTeamHrView = lazyWithRetry(() => import("@/components/app/team-hr-view"), "team-hr-view");
+const LazySmartRemindersCard = lazyWithRetry(() => import("@/components/app/smart-reminders-card"), "smart-reminders-card");
+const LazyWorkflowStepConfigDialog = lazyWithRetry(() => import("@/components/app/workflow-step-config-dialog"), "workflow-step-config-dialog");
+const LazyInboxView = lazyWithRetry(() => import("@/components/app/inbox-view"), "inbox-view");
+const LazyDashboardView = lazyWithRetry(() => import("@/components/app/dashboard-view"), "dashboard-view");
+const LazyProjectsView = lazyWithRetry(() => import("@/components/app/projects-view"), "projects-view");
+const LazyMinutesView = lazyWithRetry(() => import("@/components/app/minutes-view"), "minutes-view");
+const LazyCalendarView = lazyWithRetry(() => import("@/components/app/calendar-view"), "calendar-view");
+const LazySettingsView = lazyWithRetry(() => import("@/components/app/settings-view"), "settings-view");
+const LazyChatView = lazyWithRetry(() => import("@/components/app/chat-view"), "chat-view");
+const LazyNotificationsView = lazyWithRetry(() => import("@/components/app/notifications-view"), "notifications-view");
+const PRELOADABLE_VIEWS = [
+  LazyInboxView,
+  LazyDashboardView,
+  LazyTasksView,
+  LazyProjectsView,
+  LazyMinutesView,
+  LazyAccountingView,
+  LazyCalendarView,
+  LazyChatView,
+  LazyNotificationsView,
+  LazyTeamHrView,
+  LazyAuditTrailView,
+  LazyReportsView,
+  LazySettingsView,
+  LazySmartRemindersCard,
+  LazyWorkflowStepConfigDialog,
+  LazyMobileBottomNav,
+  LazyOnboardingGuideDialog,
+];
 const ViewSkeleton = () => (
   <div className="space-y-4">
     <div className="h-28 animate-pulse rounded-xl border bg-muted/40" />
@@ -83,7 +107,8 @@ const ViewSkeleton = () => (
   </div>
 );
 
-type ViewKey = "inbox" | "dashboard" | "tasks" | "projects" | "minutes" | "accounting" | "calendar" | "chat" | "team" | "audit" | "reports" | "settings";
+type ViewKey = "inbox" | "dashboard" | "tasks" | "projects" | "minutes" | "accounting" | "calendar" | "chat" | "notifications" | "team" | "audit" | "reports" | "settings";
+type ModuleAccessViewKey = Exclude<ViewKey, "settings" | "dashboard" | "inbox">;
 type DashboardRange = "weekly" | "monthly" | "custom";
 type AccountingType = "income" | "expense";
 type TaskStatus = "todo" | "doing" | "blocked" | "done";
@@ -150,6 +175,17 @@ type PermissionAction =
   | "teamCreate"
   | "teamUpdate"
   | "teamDelete";
+type AccessScope = "none" | "self" | "owner" | "assigned" | "project" | "team" | "all";
+type PolicyEntity = "project" | "task" | "teamMember";
+type PolicyOperation = "view" | "create" | "update" | "delete" | "approve";
+type PolicyRoleConfig = Record<PolicyEntity, Record<PolicyOperation, AccessScope>>;
+type MemberAccessPreset = {
+  id: string;
+  name: string;
+  moduleAccess: Partial<Record<ModuleAccessViewKey, boolean>>;
+  permissionOverrides: Partial<Record<PermissionAction, boolean>>;
+  policyOverrides: Partial<Record<PolicyEntity, Partial<Record<PolicyOperation, AccessScope>>>>;
+};
 type ReportEntity = "tasks" | "projects" | "minutes" | "transactions" | "team" | "audit";
 type AuditSortKey = "createdAt" | "entityType" | "action" | "summary" | "actor" | "entityId";
 type Project = {
@@ -172,6 +208,7 @@ type Task = {
   assignerId?: string;
   assigneePrimaryId?: string;
   assigneeSecondaryId?: string;
+  predecessorTaskIds?: string[];
   projectName: string;
   announceDate: string;
   executionDate: string;
@@ -199,6 +236,9 @@ type TeamMember = {
   teamIds?: string[];
   appRole?: "admin" | "manager" | "member";
   isActive?: boolean;
+  moduleAccess?: Partial<Record<ModuleAccessViewKey, boolean>>;
+  permissionOverrides?: Partial<Record<PermissionAction, boolean>>;
+  policyOverrides?: Partial<Record<PolicyEntity, Partial<Record<PolicyOperation, AccessScope>>>>;
   createdAt: string;
 };
 type TeamGroup = {
@@ -232,6 +272,44 @@ type HrProfile = {
   createdAt: string;
   updatedAt: string;
 };
+
+const VIEW_ROUTE_MAP: Record<ViewKey, string> = {
+  inbox: "/inbox",
+  dashboard: "/dashboard",
+  tasks: "/tasks",
+  projects: "/projects",
+  minutes: "/minutes",
+  accounting: "/accounting",
+  calendar: "/calendar",
+  chat: "/chat",
+  notifications: "/notifications",
+  team: "/team",
+  audit: "/audit",
+  reports: "/reports",
+  settings: "/settings",
+};
+
+const MODULE_ACCESS_OPTIONS: Array<{ key: ModuleAccessViewKey; label: string }> = [
+  { key: "tasks", label: "تسک‌ها" },
+  { key: "projects", label: "پروژه‌ها" },
+  { key: "minutes", label: "صورتجلسات" },
+  { key: "accounting", label: "حسابداری شخصی" },
+  { key: "calendar", label: "تقویم" },
+  { key: "chat", label: "گفتگو" },
+  { key: "notifications", label: "مرکز اعلان" },
+  { key: "team", label: "اعضای تیم" },
+  { key: "audit", label: "لاگ فعالیت" },
+  { key: "reports", label: "گزارش‌ساز" },
+];
+
+const routeToView = (pathname: string): ViewKey | null => {
+  const cleanPath = String(pathname ?? "/").replace(/\/+$/, "") || "/";
+  if (cleanPath === "/" || cleanPath === "") return "dashboard";
+  const matched = (Object.entries(VIEW_ROUTE_MAP) as Array<[ViewKey, string]>).find(([, route]) => route === cleanPath);
+  return matched?.[0] ?? null;
+};
+
+const viewToRoute = (view: ViewKey) => VIEW_ROUTE_MAP[view] ?? "/dashboard";
 type HrLeaveRequest = {
   id: string;
   memberId: string;
@@ -270,6 +348,7 @@ type HrSummary = {
 type AccountingTransaction = {
   id: string;
   type: AccountingType;
+  status: "pending" | "approved";
   title: string;
   amount: number;
   category: string;
@@ -349,6 +428,7 @@ type ChatConversation = {
   id: string;
   type: "direct" | "group";
   title: string;
+  avatarDataUrl?: string;
   participantIds: string[];
   createdById: string;
   createdAt: string;
@@ -376,16 +456,43 @@ type ToastItem = {
   id: string;
   message: string;
   tone: "success" | "error";
+  actionLabel?: string;
+  onAction?: () => void;
 };
 
 type NotificationItem = {
   id: string;
-  kind: "chat" | "task" | "project" | "system";
+  kind: "chat" | "task" | "project" | "system" | "mention" | "approval";
+  category?: string;
   title: string;
   description: string;
   createdAt: string;
   read: boolean;
+  seen?: boolean;
+  dismissed?: boolean;
+  targetView?: ViewKey;
+  entityType?: string;
+  entityId?: string;
+  conversationId?: string;
+  taskId?: string;
+  projectId?: string;
+  actionLabel?: string;
   dedupeKey?: string;
+};
+type NotificationPreferences = {
+  userId: string;
+  channels: {
+    task: boolean;
+    project: boolean;
+    chat: boolean;
+    mention: boolean;
+    approval: boolean;
+    system: boolean;
+  };
+  delivery: Record<"task" | "project" | "chat" | "mention" | "approval" | "system", { center: boolean; toast: boolean; sound: boolean }>;
+  mutedKinds: string[];
+  mutedCategories: string[];
+  updatedAt: string;
 };
 type AuditLog = {
   id: string;
@@ -442,6 +549,8 @@ type AppSettings = {
     memberCanEditTasks: boolean;
     memberCanDeleteTasks: boolean;
     permissions: Record<"admin" | "manager" | "member", Record<PermissionAction, boolean>>;
+    policyMatrix: Record<"admin" | "manager" | "member", PolicyRoleConfig>;
+    accessPresets: MemberAccessPreset[];
   };
   workflow: {
     requireBlockedReason: boolean;
@@ -464,6 +573,9 @@ type AuthUser = {
   appRole: "admin" | "manager" | "member";
   avatarDataUrl?: string;
   teamIds?: string[];
+  moduleAccess?: Partial<Record<ModuleAccessViewKey, boolean>>;
+  permissionOverrides?: Partial<Record<PermissionAction, boolean>>;
+  policyOverrides?: Partial<Record<PolicyEntity, Partial<Record<PolicyOperation, AccessScope>>>>;
 };
 type InboxUnreadConversation = {
   conversationId: string;
@@ -586,6 +698,85 @@ const defaultSettings: AppSettings = {
         teamDelete: false,
       },
     },
+    policyMatrix: {
+      admin: {
+        project: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+        task: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+        teamMember: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+      },
+      manager: {
+        project: { view: "team", create: "team", update: "owner", delete: "none", approve: "none" },
+        task: { view: "team", create: "team", update: "team", delete: "none", approve: "team" },
+        teamMember: { view: "team", create: "none", update: "team", delete: "none", approve: "none" },
+      },
+      member: {
+        project: { view: "project", create: "none", update: "none", delete: "none", approve: "none" },
+        task: { view: "project", create: "none", update: "assigned", delete: "none", approve: "assigned" },
+        teamMember: { view: "team", create: "none", update: "self", delete: "none", approve: "none" },
+      },
+    },
+    accessPresets: [
+      {
+        id: "preset-full",
+        name: "دسترسی کامل",
+        moduleAccess: { tasks: true, projects: true, minutes: true, accounting: true, calendar: true, chat: true, notifications: true, team: true, audit: true, reports: true },
+        permissionOverrides: {
+          projectCreate: true, projectUpdate: true, projectDelete: true,
+          taskCreate: true, taskUpdate: true, taskDelete: true, taskChangeStatus: true,
+          teamCreate: true, teamUpdate: true, teamDelete: true,
+        },
+        policyOverrides: {
+          project: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+          task: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+          teamMember: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+        },
+      },
+      {
+        id: "preset-project-manager",
+        name: "مدیر پروژه",
+        moduleAccess: { tasks: true, projects: true, minutes: true, accounting: false, calendar: true, chat: true, notifications: true, team: false, audit: false, reports: true },
+        permissionOverrides: {
+          projectCreate: true, projectUpdate: true, projectDelete: false,
+          taskCreate: true, taskUpdate: true, taskDelete: false, taskChangeStatus: true,
+          teamCreate: false, teamUpdate: false, teamDelete: false,
+        },
+        policyOverrides: {
+          project: { view: "team", create: "team", update: "owner", delete: "none", approve: "none" },
+          task: { view: "team", create: "team", update: "team", delete: "none", approve: "team" },
+          teamMember: { view: "team", create: "none", update: "none", delete: "none", approve: "none" },
+        },
+      },
+      {
+        id: "preset-finance",
+        name: "مالی",
+        moduleAccess: { tasks: false, projects: false, minutes: false, accounting: true, calendar: true, chat: true, notifications: true, team: false, audit: false, reports: true },
+        permissionOverrides: {
+          projectCreate: false, projectUpdate: false, projectDelete: false,
+          taskCreate: false, taskUpdate: false, taskDelete: false, taskChangeStatus: false,
+          teamCreate: false, teamUpdate: false, teamDelete: false,
+        },
+        policyOverrides: {
+          project: { view: "none", create: "none", update: "none", delete: "none", approve: "none" },
+          task: { view: "none", create: "none", update: "none", delete: "none", approve: "none" },
+          teamMember: { view: "team", create: "none", update: "none", delete: "none", approve: "none" },
+        },
+      },
+      {
+        id: "preset-hr",
+        name: "منابع انسانی",
+        moduleAccess: { tasks: false, projects: false, minutes: true, accounting: false, calendar: true, chat: true, notifications: true, team: true, audit: false, reports: true },
+        permissionOverrides: {
+          projectCreate: false, projectUpdate: false, projectDelete: false,
+          taskCreate: false, taskUpdate: false, taskDelete: false, taskChangeStatus: false,
+          teamCreate: true, teamUpdate: true, teamDelete: false,
+        },
+        policyOverrides: {
+          project: { view: "none", create: "none", update: "none", delete: "none", approve: "none" },
+          task: { view: "none", create: "none", update: "none", delete: "none", approve: "none" },
+          teamMember: { view: "team", create: "team", update: "team", delete: "none", approve: "none" },
+        },
+      },
+    ],
   },
   workflow: {
     requireBlockedReason: true,
@@ -633,6 +824,30 @@ const mergeSettingsWithDefaults = (incoming: AppSettings | null | undefined): Ap
       manager: { ...defaultSettings.team.permissions.manager, ...(incoming?.team?.permissions?.manager ?? {}) },
       member: { ...defaultSettings.team.permissions.member, ...(incoming?.team?.permissions?.member ?? {}) },
     },
+    policyMatrix: {
+      admin: {
+        ...defaultSettings.team.policyMatrix.admin,
+        ...(incoming?.team?.policyMatrix?.admin ?? {}),
+        project: { ...defaultSettings.team.policyMatrix.admin.project, ...(incoming?.team?.policyMatrix?.admin?.project ?? {}) },
+        task: { ...defaultSettings.team.policyMatrix.admin.task, ...(incoming?.team?.policyMatrix?.admin?.task ?? {}) },
+        teamMember: { ...defaultSettings.team.policyMatrix.admin.teamMember, ...(incoming?.team?.policyMatrix?.admin?.teamMember ?? {}) },
+      },
+      manager: {
+        ...defaultSettings.team.policyMatrix.manager,
+        ...(incoming?.team?.policyMatrix?.manager ?? {}),
+        project: { ...defaultSettings.team.policyMatrix.manager.project, ...(incoming?.team?.policyMatrix?.manager?.project ?? {}) },
+        task: { ...defaultSettings.team.policyMatrix.manager.task, ...(incoming?.team?.policyMatrix?.manager?.task ?? {}) },
+        teamMember: { ...defaultSettings.team.policyMatrix.manager.teamMember, ...(incoming?.team?.policyMatrix?.manager?.teamMember ?? {}) },
+      },
+      member: {
+        ...defaultSettings.team.policyMatrix.member,
+        ...(incoming?.team?.policyMatrix?.member ?? {}),
+        project: { ...defaultSettings.team.policyMatrix.member.project, ...(incoming?.team?.policyMatrix?.member?.project ?? {}) },
+        task: { ...defaultSettings.team.policyMatrix.member.task, ...(incoming?.team?.policyMatrix?.member?.task ?? {}) },
+        teamMember: { ...defaultSettings.team.policyMatrix.member.teamMember, ...(incoming?.team?.policyMatrix?.member?.teamMember ?? {}) },
+      },
+    },
+    accessPresets: Array.isArray(incoming?.team?.accessPresets) ? incoming.team.accessPresets : defaultSettings.team.accessPresets,
   },
   workflow: {
     ...defaultSettings.workflow,
@@ -655,26 +870,14 @@ const mergeSettingsWithDefaults = (incoming: AppSettings | null | undefined): Ap
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 const SOCKET_BASE = API_BASE.endsWith("/api") ? API_BASE.slice(0, -4) : API_BASE;
+const CHAT_REALTIME_ENABLED = false;
 const AUTH_STORAGE_KEY = "task_app_auth_user_v1";
 const AUTH_TOKEN_STORAGE_KEY = "task_app_auth_token_v1";
-const decodeJwtPayload = (token: string): Record<string, unknown> | null => {
-  const raw = String(token ?? "").trim();
-  const parts = raw.split(".");
-  if (parts.length < 2) return null;
-  if (typeof window === "undefined" || typeof window.atob !== "function") return null;
-  try {
-    const normalized = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4 || 4)) % 4), "=");
-    const decoded = window.atob(padded);
-    return JSON.parse(decoded) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-};
 const CHAT_SELECTED_CONVERSATION_STORAGE_KEY = "task_app_selected_conversation_v1";
 const ACTIVE_VIEW_STORAGE_KEY = "task_app_active_view_v1";
 const HIDDEN_BANNERS_STORAGE_KEY = "task_app_hidden_banners_v1";
-const NOTIFICATIONS_STORAGE_KEY = "task_app_notifications_v1";
+const TASK_TAB_STORAGE_KEY = "task_app_tasks_tab_v1";
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "task_app_sidebar_collapsed_v1";
 const CHAT_PAGE_SIZE = 60;
 const CHAT_VIRTUAL_OVERSCAN_PX = 640;
 const CHAT_VIRTUAL_DEFAULT_WINDOW = 80;
@@ -682,13 +885,20 @@ const CHAT_ROW_ESTIMATED_HEIGHT = 72;
 const CHAT_DAY_DIVIDER_ESTIMATED_HEIGHT = 36;
 const AUDIT_VIRTUAL_ROW_HEIGHT = 44;
 const AUDIT_VIRTUAL_OVERSCAN_ROWS = 10;
-const NOTIFICATION_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const TOAST_DEDUPE_WINDOW_MS = 2200;
 const ANNOUNCED_REMINDERS_STORAGE_PREFIX = "task_app_announced_reminders_v1";
 const ACKED_REMINDER_TASKS_STORAGE_PREFIX = "task_app_acked_reminder_tasks_v1";
 const ONBOARDING_STORAGE_PREFIX = "task_app_onboarding_seen_v1";
+const CLIENT_LOG_DEDUPE_WINDOW_MS = 15_000;
+const recentClientLogMap = new Map<string, number>();
 const sendClientLog = async (level: "debug" | "info" | "warn" | "error", message: string, context: Record<string, unknown> = {}) => {
   try {
+    const trimmedMessage = String(message || "").slice(0, 1200);
+    const signature = `${level}:${trimmedMessage}:${JSON.stringify(context)}`;
+    const now = Date.now();
+    const lastAt = recentClientLogMap.get(signature) ?? 0;
+    if (lastAt && now - lastAt < CLIENT_LOG_DEDUPE_WINDOW_MS) return;
+    recentClientLogMap.set(signature, now);
     const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
     await fetch(`${API_BASE}/api/client-logs`, {
       method: "POST",
@@ -698,7 +908,7 @@ const sendClientLog = async (level: "debug" | "info" | "warn" | "error", message
       },
       body: JSON.stringify({
         level,
-        message: String(message || "").slice(0, 1200),
+        message: trimmedMessage,
         source: "web",
         context,
       }),
@@ -723,6 +933,7 @@ const navItems: Array<{ key: ViewKey; title: string; icon: React.ComponentType<{
   { key: "accounting", title: "حسابداری شخصی", icon: WalletCards, available: true },
   { key: "calendar", title: "تقویم", icon: CalendarDays, available: true },
   { key: "chat", title: "گفتگو", icon: MessageSquare, available: true },
+  { key: "notifications", title: "مرکز اعلان", icon: Bell, available: true },
   { key: "team", title: "اعضای تیم", icon: UserSquare2, available: true },
   { key: "audit", title: "لاگ فعالیت", icon: History, available: true },
   { key: "reports", title: "گزارش‌ساز", icon: FileSpreadsheet, available: true },
@@ -751,78 +962,97 @@ const ONBOARDING_STEPS: OnboardingStepItem[] = [
     targetView: "chat",
   },
 ];
-const viewVisualMeta: Record<ViewKey, { image: string; accent: string; subtitle: string; guide: string }> = {
+const viewVisualMeta: Record<ViewKey, { image: string; accent: string; subtitle: string; guide: string; tags: string[] }> = {
   inbox: {
     image: "/visuals/inbox-scene.svg",
     accent: "from-amber-100/60 to-emerald-100/60",
     subtitle: "مرور سریع آیتم‌های مهم امروز",
     guide: "از اینجا تسک‌های محول‌شده، منشن‌ها، گفتگوهای نخوانده و موارد عقب‌افتاده را یکجا پیگیری کن.",
+    tags: ["اولویت امروز", "پیگیری سریع", "تمرکز شخصی"],
   },
   dashboard: {
     image: "/visuals/dashboard-scene.svg",
     accent: "from-emerald-100/60 to-sky-100/60",
     subtitle: "نمای وضعیت کلی تیم و عملکرد",
     guide: "KPIها را بر اساس بازه زمانی یا عضو تیم فیلتر کن تا تصمیم‌گیری روزانه دقیق‌تر شود.",
+    tags: ["KPI", "دید مدیریتی", "تصمیم‌گیری"],
   },
   tasks: {
     image: "/visuals/tasks-scene.svg",
     accent: "from-emerald-100/70 to-amber-100/70",
     subtitle: "مدیریت و پیگیری دقیق کارها",
     guide: "برای هر تسک وضعیت مرحله‌ای تعیین کن و در صورت Block شدن، دلیل توقف را ثبت کن.",
+    tags: ["پیگیری مرحله‌ای", "ددلاین", "وابستگی"],
   },
   projects: {
     image: "/visuals/projects-scene.svg",
     accent: "from-sky-100/60 to-violet-100/60",
     subtitle: "کنترل پروژه‌ها و اعضای درگیر",
     guide: "ساختار پروژه را با مالک، اعضا و چک‌لیست شروع کن تا تسک‌ها قابل ردیابی‌تر شوند.",
+    tags: ["مالک پروژه", "اعضای فعال", "چک‌لیست"],
   },
   minutes: {
     image: "/visuals/minutes-scene.svg",
     accent: "from-violet-100/60 to-amber-100/60",
     subtitle: "ثبت تصمیم‌ها و اقدامات جلسات",
     guide: "روی هر صورتجلسه کلیک کن تا جزئیات کامل شامل تصمیمات و اقدامات پیگیری را یکجا ببینی.",
+    tags: ["تصمیمات جلسه", "اقدامات بعدی", "تاریخچه"],
   },
   accounting: {
     image: "/visuals/accounting-scene.svg",
     accent: "from-emerald-100/70 to-lime-100/70",
     subtitle: "ورود و تحلیل جزئیات مالی شخصی",
     guide: "تراکنش‌ها را با دسته‌بندی و زمان ثبت کن تا گزارش‌های روزانه و ماهانه دقیق‌تر شوند.",
+    tags: ["درآمد و هزینه", "مانده حساب", "گزارش مالی"],
   },
   calendar: {
     image: "/visuals/calendar-scene.svg",
     accent: "from-sky-100/60 to-cyan-100/60",
     subtitle: "نمای زمانی رویدادها و ددلاین‌ها",
     guide: "رویدادها، تسک‌ها و پروژه‌ها را در یک نما ببین و برنامه‌ریزی روزانه تیم را به‌روز نگه دار.",
+    tags: ["تقویم تیمی", "رویدادها", "برنامه‌ریزی"],
   },
   chat: {
     image: "/visuals/chat-scene.svg",
     accent: "from-blue-100/70 to-emerald-100/60",
     subtitle: "گفتگوهای تیمی و خصوصی سریع",
     guide: "برای هماهنگی سریع از ریپلای، فوروارد، منشن و وضعیت خوانده‌شدن پیام‌ها استفاده کن.",
+    tags: ["گفتگوی سریع", "فوروارد", "منشن"],
+  },
+  notifications: {
+    image: "/visuals/dashboard-scene.svg",
+    accent: "from-amber-100/70 to-sky-100/60",
+    subtitle: "مرکز اعلان پایدار و قابل اقدام",
+    guide: "اعلان‌ها را بر اساس دسته، وضعیت و اولویت مدیریت کن و برای هر نوع اعلان رفتار دلخواهت را تنظیم کن.",
+    tags: ["اعلان فوری", "قابل اقدام", "مرکز پیگیری"],
   },
   team: {
     image: "/visuals/team-scene.svg",
     accent: "from-violet-100/60 to-emerald-100/60",
     subtitle: "مدیریت پروفایل و وضعیت اعضا",
     guide: "اطلاعات اعضا را کامل نگه دار تا انتساب تسک، گزارش‌گیری و همکاری تیمی دقیق بماند.",
+    tags: ["پروفایل اعضا", "وضعیت حضور", "دسترسی‌ها"],
   },
   audit: {
     image: "/visuals/audit-scene.svg",
     accent: "from-slate-100/70 to-amber-100/60",
     subtitle: "ردیابی کامل تغییرات مهم سیستم",
     guide: "برای بررسی اختلافات، تاریخچه تغییرات پروژه، تسک، گفتگو و تنظیمات را اینجا ببین.",
+    tags: ["ردیابی تغییر", "شفافیت", "تاریخچه"],
   },
   reports: {
     image: "/visuals/reports-scene.svg",
     accent: "from-emerald-100/70 to-sky-100/60",
     subtitle: "گزارش‌گیری سفارشی و خروجی قابل تحلیل",
     guide: "با انتخاب منبع داده، ستون و بازه زمانی، گزارش قابل خروجی برای تصمیم مدیریتی بساز.",
+    tags: ["گزارش سفارشی", "خروجی تحلیل", "داده‌محور"],
   },
   settings: {
     image: "/visuals/settings-scene.svg",
     accent: "from-zinc-100/70 to-sky-100/60",
     subtitle: "شخصی‌سازی رفتار و تنظیمات برنامه",
     guide: "تنظیمات اعلان، تقویم، دسته‌بندی حسابداری و یکپارچه‌سازی‌ها را متناسب با تیمت تنظیم کن.",
+    tags: ["پروفایل", "اعلان", "ترجیحات"],
   },
 };
 const isViewKey = (value: string | null): value is ViewKey =>
@@ -834,6 +1064,7 @@ const isViewKey = (value: string | null): value is ViewKey =>
   value === "accounting" ||
   value === "calendar" ||
   value === "chat" ||
+  value === "notifications" ||
   value === "team" ||
   value === "audit" ||
   value === "reports" ||
@@ -911,6 +1142,28 @@ const WEBHOOK_EVENT_ITEMS = [
   { key: "chat.message.created", label: "پیام جدید گفتگو" },
   { key: "chat.mention.created", label: "منشن جدید" },
 ] as const;
+const defaultNotificationPreferences = (userId = ""): NotificationPreferences => ({
+  userId,
+  channels: {
+    task: true,
+    project: true,
+    chat: true,
+    mention: true,
+    approval: true,
+    system: true,
+  },
+  delivery: {
+    task: { center: true, toast: true, sound: false },
+    project: { center: true, toast: true, sound: false },
+    chat: { center: true, toast: true, sound: true },
+    mention: { center: true, toast: true, sound: true },
+    approval: { center: true, toast: true, sound: false },
+    system: { center: true, toast: true, sound: false },
+  },
+  mutedKinds: [],
+  mutedCategories: [],
+  updatedAt: "",
+});
 const TASK_TEMPLATES: Array<{
   id: string;
   label: string;
@@ -1322,6 +1575,7 @@ const normalizeChatConversation = (row: Partial<ChatConversation> | null | undef
     id,
     type: row?.type === "group" ? "group" : "direct",
     title: String(row?.title ?? ""),
+    avatarDataUrl: String(row?.avatarDataUrl ?? ""),
     participantIds: normalizeIdArray(row?.participantIds),
     createdById: String(row?.createdById ?? "").trim(),
     createdAt: Number.isNaN(new Date(createdAtRaw).getTime()) ? nowIso : createdAtRaw,
@@ -1352,6 +1606,27 @@ function DatePickerField({
   placeholder?: string;
   clearable?: boolean;
 }) {
+  const now = new Date();
+  const jNow = toJalaali(now.getFullYear(), now.getMonth() + 1, now.getDate());
+  const selectedParts = (() => {
+    if (!valueIso) {
+      return { jy: jNow.jy, jm: jNow.jm, jd: jNow.jd };
+    }
+    try {
+      const [y, m, d] = valueIso.split("-").map(Number);
+      const j = toJalaali(y, m, d);
+      return { jy: j.jy, jm: j.jm, jd: j.jd };
+    } catch {
+      return { jy: jNow.jy, jm: jNow.jm, jd: jNow.jd };
+    }
+  })();
+  const years = Array.from({ length: 11 }, (_, idx) => jNow.jy - 5 + idx);
+  const daysInMonth = jalaaliMonthLength(selectedParts.jy, selectedParts.jm);
+  const applyJalaliDate = (nextYear: number, nextMonth: number, nextDay: number) => {
+    const safeDay = Math.min(Math.max(nextDay, 1), jalaaliMonthLength(nextYear, nextMonth));
+    onChange(jalaliDateToIso(nextYear, nextMonth, safeDay));
+  };
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -1362,17 +1637,32 @@ function DatePickerField({
           </Button>
         )}
       </div>
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" className="w-full justify-between text-right font-normal">
-            <span>{valueIso ? isoToJalali(valueIso) : placeholder}</span>
-            <CalendarDays className="h-4 w-4 opacity-70" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="end">
-          <Calendar mode="single" selected={valueIso ? isoToDate(valueIso) : undefined} onSelect={(d) => d && onChange(dateToIso(d))} />
-        </PopoverContent>
-      </Popover>
+      <div className="minute-date-shell space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium">{valueIso ? isoToJalali(valueIso) : placeholder}</span>
+          <CalendarDays className="h-4 w-4 opacity-70" />
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <NativeSelect
+            value={String(selectedParts.jy)}
+            onChange={(e) => applyJalaliDate(Number(e.target.value), selectedParts.jm, selectedParts.jd)}
+            options={years.map((year) => ({ value: String(year), label: toFaNum(String(year)) }))}
+          />
+          <NativeSelect
+            value={pad2(selectedParts.jm)}
+            onChange={(e) => applyJalaliDate(selectedParts.jy, Number(e.target.value), selectedParts.jd)}
+            options={jalaliMonthNames.map((name, idx) => ({ value: pad2(idx + 1), label: name }))}
+          />
+          <NativeSelect
+            value={pad2(selectedParts.jd)}
+            onChange={(e) => applyJalaliDate(selectedParts.jy, selectedParts.jm, Number(e.target.value))}
+            options={Array.from({ length: daysInMonth }, (_, idx) => idx + 1).map((day) => ({
+              value: pad2(day),
+              label: toFaNum(String(day)),
+            }))}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -1445,7 +1735,7 @@ function TimePickerField({
         type="text"
         inputMode="numeric"
         dir="ltr"
-        className="h-10"
+        className="oneui-time-input h-10"
         placeholder="HH:mm (مثال: 09:30)"
         value={safe}
         onChange={(e) => onChange(normalizeTimeInput(e.target.value))}
@@ -1483,11 +1773,13 @@ function ButtonGroup<T extends string>({
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<ViewKey>(() => {
-    const saved = localStorage.getItem(ACTIVE_VIEW_STORAGE_KEY);
+  const [activeView, setActiveView] = useUiPreference<ViewKey>(ACTIVE_VIEW_STORAGE_KEY, (() => {
+    const routeView = routeToView(window.location.pathname);
+    if (routeView) return routeView;
+    const saved = readUiPreference(ACTIVE_VIEW_STORAGE_KEY, "", uiPreferenceSerializers.string);
     return isViewKey(saved) ? saved : "dashboard";
-  });
-  const [hiddenBanners, setHiddenBanners] = useState<Record<ViewKey, boolean>>(() => {
+  })(), uiPreferenceSerializers.literalString(["inbox", "dashboard", "tasks", "projects", "minutes", "accounting", "calendar", "chat", "notifications", "team", "audit", "reports", "settings"] as const, "dashboard"));
+  const [hiddenBanners, setHiddenBanners] = useUiPreference<Record<ViewKey, boolean>>(HIDDEN_BANNERS_STORAGE_KEY, (() => {
     const fallback: Record<ViewKey, boolean> = {
       inbox: false,
       dashboard: false,
@@ -1497,21 +1789,17 @@ function App() {
       accounting: false,
       calendar: false,
       chat: false,
+      notifications: false,
       team: false,
       audit: false,
       reports: false,
       settings: false,
     };
-    try {
-      const raw = localStorage.getItem(HIDDEN_BANNERS_STORAGE_KEY);
-      if (!raw) return fallback;
-      const parsed = JSON.parse(raw) as Partial<Record<ViewKey, boolean>>;
-      return { ...fallback, ...parsed };
-    } catch {
-      return fallback;
-    }
-  });
-  const [tab, setTab] = useState("today");
+    const parsed = readUiPreference<Partial<Record<ViewKey, boolean>>>(HIDDEN_BANNERS_STORAGE_KEY, {}, uiPreferenceSerializers.json<Partial<Record<ViewKey, boolean>>>());
+    return { ...fallback, ...parsed };
+  })(), uiPreferenceSerializers.json<Record<ViewKey, boolean>>());
+  const [sidebarCollapsed, setSidebarCollapsed] = useUiPreference<boolean>(SIDEBAR_COLLAPSED_STORAGE_KEY, false, uiPreferenceSerializers.booleanFlag);
+  const [tab, setTab] = useUiPreference<"all" | "today" | "done">(TASK_TAB_STORAGE_KEY, "all", uiPreferenceSerializers.literalString(["all", "today", "done"] as const, "all"));
   const [dashboardRange, setDashboardRange] = useState<DashboardRange>("weekly");
   const [dashboardMemberFocusId, setDashboardMemberFocusId] = useState<string>("all");
   const [customFrom, setCustomFrom] = useState(addDays(todayIso(), -6));
@@ -1529,23 +1817,18 @@ function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatHasMore, setChatHasMore] = useState(false);
   const [chatLoadingMore, setChatLoadingMore] = useState(false);
-  const [selectedConversationId, setSelectedConversationId] = useState<string>(() => localStorage.getItem(CHAT_SELECTED_CONVERSATION_STORAGE_KEY) ?? "");
+  const [selectedConversationId, setSelectedConversationId] = useState<string>(() => readUiPreference(CHAT_SELECTED_CONVERSATION_STORAGE_KEY, "", uiPreferenceSerializers.string));
   const [transactions, setTransactions] = useState<AccountingTransaction[]>([]);
   const [accounts, setAccounts] = useState<AccountingAccount[]>([]);
   const [budgetHistory, setBudgetHistory] = useState<BudgetHistoryItem[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
-    try {
-      const raw = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-      return parsed.filter((x) => x && typeof x === "object").slice(0, 80) as NotificationItem[];
-    } catch {
-      return [];
-    }
-  });
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState<"all" | "unread" | "task" | "chat" | "mention" | "approval" | "project" | "system">("all");
+  const [notificationPrefsOpen, setNotificationPrefsOpen] = useState(false);
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(defaultNotificationPreferences());
+  const effectiveSidebarCollapsed = sidebarCollapsed;
+  const visualHeroRef = useRef<HTMLDivElement | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [auditBusy, setAuditBusy] = useState(false);
   const [auditQuery, setAuditQuery] = useState("");
@@ -1696,6 +1979,10 @@ function App() {
     setMemberOpen,
     memberEditOpen,
     setMemberEditOpen,
+    memberAccessOpen,
+    setMemberAccessOpen,
+    memberEditInitialStep,
+    setMemberEditInitialStep,
     memberProfileOpen,
     setMemberProfileOpen,
     editingMemberId,
@@ -1742,6 +2029,7 @@ function App() {
     }
   });
   const [authToken, setAuthToken] = useState<string>(() => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ?? "");
+  const [authBootstrapPending, setAuthBootstrapPending] = useState<boolean>(() => Boolean(localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)));
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const [loginDraft, setLoginDraft] = useState({ phone: "", password: "" });
@@ -1769,6 +2057,7 @@ function App() {
   const [newChatSearch, setNewChatSearch] = useState("");
   const [groupTitleDraft, setGroupTitleDraft] = useState("");
   const [groupMembersDraft, setGroupMembersDraft] = useState<string[]>([]);
+  const [groupAvatarDraft, setGroupAvatarDraft] = useState("");
   const [chatReplyTo, setChatReplyTo] = useState<ChatMessage | null>(null);
   const [chatEditMessageId, setChatEditMessageId] = useState("");
   const [chatEditDraft, setChatEditDraft] = useState("");
@@ -1815,10 +2104,14 @@ function App() {
     paddingTop: 0,
     paddingBottom: 0,
   });
-  const notificationChannelsRef = useRef(defaultSettings.notifications.channels);
+  const notificationChannelsRef = useRef({
+    inAppTaskAssigned: true,
+    inAppChatMessage: true,
+    inAppMention: true,
+    inAppSystem: true,
+    soundOnMessage: true,
+  });
   const taskCreateRequestKeyRef = useRef("");
-  const viewSwitchTimerRef = useRef<number | null>(null);
-  const [viewSwitchLoading, setViewSwitchLoading] = useState(false);
 
   const [settingsErrors, setSettingsErrors] = useState<Record<string, string>>({});
   const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
@@ -1835,22 +2128,103 @@ function App() {
     <T,>(path: string, init?: RequestInit) => requestJson<T>(API_BASE, AUTH_TOKEN_STORAGE_KEY, path, init),
     [],
   );
-  const pushToast = (message: string, tone: "success" | "error" = "success") => {
+  const setKnownTaskIds = useCallback((ids: string[]) => {
+    knownTaskIdsRef.current = new Set(ids);
+  }, []);
+  const setKnownProjectIds = useCallback((ids: string[]) => {
+    knownProjectIdsRef.current = new Set(ids);
+  }, []);
+  const setKnownConversationIds = useCallback((ids: string[]) => {
+    knownConversationIdsRef.current = new Set(ids);
+  }, []);
+  const markTaskWatchReady = useCallback(() => {
+    taskWatchReadyRef.current = true;
+  }, []);
+  const markProjectWatchReady = useCallback(() => {
+    projectWatchReadyRef.current = true;
+  }, []);
+  const markConversationWatchReady = useCallback(() => {
+    conversationWatchReadyRef.current = true;
+  }, []);
+  const pendingUndoTimersRef = useRef<Map<string, number>>(new Map());
+  const pushToast = (
+    message: string,
+    tone: "success" | "error" = "success",
+    options?: { durationMs?: number; actionLabel?: string; onAction?: () => void; dedupe?: boolean },
+  ) => {
     const key = `${tone}|${String(message ?? "").trim()}`;
     const now = Date.now();
-    const lastAt = recentToastMapRef.current.get(key) ?? 0;
-    if (now - lastAt <= TOAST_DEDUPE_WINDOW_MS) return;
-    recentToastMapRef.current.set(key, now);
-    if (recentToastMapRef.current.size > 300) {
-      const entries = Array.from(recentToastMapRef.current.entries()).sort((a, b) => b[1] - a[1]).slice(0, 120);
-      recentToastMapRef.current = new Map(entries);
+    if (options?.dedupe !== false) {
+      const lastAt = recentToastMapRef.current.get(key) ?? 0;
+      if (now - lastAt <= TOAST_DEDUPE_WINDOW_MS) return;
+      recentToastMapRef.current.set(key, now);
+      if (recentToastMapRef.current.size > 300) {
+        const entries = Array.from(recentToastMapRef.current.entries()).sort((a, b) => b[1] - a[1]).slice(0, 120);
+        recentToastMapRef.current = new Map(entries);
+      }
     }
     const id = createId();
-    setToasts((prev) => [...prev, { id, message, tone }]);
+    setToasts((prev) => [...prev, { id, message, tone, actionLabel: options?.actionLabel, onAction: options?.onAction }]);
     window.setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 2600);
+    }, options?.durationMs ?? 2600);
   };
+  const scheduleUndoableDelete = useCallback(
+    (options: {
+      message: string;
+      onRemoveLocal: () => void;
+      onRestoreLocal: () => void;
+      onCommit: () => Promise<void>;
+      errorMessage: string;
+      restoredMessage?: string;
+    }) => {
+      const toastId = createId();
+      let finalised = false;
+      options.onRemoveLocal();
+      const undo = () => {
+        if (finalised) return;
+        finalised = true;
+        const timer = pendingUndoTimersRef.current.get(toastId);
+        if (timer) {
+          window.clearTimeout(timer);
+          pendingUndoTimersRef.current.delete(toastId);
+        }
+        options.onRestoreLocal();
+        setToasts((prev) => prev.filter((toast) => toast.id !== toastId));
+        pushToast(options.restoredMessage ?? "عملیات حذف بازگردانی شد.");
+      };
+      const commit = async () => {
+        if (finalised) return;
+        finalised = true;
+        pendingUndoTimersRef.current.delete(toastId);
+        setToasts((prev) => prev.filter((toast) => toast.id !== toastId));
+        try {
+          await options.onCommit();
+        } catch (error) {
+          options.onRestoreLocal();
+          const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), options.errorMessage);
+          pushToast(msg || options.errorMessage, "error");
+        }
+      };
+      setToasts((prev) => [
+        ...prev,
+        { id: toastId, message: options.message, tone: "success", actionLabel: "بازگردانی", onAction: undo },
+      ]);
+      const timer = window.setTimeout(() => {
+        void commit();
+      }, 5000);
+      pendingUndoTimersRef.current.set(toastId, timer);
+    },
+    [createId],
+  );
+  useEffect(() => {
+    return () => {
+      for (const timer of pendingUndoTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      pendingUndoTimersRef.current.clear();
+    };
+  }, []);
   const {
     chatHasText,
     chatAttachmentDrafts,
@@ -1906,12 +2280,22 @@ function App() {
   }, [authToken]);
 
   useEffect(() => {
-    if (!authToken) {
-      localStorage.removeItem(ACTIVE_VIEW_STORAGE_KEY);
-      return;
-    }
-    localStorage.setItem(ACTIVE_VIEW_STORAGE_KEY, activeView);
-  }, [activeView, authToken]);
+    const handlePopState = () => {
+      const routeView = routeToView(window.location.pathname);
+      if (routeView && routeView !== activeView) {
+        setActiveView(routeView);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [activeView]);
+
+  useEffect(() => {
+    const targetPath = viewToRoute(activeView);
+    const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
+    if (currentPath === targetPath) return;
+    window.history.pushState({ view: activeView }, "", targetPath);
+  }, [activeView]);
 
   useEffect(() => {
     if (!authToken) {
@@ -1922,19 +2306,7 @@ function App() {
       localStorage.removeItem(CHAT_SELECTED_CONVERSATION_STORAGE_KEY);
       return;
     }
-    localStorage.setItem(CHAT_SELECTED_CONVERSATION_STORAGE_KEY, selectedConversationId);
   }, [authToken, selectedConversationId]);
-
-  useEffect(() => {
-    if (!authToken) {
-      localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
-      return;
-    }
-    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications.slice(0, 80)));
-  }, [authToken, notifications]);
-  useEffect(() => {
-    localStorage.setItem(HIDDEN_BANNERS_STORAGE_KEY, JSON.stringify(hiddenBanners));
-  }, [hiddenBanners]);
 
   useEffect(() => {
     if (!authToken && authUser) {
@@ -1942,33 +2314,32 @@ function App() {
     }
   }, [authToken, authUser]);
   useEffect(() => {
-    if (!authToken || authUser) return;
-    const payload = decodeJwtPayload(authToken);
-    const userId = String(payload?.sub ?? "").trim();
-    if (!userId) return;
-    const member = teamMembers.find((row) => row.id === userId);
-    if (member) {
-      setAuthUser({
-        id: member.id,
-        fullName: member.fullName,
-        phone: member.phone,
-        appRole: member.appRole ?? "member",
-        avatarDataUrl: member.avatarDataUrl ?? "",
-        teamIds: member.teamIds ?? [],
-      });
-      return;
+    if (!authToken) return;
+    let cancelled = false;
+    const runPreload = () => {
+      if (cancelled) return;
+      for (const view of PRELOADABLE_VIEWS) {
+        void view.preload?.().catch(() => undefined);
+      }
+    };
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(runPreload, { timeout: 1500 });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback?.(idleId);
+      };
     }
-    const role = String(payload?.role ?? "").trim();
-    const phone = String(payload?.phone ?? "").trim();
-    setAuthUser({
-      id: userId,
-      fullName: phone || "کاربر",
-      phone,
-      appRole: role === "admin" || role === "manager" ? role : "member",
-      avatarDataUrl: "",
-      teamIds: [],
-    });
-  }, [authToken, authUser, teamMembers]);
+    const timer = globalThis.setTimeout(runPreload, 350);
+    return () => {
+      cancelled = true;
+      globalThis.clearTimeout(timer);
+    };
+  }, [authToken]);
+  useEffect(() => {
+    if (!authToken) {
+      setAuthBootstrapPending(false);
+    }
+  }, [authToken]);
   useEffect(() => {
     if (!authToken || !authUser?.id || teamMembers.length === 0) return;
     const member = teamMembers.find((row) => row.id === authUser.id);
@@ -2038,24 +2409,13 @@ function App() {
     setAuthToken,
     setAuthUser,
     setAuthError,
-    setKnownTaskIds: (ids) => {
-      knownTaskIdsRef.current = new Set(ids);
-    },
-    setKnownProjectIds: (ids) => {
-      knownProjectIdsRef.current = new Set(ids);
-    },
-    setKnownConversationIds: (ids) => {
-      knownConversationIdsRef.current = new Set(ids);
-    },
-    markTaskWatchReady: () => {
-      taskWatchReadyRef.current = true;
-    },
-    markProjectWatchReady: () => {
-      projectWatchReadyRef.current = true;
-    },
-    markConversationWatchReady: () => {
-      conversationWatchReadyRef.current = true;
-    },
+    setAuthBootstrapPending,
+    setKnownTaskIds,
+    setKnownProjectIds,
+    setKnownConversationIds,
+    markTaskWatchReady,
+    markProjectWatchReady,
+    markConversationWatchReady,
   });
   useEffect(() => {
     if (!authToken) return;
@@ -2066,7 +2426,10 @@ function App() {
         try {
           const rows = await apiRequest<TeamMember[]>("/api/team-members");
           if (!mounted) return;
-          setTeamMembers(Array.isArray(rows) ? rows : []);
+          setTeamMembers((prev) => {
+            const next = Array.isArray(rows) ? rows : [];
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
         } catch {
           // noop: keep current UI state and allow next retry cycle.
         }
@@ -2086,7 +2449,10 @@ function App() {
         try {
           const rows = await apiRequest<Project[]>("/api/projects");
           if (!mounted) return;
-          setProjects(normalizeProjects(rows ?? []));
+          setProjects((prev) => {
+            const next = normalizeProjects(rows ?? []);
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
         } catch {
           // noop: keep current UI state and allow next retry cycle.
         }
@@ -2106,7 +2472,10 @@ function App() {
         try {
           const rows = await apiRequest<Task[]>("/api/tasks");
           if (!mounted) return;
-          setTasks(Array.isArray(rows) ? rows : []);
+          setTasks((prev) => {
+            const next = Array.isArray(rows) ? rows : [];
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
         } catch {
           // noop: keep current UI state and allow next retry cycle.
         }
@@ -2139,12 +2508,42 @@ function App() {
           apiRequest<TeamGroup[]>("/api/teams"),
         ]);
         if (!mounted) return;
-        if (settled[0].status === "fulfilled") setTeamMembers(settled[0].value ?? []);
-        if (settled[1].status === "fulfilled") setProjects(normalizeProjects(settled[1].value ?? []));
-        if (settled[2].status === "fulfilled") setTasks(settled[2].value ?? []);
-        if (settled[3].status === "fulfilled") setChatConversations(normalizeChatConversations(settled[3].value ?? []));
-        if (settled[4].status === "fulfilled") setTransactions(settled[4].value ?? []);
-        if (settled[5].status === "fulfilled") setTeams(settled[5].value ?? []);
+        if (settled[0].status === "fulfilled") {
+          const next = settled[0].value ?? [];
+          setTeamMembers((prev) => {
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
+        }
+        if (settled[1].status === "fulfilled") {
+          const next = normalizeProjects(settled[1].value ?? []);
+          setProjects((prev) => {
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
+        }
+        if (settled[2].status === "fulfilled") {
+          const next = settled[2].value ?? [];
+          setTasks((prev) => {
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
+        }
+        if (settled[3].status === "fulfilled") {
+          const next = normalizeChatConversations(settled[3].value ?? []);
+          setChatConversations((prev) => {
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
+        }
+        if (settled[4].status === "fulfilled") {
+          const next = settled[4].value ?? [];
+          setTransactions((prev) => {
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
+        }
+        if (settled[5].status === "fulfilled") {
+          const next = settled[5].value ?? [];
+          setTeams((prev) => {
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
+        }
       })().catch(() => undefined);
     }, 1500);
     return () => {
@@ -2161,7 +2560,10 @@ function App() {
         try {
           const rows = await apiRequest<TeamGroup[]>("/api/teams");
           if (!mounted) return;
-          setTeams(Array.isArray(rows) ? rows : []);
+          setTeams((prev) => {
+            const next = Array.isArray(rows) ? rows : [];
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
         } catch {
           // noop: keep current UI state and allow next retry cycle.
         }
@@ -2181,7 +2583,10 @@ function App() {
         try {
           const rows = await apiRequest<ChatConversation[]>("/api/chat/conversations");
           if (!mounted) return;
-          setChatConversations(normalizeChatConversations(rows ?? []));
+          setChatConversations((prev) => {
+            const next = normalizeChatConversations(rows ?? []);
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
         } catch {
           // noop: avoid noisy UX on transient failures.
         }
@@ -2201,7 +2606,10 @@ function App() {
         try {
           const rows = await apiRequest<AccountingTransaction[]>("/api/accounting/transactions");
           if (!mounted) return;
-          setTransactions(Array.isArray(rows) ? rows : []);
+          setTransactions((prev) => {
+            const next = Array.isArray(rows) ? rows : [];
+            return next.length === 0 && prev.length > 0 ? prev : next;
+          });
         } catch {
           // noop: avoid noisy UX on transient failures.
         }
@@ -2287,16 +2695,26 @@ function App() {
     setSelectedMemberId((prev) => prev ?? firstId);
     setProjectDraft((prev) => (prev.ownerId ? prev : { ...prev, ownerId: firstId, memberIds: [firstId] }));
     setProjectEditDraft((prev) => (prev.ownerId ? prev : { ...prev, ownerId: firstId, memberIds: [firstId] }));
-    setTaskDraft((prev) => ({
-      ...prev,
-      assignerId: prev.assignerId || firstId,
-      assigneePrimaryId: prev.assigneePrimaryId || firstId,
-    }));
-    setTaskEditDraft((prev) => ({
-      ...prev,
-      assignerId: prev.assignerId || firstId,
-      assigneePrimaryId: prev.assigneePrimaryId || firstId,
-    }));
+    setTaskDraft((prev) => {
+      const nextAssignerId = prev.assignerId || firstId;
+      const nextAssigneePrimaryId = prev.assigneePrimaryId || firstId;
+      if (prev.assignerId === nextAssignerId && prev.assigneePrimaryId === nextAssigneePrimaryId) return prev;
+      return {
+        ...prev,
+        assignerId: nextAssignerId,
+        assigneePrimaryId: nextAssigneePrimaryId,
+      };
+    });
+    setTaskEditDraft((prev) => {
+      const nextAssignerId = prev.assignerId || firstId;
+      const nextAssigneePrimaryId = prev.assigneePrimaryId || firstId;
+      if (prev.assignerId === nextAssignerId && prev.assigneePrimaryId === nextAssigneePrimaryId) return prev;
+      return {
+        ...prev,
+        assignerId: nextAssignerId,
+        assigneePrimaryId: nextAssigneePrimaryId,
+      };
+    });
   }, [teamMembers]);
   useEffect(() => {
     const firstTeamId = teams.find((team) => team.isActive !== false)?.id ?? teams[0]?.id ?? "";
@@ -2353,10 +2771,14 @@ function App() {
     void refreshHrAttendance(hrAttendanceMonth, managerMode ? "" : authUser?.id ?? "");
   }, [authToken, authUser?.appRole, authUser?.id, hrAttendanceMonth]);
   useEffect(() => {
-    setHrAttendanceDraft((prev) => ({
-      ...prev,
-      workHours: String(prev.status === "leave" ? 0 : calculateWorkHoursFromTime(prev.checkIn, prev.checkOut) || 0),
-    }));
+    setHrAttendanceDraft((prev) => {
+      const nextWorkHours = String(prev.status === "leave" ? 0 : calculateWorkHoursFromTime(prev.checkIn, prev.checkOut) || 0);
+      if (prev.workHours === nextWorkHours) return prev;
+      return {
+        ...prev,
+        workHours: nextWorkHours,
+      };
+    });
   }, [hrAttendanceDraft.checkIn, hrAttendanceDraft.checkOut, hrAttendanceDraft.status]);
   useEffect(() => {
     if (hrAttendanceDraft.status !== "leave") return;
@@ -2369,7 +2791,11 @@ function App() {
   }, [authToken]);
 
   useEffect(() => {
-    setMemberDraft((prev) => ({ ...prev, appRole: settingsDraft.team.defaultAppRole }));
+    setMemberDraft((prev) => (
+      prev.appRole === settingsDraft.team.defaultAppRole
+        ? prev
+        : { ...prev, appRole: settingsDraft.team.defaultAppRole }
+    ));
   }, [settingsDraft.team.defaultAppRole]);
 
   useEffect(() => {
@@ -2451,18 +2877,28 @@ function App() {
     setAcknowledgedReminderVersion((v) => v + 1);
   }, [authToken, authUser?.id]);
   useEffect(() => {
-    notificationChannelsRef.current = settingsDraft.notifications.channels;
-  }, [settingsDraft.notifications.channels]);
+    notificationChannelsRef.current = {
+      inAppTaskAssigned: notificationPreferences.delivery.task.toast,
+      inAppChatMessage: notificationPreferences.delivery.chat.toast,
+      inAppMention: notificationPreferences.delivery.mention.toast,
+      inAppSystem: notificationPreferences.delivery.system.toast,
+      soundOnMessage: notificationPreferences.delivery.chat.sound || notificationPreferences.delivery.mention.sound,
+    };
+  }, [notificationPreferences.delivery]);
 
   useEffect(() => {
     if (!authToken) {
       setInboxData(null);
       return;
     }
-    void refreshInbox(true);
-    const timer = window.setInterval(() => {
+    const refreshWhenVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       void refreshInbox(true);
-    }, 60000);
+    };
+    refreshWhenVisible();
+    const timer = window.setInterval(() => {
+      refreshWhenVisible();
+    }, 90_000);
     return () => window.clearInterval(timer);
   }, [authToken]);
 
@@ -2474,6 +2910,7 @@ function App() {
     }
     let mounted = true;
     const check = async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       try {
         const payload = await apiRequest<{ ok: boolean; now: string; uptimeSec?: number; heapUsedMb?: number; socketClients?: number }>("/api/health");
         if (!mounted) return;
@@ -2482,19 +2919,13 @@ function App() {
       } catch (error) {
         if (!mounted) return;
         const msg = String((error as Error)?.message ?? "health check failed");
-        if (msg.includes("Missing bearer token") || msg.includes("Invalid or expired token") || msg.includes("Unauthorized")) {
-          setAuthToken("");
-          setAuthUser(null);
-          setAuthError("نشست شما منقضی شده است. لطفا دوباره وارد شوید.");
-          return;
-        }
         setApiHealthError(msg);
       }
     };
     void check();
     const timer = window.setInterval(() => {
       void check();
-    }, 60000);
+    }, 120_000);
     return () => {
       mounted = false;
       window.clearInterval(timer);
@@ -2511,30 +2942,8 @@ function App() {
   }, [activeView, selectedConversationId]);
 
   useEffect(() => {
-    if (activeView !== "tasks" && activeView !== "inbox") return;
-    setNotifications((prev) => prev.map((n) => (n.kind === "task" && !n.read ? { ...n, read: true } : n)));
-  }, [activeView]);
-  useEffect(() => {
-    if (!authToken) {
-      setViewSwitchLoading(false);
-      return;
-    }
-    setViewSwitchLoading(true);
-    if (viewSwitchTimerRef.current) window.clearTimeout(viewSwitchTimerRef.current);
-    viewSwitchTimerRef.current = window.setTimeout(() => {
-      setViewSwitchLoading(false);
-      viewSwitchTimerRef.current = null;
-    }, 320);
-    return () => {
-      if (viewSwitchTimerRef.current) {
-        window.clearTimeout(viewSwitchTimerRef.current);
-        viewSwitchTimerRef.current = null;
-      }
-    };
-  }, [activeView, authToken]);
-
-  useEffect(() => {
     if (!taskWatchReadyRef.current) return;
+    if (!authUser?.id) return;
     const currentUserId = authUser?.id || settingsDraft.general.currentMemberId || "";
     const role = authUser?.appRole ?? "member";
     const isPrivileged = role === "admin" || role === "manager";
@@ -2542,9 +2951,6 @@ function App() {
       if (knownTaskIdsRef.current.has(task.id)) continue;
       knownTaskIdsRef.current.add(task.id);
       if (!isPrivileged && (!currentUserId || !isTaskAssignedToUser(task, currentUserId))) continue;
-      if (settingsDraft.notifications.channels.inAppTaskNew) {
-        pushNotification("task", "تسک جدید", task.title || "تسک جدید ثبت شد.", `task-created:${task.id}`);
-      }
     }
     const next = new Set(tasks.map((t) => t.id));
     knownTaskIdsRef.current = next;
@@ -2552,31 +2958,25 @@ function App() {
 
   useEffect(() => {
     if (!projectWatchReadyRef.current) return;
+    if (!authUser?.id) return;
     for (const project of projects) {
       if (knownProjectIdsRef.current.has(project.id)) continue;
       knownProjectIdsRef.current.add(project.id);
-      if (settingsDraft.notifications.channels.inAppProjectNew) {
-        pushNotification("project", "پروژه جدید", project.name || "پروژه جدید ثبت شد.", `project-created:${project.id}`);
-      }
     }
     const next = new Set(projects.map((p) => p.id));
     knownProjectIdsRef.current = next;
-  }, [projects, settingsDraft.notifications.channels.inAppProjectNew]);
+  }, [authUser?.id, projects, settingsDraft.notifications.channels.inAppProjectNew]);
 
   useEffect(() => {
     if (!conversationWatchReadyRef.current) return;
+    if (!authUser?.id) return;
     for (const conversation of chatConversations) {
       if (knownConversationIdsRef.current.has(conversation.id)) continue;
       knownConversationIdsRef.current.add(conversation.id);
-      const title = conversation.type === "group" ? "گروه جدید" : "گفتگوی خصوصی جدید";
-      const description = conversation.type === "group" ? (conversation.title || "گروه جدید ایجاد شد.") : "گفتگوی جدید در دسترس است.";
-      if (settingsDraft.notifications.channels.inAppSystem) {
-        pushNotification("system", title, description, `conversation-created:${conversation.id}`);
-      }
     }
     const next = new Set(chatConversations.map((c) => c.id));
     knownConversationIdsRef.current = next;
-  }, [chatConversations, settingsDraft.notifications.channels.inAppSystem]);
+  }, [authUser?.id, chatConversations, settingsDraft.notifications.channels.inAppSystem]);
 
   useEffect(() => {
     if (!authToken) return;
@@ -2671,34 +3071,193 @@ function App() {
     setAcknowledgedReminderVersion((v) => v + 1);
   };
 
-  const pushNotification = (kind: NotificationItem["kind"], title: string, description: string, dedupeKey?: string) => {
-    const item: NotificationItem = {
-      id: createId(),
-      kind,
-      title,
-      description,
-      createdAt: new Date().toISOString(),
-      read: false,
-      dedupeKey,
-    };
-    setNotifications((prev) => {
-      const now = Date.now();
-      const normalizedKey = String(dedupeKey ?? `${kind}|${title}|${description}`).trim();
-      if (normalizedKey) {
-        const exists = prev.some((row) => {
-          const rowKey = String(row.dedupeKey ?? `${row.kind}|${row.title}|${row.description}`).trim();
-          if (!rowKey || rowKey !== normalizedKey) return false;
-          const rowTs = new Date(String(row.createdAt ?? "")).getTime();
-          if (Number.isNaN(rowTs)) return true;
-          return now - rowTs <= NOTIFICATION_DEDUPE_WINDOW_MS;
-        });
-        if (exists) return prev;
+  const normalizeNotificationItem = useCallback(
+    (row: any): NotificationItem => ({
+      id: String(row?.id ?? createId()),
+      kind:
+        row?.kind === "task" || row?.kind === "project" || row?.kind === "chat" || row?.kind === "mention" || row?.kind === "approval"
+          ? row.kind
+          : "system",
+      category: String(row?.category ?? "").trim(),
+      title: String(row?.title ?? "").trim() || "اعلان",
+      description: String(row?.description ?? "").trim(),
+      createdAt: String(row?.createdAt ?? new Date().toISOString()),
+      read: Boolean(String(row?.readAt ?? "").trim()),
+      seen: Boolean(String(row?.seenAt ?? "").trim()),
+      dismissed: Boolean(String(row?.dismissedAt ?? "").trim()),
+      targetView: (row?.targetView as ViewKey | undefined) ?? undefined,
+      entityType: String(row?.entityType ?? "").trim(),
+      entityId: String(row?.entityId ?? "").trim(),
+      conversationId: String(row?.conversationId ?? "").trim(),
+      taskId: String(row?.taskId ?? "").trim(),
+      projectId: String(row?.projectId ?? "").trim(),
+      actionLabel: String(row?.actionLabel ?? "").trim() || "مشاهده",
+      dedupeKey: String(row?.dedupeKey ?? "").trim(),
+    }),
+    [],
+  );
+  const refreshNotificationCenter = useCallback(
+    async (
+      silent = true,
+      options: {
+        includeDismissed?: boolean;
+        kind?: string;
+        category?: string;
+        unreadOnly?: boolean;
+      } = {},
+    ) => {
+      if (!authToken) {
+        setNotifications([]);
+        setNotificationPreferences(defaultNotificationPreferences());
+        return;
       }
-      return [item, ...prev].slice(0, 80);
-    });
-  };
+      try {
+        const params = new URLSearchParams();
+        if (options.includeDismissed) params.set("includeDismissed", "true");
+        if (options.kind) params.set("kind", options.kind);
+        if (options.category) params.set("category", options.category);
+        if (options.unreadOnly) params.set("unreadOnly", "true");
+        const query = params.toString();
+        const [payload, prefs] = await Promise.all([
+          apiRequest<{ items: any[]; unreadCount: number; unseenCount: number }>(`/api/notifications${query ? `?${query}` : ""}`),
+          apiRequest<NotificationPreferences>("/api/notification-preferences/me"),
+        ]);
+        setNotifications(Array.isArray(payload?.items) ? payload.items.map(normalizeNotificationItem) : []);
+        setNotificationPreferences(
+          prefs
+            ? {
+                ...defaultNotificationPreferences(String(prefs.userId ?? authUser?.id ?? "")),
+                ...prefs,
+                channels: { ...defaultNotificationPreferences().channels, ...(prefs.channels ?? {}) },
+                delivery: {
+                  ...defaultNotificationPreferences().delivery,
+                  ...(prefs.delivery ?? {}),
+                },
+                mutedKinds: Array.isArray(prefs.mutedKinds) ? prefs.mutedKinds : [],
+                mutedCategories: Array.isArray((prefs as any).mutedCategories) ? (prefs as any).mutedCategories : [],
+              }
+            : defaultNotificationPreferences(authUser?.id ?? ""),
+        );
+      } catch (error) {
+        if (!silent) {
+          const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "بارگذاری اعلان‌ها ناموفق بود.");
+          pushToast(msg || "بارگذاری اعلان‌ها ناموفق بود.", "error");
+        }
+      }
+    },
+    [apiRequest, authToken, authUser?.id, normalizeNotificationItem],
+  );
+  const applyIncomingNotification = useCallback(
+    (row: any) => {
+      const item = normalizeNotificationItem(row);
+      setNotifications((prev) => {
+        const next = prev.filter((entry) => entry.id !== item.id && (!item.dedupeKey || entry.dedupeKey !== item.dedupeKey));
+        return [item, ...next].slice(0, 200);
+      });
+      if (notificationPreferences.delivery[item.kind]?.toast !== false && !notificationPreferences.mutedKinds.includes(item.kind)) {
+        const tone = item.kind === "mention" || item.kind === "approval" ? "error" : "success";
+        pushToast(item.title, tone);
+      }
+    },
+    [normalizeNotificationItem, notificationPreferences.delivery, notificationPreferences.mutedKinds],
+  );
+  const markNotificationRead = useCallback(
+    async (notificationId: string, localOnly = false) => {
+      const cleanId = String(notificationId ?? "").trim();
+      if (!cleanId) return;
+      setNotifications((prev) => prev.map((row) => (row.id === cleanId ? { ...row, read: true, seen: true } : row)));
+      if (localOnly) return;
+      try {
+        await apiRequest(`/api/notifications/${cleanId}/read`, { method: "POST", body: "{}" });
+      } catch {
+        // ignore optimistic failures
+      }
+    },
+    [apiRequest],
+  );
+  const markNotificationUnread = useCallback(
+    async (notificationId: string) => {
+      const cleanId = String(notificationId ?? "").trim();
+      if (!cleanId) return;
+      setNotifications((prev) => prev.map((row) => (row.id === cleanId ? { ...row, read: false } : row)));
+      try {
+        await apiRequest(`/api/notifications/${cleanId}/unread`, { method: "POST", body: "{}" });
+      } catch {
+        // ignore optimistic failures
+      }
+    },
+    [apiRequest],
+  );
+  const dismissNotification = useCallback(
+    async (notificationId: string) => {
+      const cleanId = String(notificationId ?? "").trim();
+      if (!cleanId) return;
+      setNotifications((prev) => prev.map((row) => (row.id === cleanId ? { ...row, dismissed: true, read: true, seen: true } : row)));
+      try {
+        await apiRequest(`/api/notifications/${cleanId}/dismiss`, { method: "POST", body: "{}" });
+      } catch {
+        // ignore optimistic failures
+      }
+    },
+    [apiRequest],
+  );
+  const restoreNotification = useCallback(
+    async (notificationId: string) => {
+      const cleanId = String(notificationId ?? "").trim();
+      if (!cleanId) return;
+      setNotifications((prev) => prev.map((row) => (row.id === cleanId ? { ...row, dismissed: false } : row)));
+      try {
+        await apiRequest(`/api/notifications/${cleanId}/restore`, { method: "POST", body: "{}" });
+      } catch {
+        // ignore optimistic failures
+      }
+    },
+    [apiRequest],
+  );
+  const markAllNotificationsRead = useCallback(async () => {
+    setNotifications((prev) => prev.map((row) => ({ ...row, read: true, seen: true })));
+    try {
+      await apiRequest("/api/notifications/read-all", { method: "POST", body: "{}" });
+    } catch {
+      // ignore optimistic failures
+    }
+  }, [apiRequest]);
+  const dismissAllNotifications = useCallback(async () => {
+    setNotifications((prev) => prev.map((row) => ({ ...row, dismissed: true, read: true, seen: true })));
+    try {
+      await apiRequest("/api/notifications/dismiss-all", { method: "POST", body: "{}" });
+    } catch {
+      // ignore optimistic failures
+    }
+  }, [apiRequest]);
+  const markNotificationsSeen = useCallback(async () => {
+    setNotifications((prev) => prev.map((row) => ({ ...row, seen: true })));
+    try {
+      await apiRequest("/api/notifications/seen-all", { method: "POST", body: "{}" });
+    } catch {
+      // ignore optimistic failures
+    }
+  }, [apiRequest]);
+  useEffect(() => {
+    void refreshNotificationCenter(true);
+  }, [refreshNotificationCenter]);
+
+  useEffect(() => {
+    if (!authToken) return;
+    const refreshWhenVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      void refreshNotificationCenter(true);
+    };
+    const timer = window.setInterval(refreshWhenVisible, 60_000);
+    return () => window.clearInterval(timer);
+  }, [authToken, refreshNotificationCenter]);
+
+  useEffect(() => {
+    if (!notificationOpen) return;
+    void markNotificationsSeen();
+  }, [markNotificationsSeen, notificationOpen]);
   useChatRealtime({
-    authToken,
+    authToken: CHAT_REALTIME_ENABLED ? authToken : "",
     socketBase: SOCKET_BASE,
     socketRef,
     selectedConversationRef,
@@ -2709,18 +3268,11 @@ function App() {
     incomingAudioCtxRef,
     lastIncomingSoundAtRef,
     notificationChannelsRef,
-    apiRequest,
-    setAuthToken,
-    setAuthUser,
     setTypingUsers,
     pushToast,
     handleIncomingMessage: (message, { isActiveConversationVisible, socket }) => {
       if (message.senderId !== authUserIdRef.current) {
         const channels = notificationChannelsRef.current;
-        const preview = message.text?.trim() || (message.attachments?.length ? "فایل/voice" : "پیام جدید");
-        if (channels.inAppChatMessage) {
-          pushNotification("chat", `پیام جدید از ${message.senderName}`, preview, `chat-message:${message.id}`);
-        }
         const isMentioned = Array.isArray(message.mentionMemberIds) && !!authUserIdRef.current && message.mentionMemberIds.includes(authUserIdRef.current);
         const shouldToast = selectedConversationRef.current !== message.conversationId || document.visibilityState !== "visible" || isMentioned;
         if (shouldToast) {
@@ -2871,9 +3423,7 @@ function App() {
         setTypingUsers([]);
         setChatReplyTo(null);
       }
-      if (notificationChannelsRef.current.inAppSystem) {
-        pushNotification("system", "گفتگو حذف شد", "یک گفتگو از لیست شما حذف شد.", `conversation-deleted:${conversationId}`);
-      }
+      if (notificationChannelsRef.current.inAppSystem) pushToast("گفتگو حذف شد.", "error");
     },
     handleTaskAssigned: (payload) => {
       const task = payload?.task;
@@ -2889,7 +3439,6 @@ function App() {
       });
       const channels = notificationChannelsRef.current;
       if (channels.inAppTaskAssigned) {
-        pushNotification("task", "تسک جدید به شما ابلاغ شد", task.title || "تسک جدید ثبت شد.", `task-assigned:${task.id}`);
         pushToast(`تسک جدید: ${task.title || "بدون عنوان"}`);
       }
       setInboxData((prev) => {
@@ -2906,12 +3455,86 @@ function App() {
       });
     },
     handlePresenceUpdate: applyIncomingPresenceUpdate,
+    handleNotificationNew: (payload) => {
+      applyIncomingNotification(payload);
+    },
   });
+  useEffect(() => {
+    if (!authToken || activeView !== "chat") return;
+    let cancelled = false;
+    const syncChatState = async () => {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      try {
+        const conversations = await apiRequest<ChatConversation[]>("/api/chat/conversations");
+        if (cancelled) return;
+        setChatConversations((prev) => {
+          const next = normalizeChatConversations(conversations);
+          if (next.length === 0 && prev.length > 0) return prev;
+          return next;
+        });
+        if (!selectedConversationId) return;
+        const rows = await apiRequest<ChatMessage[]>(buildMessagesPath(selectedConversationId));
+        if (cancelled) return;
+        setChatMessages((prev) => {
+          const incoming = rows.map((message) =>
+            message.senderId === authUser?.id ? message : { ...message, receivedAt: message.receivedAt || message.createdAt },
+          );
+          if (incoming.length === 0) return prev;
+          const prevIds = prev.map((row) => row.id).join("|");
+          const nextIds = incoming.map((row) => row.id).join("|");
+          if (prevIds === nextIds) {
+            return prev.map((row, index) => ({ ...row, ...incoming[index] }));
+          }
+          return incoming;
+        });
+      } catch {
+        // keep current chat state on transient sync failures
+      }
+    };
+    void syncChatState();
+    const timer = window.setInterval(() => {
+      void syncChatState();
+    }, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeView, apiRequest, authToken, authUser?.id, buildMessagesPath, normalizeChatConversations, selectedConversationId]);
   const unreadChatCount = useMemo(
     () => chatConversations.reduce((sum, conversation) => sum + Math.max(0, Number(conversation.unreadCount ?? 0)), 0),
     [chatConversations],
   );
-  const unreadTaskNotificationCount = useMemo(() => notifications.filter((n) => !n.read && n.kind === "task").length, [notifications]);
+  const unreadTaskNotificationCount = useMemo(
+    () => notifications.filter((n) => !n.dismissed && !n.read && (n.kind === "task" || n.kind === "approval")).length,
+    [notifications],
+  );
+  const visibleNotificationItems = useMemo(() => {
+    const activeRows = notifications.filter((row) => !row.dismissed);
+    if (notificationFilter === "all") return activeRows;
+    if (notificationFilter === "unread") return activeRows.filter((row) => !row.read);
+    return activeRows.filter((row) => row.kind === notificationFilter);
+  }, [notificationFilter, notifications]);
+  const actionableNotificationItems = useMemo(
+    () =>
+      notifications
+        .filter((row) => !row.dismissed)
+        .filter((row) => Boolean(row.taskId || row.conversationId || row.projectId))
+        .filter((row) => row.kind === "approval" || row.kind === "task" || row.kind === "mention" || row.kind === "chat" || row.kind === "project")
+        .slice(0, 5),
+    [notifications],
+  );
+  const notificationSummaryByKind = useMemo(
+    () => ({
+      task: notifications.filter((row) => !row.dismissed && !row.read && row.kind === "task").length,
+      approval: notifications.filter((row) => !row.dismissed && !row.read && row.kind === "approval").length,
+      mention: notifications.filter((row) => !row.dismissed && !row.read && row.kind === "mention").length,
+      chat: notifications.filter((row) => !row.dismissed && !row.read && row.kind === "chat").length,
+      project: notifications.filter((row) => !row.dismissed && !row.read && row.kind === "project").length,
+      system: notifications.filter((row) => !row.dismissed && !row.read && row.kind === "system").length,
+    }),
+    [notifications],
+  );
   const today = todayIso();
 
   const filteredProjects = useMemo(() => {
@@ -2934,12 +3557,52 @@ function App() {
     return { monthIncome, monthExpense, budgetAmount, remaining, usagePercent, isOverBudget };
   }, [budgetAmountInput, budgetMonth, transactions]);
   const activeTeamMembers = useMemo(() => teamMembers.filter((m) => m.isActive !== false), [teamMembers]);
+  const lastResolvedCurrentMemberRef = useRef<TeamMember | null>(null);
   const currentMember = useMemo(() => {
     const byAuthId = authUser ? teamMembers.find((m) => m.id === authUser.id) : null;
     if (byAuthId) return byAuthId;
     const bySettingsId = teamMembers.find((m) => m.id === settingsDraft.general.currentMemberId);
-    return bySettingsId ?? activeTeamMembers[0] ?? null;
+    if (bySettingsId) return bySettingsId;
+    if (activeTeamMembers[0]) return activeTeamMembers[0];
+    if (lastResolvedCurrentMemberRef.current) return lastResolvedCurrentMemberRef.current;
+    if (!authUser) return null;
+    return {
+      id: authUser.id,
+      fullName: authUser.fullName,
+      role: "",
+      email: "",
+      phone: authUser.phone,
+      bio: "",
+      avatarDataUrl: authUser.avatarDataUrl ?? "",
+      teamIds: authUser.teamIds ?? [],
+      appRole: authUser.appRole,
+      isActive: true,
+      createdAt: "",
+    };
   }, [activeTeamMembers, authUser, settingsDraft.general.currentMemberId, teamMembers]);
+
+  const handleHeroPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const element = visualHeroRef.current;
+    if (!element || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const rect = element.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
+    const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+    element.style.setProperty("--hero-pointer-x", x.toFixed(3));
+    element.style.setProperty("--hero-pointer-y", y.toFixed(3));
+  }, []);
+
+  const resetHeroPointer = useCallback(() => {
+    const element = visualHeroRef.current;
+    if (!element) return;
+    element.style.setProperty("--hero-pointer-x", "0");
+    element.style.setProperty("--hero-pointer-y", "0");
+  }, []);
+
+  useEffect(() => {
+    if (currentMember) {
+      lastResolvedCurrentMemberRef.current = currentMember;
+    }
+  }, [currentMember]);
 
   const {
     inboxUnreadCount,
@@ -2959,6 +3622,7 @@ function App() {
     teamPerformanceInsights,
     maxProjectCount,
     maxWeeklyCount,
+    commandCenter,
   } = useDashboardInboxDerived({
     notifications,
     unreadChatCount,
@@ -3008,6 +3672,7 @@ function App() {
   }, [deferredTaskSearch, taskProjectFilter, taskStatusFilter, visibleTasks]);
 
   useEffect(() => {
+    if (!authUser?.id) return;
     const existing = announcedReminderIdsRef.current;
     const currentIds = new Set(smartReminders.map((r) => r.id));
     let changed = false;
@@ -3016,9 +3681,6 @@ function App() {
       existing.add(reminder.id);
       changed = true;
       pushToast(reminder.title, reminder.tone);
-      if (reminder.targetView === "tasks") {
-        pushNotification("task", reminder.title, reminder.description, `smart-reminder:${reminder.id}`);
-      }
     }
     for (const id of Array.from(existing)) {
       if (!currentIds.has(id)) {
@@ -3027,7 +3689,7 @@ function App() {
       }
     }
     if (changed) persistAnnouncedReminders(existing);
-  }, [smartReminders]);
+  }, [authUser?.id, smartReminders]);
   const {
     visibleTransactions,
     accountNameById,
@@ -3162,6 +3824,7 @@ function App() {
     canPerform,
     canTransitionTask,
     setTeamPermission,
+    setTeamPolicyScope,
     setWorkflowTransition,
     addTransactionCategory,
     removeTransactionCategory,
@@ -3175,6 +3838,9 @@ function App() {
   } = useAppShellHelpers({
     currentAppRole,
     authUserId: authUser?.id ?? "",
+    teamMembers,
+    projects,
+    tasks,
     settingsDraft,
     setSettingsDraft,
     newTransactionCategory,
@@ -3190,7 +3856,7 @@ function App() {
   useEffect(() => {
     if (canAccessView(activeView)) return;
     setActiveView("dashboard");
-  }, [activeView, currentAppRole]);
+  }, [activeView, currentAppRole, teamMembers, authUser?.id]);
   useEffect(() => {
     if (activeView !== "audit") return;
     void refreshAuditLogs(false);
@@ -3224,7 +3890,6 @@ function App() {
   }, [budgetHistory, budgetMonth]);
   const {
     sortedAuditLogs,
-    visibleSortedAuditLogs,
     reportColumnDefs,
     reportRows,
     reportEnabledColumns,
@@ -3261,7 +3926,17 @@ function App() {
     const defs = reportColumnDefs[reportEntity] ?? [];
     const next: Record<string, boolean> = {};
     for (const col of defs) next[col.key] = true;
-    setReportColumns(next);
+    setReportColumns((prev) => {
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (
+        prevKeys.length === nextKeys.length &&
+        nextKeys.every((key) => prev[key] === next[key])
+      ) {
+        return prev;
+      }
+      return next;
+    });
   }, [reportColumnDefs, reportEntity]);
   const selectedTransaction = useMemo(
     () => transactions.find((tx) => tx.id === selectedTransactionId) ?? null,
@@ -3295,18 +3970,6 @@ function App() {
     () => visibleTransactions.slice(transactionsVirtual.windowState.start, transactionsVirtual.windowState.end),
     [transactionsVirtual.windowState.end, transactionsVirtual.windowState.start, visibleTransactions],
   );
-  const visibleTeamRows = useMemo(
-    () => filteredTeamMembers.slice(teamMembersVirtual.windowState.start, teamMembersVirtual.windowState.end),
-    [filteredTeamMembers, teamMembersVirtual.windowState.end, teamMembersVirtual.windowState.start],
-  );
-  const visibleHrAttendanceRows = useMemo(
-    () => visibleHrAttendanceRecords.slice(hrAttendanceVirtual.windowState.start, hrAttendanceVirtual.windowState.end),
-    [hrAttendanceVirtual.windowState.end, hrAttendanceVirtual.windowState.start, visibleHrAttendanceRecords],
-  );
-  const visibleReportPreviewRows = useMemo(
-    () => reportPreviewRows.slice(reportPreviewVirtual.windowState.start, reportPreviewVirtual.windowState.end),
-    [reportPreviewRows, reportPreviewVirtual.windowState.end, reportPreviewVirtual.windowState.start],
-  );
   const conversationTitle = (conversation: ChatConversation) => {
     if (conversation.type === "group") return conversation.title || "گروه";
     const otherId = conversation.participantIds.find((id) => id !== authUser?.id) ?? "";
@@ -3328,6 +3991,106 @@ function App() {
     if (item.targetView === "accounting" && item.querySeed) setTransactionSearch(item.querySeed);
     if (item.targetView === "team" && item.querySeed) setMemberSearch(item.querySeed);
     if (item.targetView === "chat" && item.conversationId) await selectConversation(item.conversationId);
+  };
+  const handleCommandCenterAction = async (item: any, lane?: any) => {
+    const targetView = (item?.targetView || lane?.targetView || "dashboard") as ViewKey;
+    setActiveView(targetView);
+    if (targetView === "tasks") {
+      setTab("all");
+      setTaskStatusFilter("all");
+      if (item?.querySeed) setTaskSearch(String(item.querySeed));
+    }
+    if (targetView === "inbox") {
+      if (item?.querySeed) {
+        setTaskSearch(String(item.querySeed));
+        setTab("all");
+      }
+    }
+    if (targetView === "chat" && item?.conversationId) {
+      await selectConversation(String(item.conversationId));
+    }
+    if (item?.memberId && isTeamDashboard) {
+      setDashboardMemberFocusId(String(item.memberId));
+    }
+  };
+  const handleCommandCenterQuickAction = async (item: any, action: string, lane?: any) => {
+    if (action === "approve" && item?.taskId) {
+      await decideTaskWorkflow(String(item.taskId), "approve");
+      return;
+    }
+    if (action === "reject" && item?.taskId) {
+      await decideTaskWorkflow(String(item.taskId), "reject");
+      return;
+    }
+    if (action === "focus-member" && item?.memberId) {
+      setActiveView("dashboard");
+      setDashboardMemberFocusId(String(item.memberId));
+      return;
+    }
+    if (action === "message-member" && item?.memberId) {
+      setActiveView("chat");
+      await startChatWithMember(String(item.memberId));
+      return;
+    }
+    if (action === "start-task" && item?.taskId) {
+      setActiveView("tasks");
+      setTab("all");
+      setTaskStatusFilter("all");
+      if (item?.querySeed) setTaskSearch(String(item.querySeed));
+      await updateTaskStatus(String(item.taskId), "doing");
+      return;
+    }
+    if (action === "block-task" && item?.taskId) {
+      setActiveView("tasks");
+      setTab("all");
+      setTaskStatusFilter("all");
+      if (item?.querySeed) setTaskSearch(String(item.querySeed));
+      await updateTaskStatus(String(item.taskId), "blocked", "نیاز به بررسی از مرکز عملیات");
+      return;
+    }
+    await handleCommandCenterAction(item, lane);
+  };
+  const handleNotificationNavigate = async (notification: NotificationItem) => {
+    await markNotificationRead(notification.id);
+    setNotificationOpen(false);
+    const targetView = notification.targetView ?? (notification.kind === "project" ? "projects" : notification.kind === "chat" || notification.kind === "mention" ? "chat" : "tasks");
+    setActiveView(targetView);
+    if (notification.taskId) {
+      setTab("all");
+      setTaskStatusFilter("all");
+      setTaskSearch(notification.title);
+    }
+    if (notification.projectId) {
+      setProjectSearch(notification.title);
+    }
+    if (notification.conversationId) {
+      await selectConversation(notification.conversationId);
+    }
+  };
+  const saveNotificationPreferences = async (overrideMutedCategories?: string[]) => {
+    try {
+      const payload = await apiRequest<NotificationPreferences>("/api/notification-preferences/me", {
+        method: "PUT",
+        body: JSON.stringify({
+          channels: notificationPreferences.channels,
+          delivery: notificationPreferences.delivery,
+          mutedKinds: notificationPreferences.mutedKinds,
+          mutedCategories: Array.isArray(overrideMutedCategories) ? overrideMutedCategories : notificationPreferences.mutedCategories,
+        }),
+      });
+      setNotificationPreferences({
+        ...defaultNotificationPreferences(String(payload?.userId ?? authUser?.id ?? "")),
+        ...payload,
+        channels: { ...defaultNotificationPreferences().channels, ...(payload?.channels ?? {}) },
+        delivery: { ...defaultNotificationPreferences().delivery, ...(payload?.delivery ?? {}) },
+        mutedCategories: Array.isArray((payload as any)?.mutedCategories) ? (payload as any).mutedCategories : [],
+      });
+      setNotificationPrefsOpen(false);
+      pushToast("ترجیحات اعلان ذخیره شد.");
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "ذخیره ترجیحات اعلان ناموفق بود.");
+      pushToast(msg || "ذخیره ترجیحات اعلان ناموفق بود.", "error");
+    }
   };
   const maxExpenseCategoryAmount = Math.max(1, ...expenseByCategory.map((x) => x.amount));
   useEffect(() => {
@@ -3358,9 +4121,11 @@ function App() {
     decideTaskWorkflow,
     addTaskWorkflowComment,
     removeTask,
+    quickRescheduleTask,
   } = useTaskWorkflowActions({
     apiRequest,
     pushToast,
+    scheduleUndoableDelete,
     canPerform,
     canTransitionTask,
     confirmAction,
@@ -3399,6 +4164,7 @@ function App() {
   } = useProjectActions({
     apiRequest,
     pushToast,
+    scheduleUndoableDelete,
     canPerform,
     confirmAction,
     parseWorkflowStepsText,
@@ -3407,6 +4173,7 @@ function App() {
     activeTeamMembers,
     teamMembers,
     projects,
+    tasks,
     setProjects,
     setTasks,
     projectDraft,
@@ -3429,6 +4196,7 @@ function App() {
   } = useMinuteActions({
     apiRequest,
     pushToast,
+    scheduleUndoableDelete,
     confirmAction,
     todayIso,
     minuteTemplates: MINUTE_TEMPLATES,
@@ -3454,10 +4222,13 @@ function App() {
     openTransactionDetails,
     updateTransaction,
     removeTransaction,
+    approveTransactionsBulk,
+    removeTransactionsBulk,
     saveMonthlyBudget,
   } = useAccountingActions({
     apiRequest,
     pushToast,
+    scheduleUndoableDelete,
     confirmAction,
     todayIso,
     currentTimeHHMM,
@@ -3503,12 +4274,15 @@ function App() {
     addTeamGroup,
     removeTeamGroup,
     openEditMember,
+    openAccessEditor,
     addMember,
     updateMember,
+    updateMemberAccess,
     removeMember,
   } = useTeamMemberActions({
     apiRequest,
     pushToast,
+    scheduleUndoableDelete,
     canPerform,
     confirmAction,
     settingsDraft,
@@ -3524,6 +4298,8 @@ function App() {
     setTeamDraft,
     editingMemberId,
     setEditingMemberId,
+    setMemberEditInitialStep,
+    setMemberAccessOpen,
     setSelectedMemberId,
     setMemberErrors,
     setMemberEditErrors,
@@ -3544,6 +4320,7 @@ function App() {
   } = useHrActions({
     apiRequest,
     pushToast,
+    scheduleUndoableDelete,
     confirmAction,
     parseAmountInput,
     normalizeTimeInput,
@@ -3557,6 +4334,7 @@ function App() {
     hrProfileDraft,
     hrLeaveDraft,
     hrAttendanceDraft,
+    hrAttendanceRecords,
     setHrProfileErrors,
     setHrLeaveErrors,
     setHrAttendanceErrors,
@@ -3602,6 +4380,45 @@ function App() {
     setProfileOpen,
     backupImportText,
   });
+  const saveMemberAccessPreset = async (payload: {
+    name: string;
+    moduleAccess: Partial<Record<ModuleAccessViewKey, boolean>>;
+    permissionOverrides: Partial<Record<PermissionAction, boolean>>;
+    policyOverrides: Partial<Record<PolicyEntity, Partial<Record<PolicyOperation, AccessScope>>>>;
+  }) => {
+    const presetName = String(payload.name ?? "").trim();
+    if (!presetName) {
+      pushToast("نام قالب دسترسی الزامی است.", "error");
+      return;
+    }
+    try {
+      const saved = await apiRequest<AppSettings>("/api/settings", {
+        method: "PUT",
+        body: JSON.stringify(
+          mergeSettingsWithDefaults({
+            ...settingsDraft,
+            team: {
+              ...settingsDraft.team,
+              accessPresets: [
+                ...(Array.isArray(settingsDraft.team.accessPresets) ? settingsDraft.team.accessPresets.filter((row) => row.name !== presetName) : []),
+                {
+                  id: `preset-${Date.now()}`,
+                  name: presetName,
+                  moduleAccess: payload.moduleAccess,
+                  permissionOverrides: payload.permissionOverrides,
+                  policyOverrides: payload.policyOverrides,
+                },
+              ],
+            },
+          }),
+        ),
+      });
+      setSettingsDraft(mergeSettingsWithDefaults(saved));
+      pushToast("قالب دسترسی ذخیره شد.");
+    } catch {
+      pushToast("ذخیره قالب دسترسی ناموفق بود.", "error");
+    }
+  };
   const cancelEditChatMessage = () => {
     setChatEditMessageId("");
     setChatEditDraft("");
@@ -3641,6 +4458,20 @@ function App() {
       const msg = "پردازش تصویر انجام نشد.";
       if (mode === "add") setMemberErrors({ fullName: msg });
       else setMemberEditErrors({ fullName: msg });
+    }
+  };
+
+  const pickGroupAvatar = async (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      pushToast("فقط فایل تصویری برای عکس گروه قابل انتخاب است.", "error");
+      return;
+    }
+    try {
+      const avatarDataUrl = await fileToOptimizedAvatar(file);
+      setGroupAvatarDraft(avatarDataUrl);
+    } catch {
+      pushToast("پردازش عکس گروه انجام نشد.", "error");
     }
   };
 
@@ -4034,6 +4865,7 @@ function App() {
     removeConversation,
     openDirectConversation,
     createGroupConversation,
+    updateGroupConversation,
     startChatWithMember,
     canModifyChatMessage,
     openEditChatMessage,
@@ -4044,6 +4876,7 @@ function App() {
   } = useChatActions({
     apiRequest,
     pushToast,
+    scheduleUndoableDelete,
     confirmAction,
     authUserId: authUser?.id ?? "",
     selectedConversationId,
@@ -4053,6 +4886,7 @@ function App() {
     chatConversations,
     groupTitleDraft,
     groupMembersDraft,
+    groupAvatarDraft,
     directConversationByMemberId,
     chatEditMessageId,
     chatEditDraft,
@@ -4100,6 +4934,7 @@ function App() {
     setGroupOpen,
     setGroupTitleDraft,
     setGroupMembersDraft,
+    setGroupAvatarDraft,
     setNewChatOpen,
     setNewChatSearch,
     setChatEditMessageId,
@@ -4211,6 +5046,14 @@ function App() {
     };
   }, []);
 
+  if (authToken && authBootstrapPending && !authUser) {
+    return (
+      <main className="app-shell mx-auto flex min-h-screen w-full max-w-7xl items-center justify-center px-4 py-8 md:px-6">
+        <div className="h-40 w-full max-w-md animate-pulse rounded-3xl border bg-muted/40" />
+      </main>
+    );
+  }
+
   if (!authUser) {
     return (
       <Suspense fallback={<main className="app-shell mx-auto flex min-h-screen w-full max-w-7xl items-center justify-center px-4 py-8 md:px-6"><div className="h-40 w-full max-w-md animate-pulse rounded-3xl border bg-muted/40" /></main>}>
@@ -4219,8 +5062,8 @@ function App() {
           password={loginDraft.password}
           authBusy={authBusy}
           authError={authError}
-          onPhoneChange={(value) => setLoginDraft((prev) => ({ ...prev, phone: value }))}
-          onPasswordChange={(value) => setLoginDraft((prev) => ({ ...prev, password: value }))}
+          onPhoneChange={(value: string) => setLoginDraft((prev) => ({ ...prev, phone: value }))}
+          onPasswordChange={(value: string) => setLoginDraft((prev) => ({ ...prev, password: value }))}
           onSubmit={() => void login()}
         />
       </Suspense>
@@ -4228,29 +5071,33 @@ function App() {
   }
 
   return (
-    <main className="app-shell mx-auto w-full max-w-7xl px-4 pb-24 pt-8 md:px-6 lg:pb-8">
-      <header className="animate-fade-up mb-6 md:mb-8">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
+    <main
+      className="app-shell oneui-shell mx-auto w-full max-w-[1680px] px-3 pb-24 pt-3 md:px-5 lg:pb-8 lg:pt-5"
+      data-sidebar-collapsed={effectiveSidebarCollapsed ? "true" : "false"}
+    >
+      <header className="animate-fade-up mb-4 md:mb-6">
+        <div className="oneui-topbar flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="oneui-brand-lockup flex items-center gap-3">
             {settingsDraft.general.logoDataUrl ? (
-              <img src={resolveAssetUrl(settingsDraft.general.logoDataUrl)} alt="logo" className="h-10 w-10 rounded-xl border object-cover" />
+              <img src={resolveAssetUrl(settingsDraft.general.logoDataUrl)} alt="logo" className="oneui-brand-mark h-10 w-10 rounded-md object-cover" />
             ) : null}
-            <div>
-              <h1 className="text-3xl font-black md:text-4xl">مدیریت تسک روزانه</h1>
-              <p className="text-sm text-muted-foreground">{settingsDraft.general.organizationName}</p>
+            <div className="space-y-1">
+              <p className="oneui-brand-kicker text-[10px] font-semibold text-muted-foreground">Workspace</p>
+              <h1 className="oneui-page-title text-[1.35rem] font-semibold md:text-[1.65rem]">مدیریت تسک روزانه</h1>
+              <p className="oneui-brand-subtitle text-[11px] text-muted-foreground md:text-xs">{settingsDraft.general.organizationName}</p>
             </div>
           </div>
-          <div className="flex w-full items-center justify-end gap-2 md:w-auto">
-            <div className="relative w-40 sm:w-48">
-              <Search className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <div className="oneui-header-actions oneui-header-cluster flex w-full items-center justify-end gap-2 md:w-auto">
+            <div className="oneui-search-shell relative w-full max-w-[18rem] sm:w-72">
+              <Search className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
-                className="h-10 pr-7 text-xs"
-                placeholder="جستجو"
+                className="oneui-search-field h-11 rounded-md border-0 pr-9 text-xs shadow-none"
+                placeholder="جستجوی سریع"
                 value={globalSearchQuery}
                 onChange={(e) => setGlobalSearchQuery(e.target.value)}
               />
               {globalSearchQuery.trim() && (
-                <div className="absolute right-0 top-11 z-50 max-h-64 w-full overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg">
+                <div className="absolute right-0 top-11 z-50 max-h-64 w-full overflow-y-auto rounded-[1.15rem] border bg-popover p-1.5 shadow-lg">
                   {globalSearchResults.length === 0 ? (
                     <p className="px-2 py-2 text-[11px] text-muted-foreground">نتیجه‌ای نیست</p>
                   ) : (
@@ -4271,9 +5118,10 @@ function App() {
                 </div>
               )}
             </div>
+            <div className="oneui-header-panel flex items-center gap-1.5">
             <Popover open={notificationOpen} onOpenChange={setNotificationOpen}>
               <PopoverTrigger asChild>
-                <Button type="button" variant="outline" size="icon" className="action-icon-btn relative" title="اعلان‌ها">
+                <Button type="button" variant="outline" size="icon" className="action-icon-btn oneui-header-action relative h-11 w-11 rounded-full" title="اعلان‌ها">
                   <Bell className="click-icon h-4 w-4" />
                   {unreadNotificationCount > 0 && (
                     <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">
@@ -4282,65 +5130,216 @@ function App() {
                   )}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="end" className="w-[min(92vw,340px)] p-0">
-                <div className="border-b p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold">اعلان‌ها</p>
-                    <div className="flex items-center gap-2">
+              <PopoverContent
+                align="end"
+                sideOffset={10}
+                className={`overflow-hidden p-0 transition-all duration-300 ${effectiveSidebarCollapsed ? "w-[min(96vw,860px)] max-w-[860px]" : "w-[min(96vw,820px)] max-w-[820px]"}`}
+              >
+                <div className="border-b bg-muted/10 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold">اعلان‌ها</p>
+                      <p className="text-[11px] text-muted-foreground">اعلان‌ها، اقدام‌های فوری و دسترسی سریع</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 sm:max-w-[420px] sm:justify-end">
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))}
+                        className="h-8 px-3 text-[11px]"
+                        onClick={() => {
+                          setNotificationOpen(false);
+                          setActiveView("notifications");
+                        }}
+                      >
+                        مرکز اعلان
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" className="h-8 px-3 text-[11px]" onClick={() => setNotificationPrefsOpen(true)}>
+                        تنظیمات
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-3 text-[11px]"
+                        onClick={() => void markAllNotificationsRead()}
                       >
                         <CheckCheck className="ml-1 h-3.5 w-3.5" />
                         خواندن همه
                       </Button>
-                      <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setNotifications([])}>
-                        پاک‌سازی
+                      <Button type="button" size="sm" variant="ghost" className="h-8 px-3 text-[11px]" onClick={() => void dismissAllNotifications()}>
+                        بستن همه
                       </Button>
                     </div>
                   </div>
-                </div>
-                <div className="max-h-[360px] space-y-1 overflow-y-auto p-2">
-                  {unreadChatCount > 0 && (
-                    <button
-                      type="button"
-                      className="mb-1 w-full rounded-lg border border-primary/40 bg-primary/5 p-2 text-right hover:bg-primary/10"
-                      onClick={() => {
-                        setNotificationOpen(false);
-                        setActiveView("chat");
-                      }}
-                    >
-                      <p className="text-xs font-semibold">پیام خوانده‌نشده</p>
-                      <p className="text-[11px] text-muted-foreground">{toFaNum(String(unreadChatCount))} پیام جدید در گفتگوها</p>
-                    </button>
-                  )}
-                  {notifications.length === 0 && unreadChatCount === 0 ? (
-                    <p className="px-2 py-6 text-center text-xs text-muted-foreground">اعلان جدیدی وجود ندارد.</p>
-                  ) : (
-                    notifications.map((n) => (
-                      <button
-                        key={n.id}
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <div className="summary-motion-card rounded-xl bg-background/80 px-3 py-3 text-center">
+                      <p className="text-[10px] text-muted-foreground">خوانده‌نشده</p>
+                      <p className="mt-1 text-sm font-bold">{toFaNum(String(unreadNotificationCount))}</p>
+                    </div>
+                    <div className="summary-motion-card rounded-xl bg-background/80 px-3 py-3 text-center">
+                      <p className="text-[10px] text-muted-foreground">نیاز به تایید</p>
+                      <p className="mt-1 text-sm font-bold">{toFaNum(String(notificationSummaryByKind.approval))}</p>
+                    </div>
+                    <div className="summary-motion-card rounded-xl bg-background/80 px-3 py-3 text-center">
+                      <p className="text-[10px] text-muted-foreground">منشن</p>
+                      <p className="mt-1 text-sm font-bold">{toFaNum(String(notificationSummaryByKind.mention))}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {[
+                      ["all", "همه"],
+                      ["unread", "خوانده‌نشده"],
+                      ["task", "تسک"],
+                      ["approval", "تایید"],
+                      ["chat", "پیام"],
+                      ["mention", "منشن"],
+                      ["project", "پروژه"],
+                      ["system", "سیستمی"],
+                    ].map(([value, label]) => (
+                      <Button
+                        key={`notif-filter-${value}`}
                         type="button"
-                        className={`w-full rounded-lg border p-2 text-right hover:bg-muted/40 ${n.read ? "opacity-70" : "bg-primary/5"}`}
-                        onClick={() => setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)))}
+                        size="sm"
+                        variant={notificationFilter === value ? "default" : "outline"}
+                        className="h-8 rounded-full px-3 text-[11px]"
+                        onClick={() => setNotificationFilter(value as any)}
                       >
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <p className="truncate text-xs font-semibold">{n.title}</p>
-                          <span className="text-[10px] text-muted-foreground">{isoDateTimeToJalali(n.createdAt)}</span>
-                        </div>
-                        <p className="truncate text-[11px] text-muted-foreground">{n.description}</p>
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid max-h-[min(72vh,560px)] gap-4 overflow-y-auto p-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+                  <div className="space-y-3">
+                    {actionableNotificationItems.length > 0 && (
+                      <div className="rounded-xl bg-primary/5 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold">اقدام‌های فوری</p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-[10px]"
+                          onClick={() => {
+                            setNotificationOpen(false);
+                            setActiveView("notifications");
+                          }}
+                        >
+                          همه موارد
+                        </Button>
+                      </div>
+                        <div className="space-y-2">
+                        {actionableNotificationItems.slice(0, 3).map((n) => (
+                          <div key={`notif-action-${n.id}`} className="rounded-xl bg-background/90 p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="line-clamp-1 text-[11px] font-medium">{n.title}</p>
+                                <p className="line-clamp-2 text-[10px] leading-5 text-muted-foreground">{n.description}</p>
+                              </div>
+                              <Button type="button" size="sm" className="h-7 shrink-0 px-2 text-[10px]" onClick={() => void handleNotificationNavigate(n)}>
+                                اقدام
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      </div>
+                    )}
+                    {unreadChatCount > 0 && (
+                      <button
+                        type="button"
+                        className="w-full rounded-xl bg-primary/5 p-3 text-right transition hover:bg-primary/10"
+                        onClick={() => {
+                          setNotificationOpen(false);
+                          setActiveView("chat");
+                        }}
+                      >
+                        <p className="text-xs font-semibold">پیام خوانده‌نشده</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">{toFaNum(String(unreadChatCount))} پیام جدید در گفتگوها</p>
                       </button>
-                    ))
-                  )}
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {visibleNotificationItems.length === 0 && unreadChatCount === 0 ? (
+                      <p className="rounded-xl bg-muted/14 px-2 py-8 text-center text-xs text-muted-foreground">اعلان جدیدی وجود ندارد.</p>
+                    ) : (
+                    visibleNotificationItems.map((n) => (
+                      <div key={n.id} className={`notifications-feed-card ${n.kind === "approval" ? "notif-tone-approval" : n.kind === "mention" ? "notif-tone-mention" : n.kind === "chat" ? "notif-tone-chat" : n.kind === "project" ? "notif-tone-project" : n.kind === "task" ? "notif-tone-task" : "notif-tone-system"} rounded-xl border border-border/16 p-3 text-right ${n.read ? "opacity-80" : "bg-primary/5"}`}>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="line-clamp-1 text-xs font-semibold">{n.title}</p>
+                            <p className="line-clamp-2 text-[10px] leading-5 text-muted-foreground">{n.description}</p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {!n.read && <span className="h-2 w-2 rounded-full bg-primary" />}
+                            <span className="text-[10px] text-muted-foreground">{isoDateTimeToJalali(n.createdAt)}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <Badge variant="outline" className="text-[10px]">
+                            {n.kind === "approval" ? "تایید" : n.kind === "mention" ? "منشن" : n.kind === "chat" ? "پیام" : n.kind === "project" ? "پروژه" : n.kind === "task" ? "تسک" : "سیستمی"}
+                          </Badge>
+                          <div className="flex flex-wrap items-center justify-end gap-1">
+                            <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => void handleNotificationNavigate(n)}>
+                              {n.actionLabel || "مشاهده"}
+                            </Button>
+                            <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[11px] text-destructive" onClick={() => void dismissNotification(n.id)}>
+                              بستن
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )))}
+                  </div>
                 </div>
               </PopoverContent>
             </Popover>
+            <Dialog open={notificationPrefsOpen} onOpenChange={setNotificationPrefsOpen}>
+              <DialogContent aria-describedby={undefined} className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>ترجیحات اعلان</DialogTitle>
+                  <DialogDescription>مشخص کن چه اعلان‌هایی برای خودت فعال باشد.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  {[
+                    ["task", "اعلان تسک"],
+                    ["project", "اعلان پروژه"],
+                    ["chat", "اعلان پیام"],
+                    ["mention", "اعلان منشن"],
+                    ["approval", "اعلان تایید مرحله"],
+                    ["system", "اعلان سیستمی"],
+                  ].map(([key, label]) => (
+                    <label key={`notif-pref-${key}`} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm">
+                      <span>{label}</span>
+                      <Checkbox
+                        checked={notificationPreferences.channels[key as keyof NotificationPreferences["channels"]]}
+                        onCheckedChange={(checked) =>
+                          setNotificationPreferences((prev) => ({
+                            ...prev,
+                            channels: {
+                              ...prev.channels,
+                              [key]: checked === true,
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="secondary" onClick={() => setNotificationPrefsOpen(false)}>
+                    بستن
+                  </Button>
+                  <Button type="button" onClick={() => void saveNotificationPreferences()}>
+                    ذخیره
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
             <Popover>
               <PopoverTrigger asChild>
-                <Button type="button" variant="outline" size="icon" className="action-icon-btn h-10 w-10 p-0" title="پروفایل و وضعیت من">
+                <Button type="button" variant="outline" size="icon" className="action-icon-btn oneui-header-action h-11 w-11 rounded-full p-0" title="پروفایل و وضعیت من">
                   <span className="relative">
                     {currentMember?.avatarDataUrl ? (
                       <img src={resolveAssetUrl(currentMember.avatarDataUrl)} alt={currentMember.fullName} className="click-avatar h-8 w-8 rounded-full border object-cover" />
@@ -4363,23 +5362,41 @@ function App() {
                   </span>
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="end" className="w-44 p-2">
-                <div className="space-y-1">
-                  <Button type="button" variant={myPresenceStatus === "online" ? "default" : "ghost"} className="w-full justify-start text-sm" onClick={() => void updateMyPresenceStatus("online")}>
+              <PopoverContent align="end" className={`overflow-hidden p-0 transition-all duration-300 ${effectiveSidebarCollapsed ? "w-72" : "w-64"}`}>
+                <div className="border-b bg-muted/10 p-3">
+                  <div className="flex items-center gap-3">
+                    {currentMember?.avatarDataUrl ? (
+                      <img src={resolveAssetUrl(currentMember.avatarDataUrl)} alt={currentMember.fullName} className="h-11 w-11 rounded-xl object-cover" />
+                    ) : (
+                      <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-muted text-xs font-semibold">
+                        {memberInitials(currentMember?.fullName ?? "")}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{currentMember?.fullName || "کاربر"}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">{currentMember?.phone || "بدون شماره"}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-2 p-3">
+                  <div className="grid gap-2">
+                    <Button type="button" variant={myPresenceStatus === "online" ? "default" : "outline"} className="w-full justify-start rounded-xl text-sm" onClick={() => void updateMyPresenceStatus("online")}>
                     آنلاین
                   </Button>
-                  <Button type="button" variant={myPresenceStatus === "in_meeting" ? "default" : "ghost"} className="w-full justify-start text-sm" onClick={() => void updateMyPresenceStatus("in_meeting")}>
+                  <Button type="button" variant={myPresenceStatus === "in_meeting" ? "default" : "outline"} className="w-full justify-start rounded-xl text-sm" onClick={() => void updateMyPresenceStatus("in_meeting")}>
                     در جلسه
                   </Button>
-                  <Button type="button" variant="ghost" className="w-full justify-start text-sm" onClick={openProfilePanel}>
+                  </div>
+                  <Button type="button" variant="ghost" className="w-full justify-start rounded-xl text-sm" onClick={openProfilePanel}>
                     پروفایل
                   </Button>
                 </div>
               </PopoverContent>
             </Popover>
-            <Button type="button" variant="outline" size="icon" className="action-icon-btn group" onClick={logout} title="خروج">
+            <Button type="button" variant="outline" size="icon" className="action-icon-btn oneui-header-action group h-11 w-11 rounded-full" onClick={logout} title="خروج">
               <LogOut className="click-icon h-4 w-4 transition-transform duration-300 group-hover:-translate-x-0.5 group-hover:scale-110" />
             </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -4403,13 +5420,24 @@ function App() {
           className={`banner-card-wrap overflow-hidden transition-all duration-500 ${
             hiddenBanners[activeView]
               ? "pointer-events-none mb-0 max-h-0 -translate-y-1 opacity-0"
-              : "mb-6 max-h-[420px] translate-y-0 opacity-100"
+              : "mb-5 max-h-[220px] translate-y-0 opacity-100"
           }`}
+          data-sidebar-collapsed={effectiveSidebarCollapsed ? "true" : "false"}
           aria-hidden={hiddenBanners[activeView]}
         >
-          <Card className="visual-hero liquid-glass overflow-hidden">
-            <CardContent className="relative grid gap-4 p-4 md:grid-cols-[1fr_320px] md:items-center md:p-5">
-              <div className={`visual-hero-accent pointer-events-none absolute inset-0 bg-gradient-to-l ${activeViewVisual.accent}`} aria-hidden="true" />
+          <Card
+            ref={visualHeroRef}
+            className="visual-hero oneui-focus-block overflow-hidden"
+            data-view={activeView}
+            onPointerMove={handleHeroPointerMove}
+            onPointerLeave={resetHeroPointer}
+          >
+            <CardContent className="visual-hero-content relative grid gap-4 p-4 md:grid-cols-[1fr_240px] md:items-center md:p-5">
+              <div className={`visual-hero-accent absolute inset-0 bg-gradient-to-br ${activeViewVisual.accent}`} />
+              <div className="visual-hero-grid absolute inset-0" />
+              <div className="visual-hero-orb visual-hero-orb-a" />
+              <div className="visual-hero-orb visual-hero-orb-b" />
+              <div className="visual-hero-orb visual-hero-orb-c" />
               <Button
                 type="button"
                 size="icon"
@@ -4421,32 +5449,69 @@ function App() {
               >
                 <X className="h-4 w-4" />
               </Button>
-              <div className="relative z-[1] space-y-2">
-                <Badge variant="outline" className="bg-background/70 backdrop-blur-sm">
+              <div className="visual-hero-copy relative z-[1] space-y-2.5">
+                <Badge variant="outline" className="visual-hero-pill">
                   {activeViewTitle}
                 </Badge>
-                <h2 className="text-xl font-bold md:text-2xl">{activeViewVisual.subtitle}</h2>
-                <p className="max-w-xl text-sm text-muted-foreground">{activeViewVisual.guide}</p>
+                <h2 className="visual-hero-title text-[1.2rem] font-semibold md:text-[1.55rem] md:leading-[1.25]">{activeViewVisual.subtitle}</h2>
+                <p className="visual-hero-guide max-w-2xl text-[0.8rem] leading-6 text-muted-foreground md:text-[0.88rem]">{activeViewVisual.guide}</p>
+                <div className="visual-hero-pill-row">
+                  {activeViewVisual.tags.map((tag: string) => (
+                    <span key={`${activeView}-${tag}`} className="visual-hero-mini-pill">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
-              <div className="visual-hero-image-wrap relative z-[1] overflow-hidden rounded-2xl border border-border/70 bg-background/80 shadow-sm">
+              <div className="visual-hero-image-wrap relative z-[1] overflow-hidden rounded-xl bg-background/40">
+                <div className="visual-hero-image-halo" />
                 <img
                   key={`banner-${activeView}-${activeViewVisual.image}`}
                   src={`${activeViewVisual.image}?v=${activeView}`}
                   alt={activeViewTitle}
-                  className="h-40 w-full object-contain bg-muted/20 p-2 md:h-44 md:object-cover md:bg-transparent md:p-0"
+                  className="visual-hero-image h-24 w-full object-contain bg-transparent p-2 md:h-30 md:object-cover md:p-0"
                   loading="lazy"
                   decoding="async"
                 />
+                <div className="visual-hero-floating-card visual-hero-floating-card-a">
+                  <span className="visual-hero-floating-dot" />
+                  <span>{activeViewVisual.tags[0]}</span>
+                </div>
+                <div className="visual-hero-floating-card visual-hero-floating-card-b">
+                  <span className="visual-hero-floating-dot visual-hero-floating-dot-alt" />
+                  <span>{activeViewVisual.tags[1]}</span>
+                </div>
               </div>
             </CardContent>
           </Card>
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[280px_1fr] lg:gap-6">
-        <aside className="animate-fade-side liquid-glass hidden h-fit rounded-2xl p-2 lg:sticky lg:top-6 lg:block lg:p-3">
-          <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
-            {visibleNavItems.map((item) => {
+      <div className={`grid gap-4 lg:gap-5 ${effectiveSidebarCollapsed ? "lg:grid-cols-[88px_1fr]" : "lg:grid-cols-[244px_1fr]"}`}>
+        <aside
+          className={`animate-fade-side oneui-sidebar-shell hidden transition-all duration-300 lg:sticky lg:top-6 lg:block lg:h-[calc(100vh-2.5rem)] ${effectiveSidebarCollapsed ? "lg:p-0" : "lg:p-0"}`}
+        >
+          <div className="oneui-sidebar-rail flex h-full min-h-0 flex-col overflow-hidden rounded-xl">
+            <div className={`hidden items-center border-b border-border/40 px-2 pb-2 pt-2 lg:flex ${effectiveSidebarCollapsed ? "justify-center" : "justify-between"}`}>
+              {!effectiveSidebarCollapsed ? (
+                <div className="min-w-0 px-2">
+                  <p className="oneui-sidebar-title text-[11px] font-medium text-muted-foreground">منو</p>
+                </div>
+              ) : null}
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="oneui-header-action oneui-sidebar-toggle h-9 w-9 rounded-full"
+                onClick={() => setSidebarCollapsed((prev) => !prev)}
+                title={sidebarCollapsed ? "باز کردن سایدبار" : "جمع کردن سایدبار"}
+                aria-label={sidebarCollapsed ? "باز کردن سایدبار" : "جمع کردن سایدبار"}
+              >
+                <span className="text-lg leading-none">{sidebarCollapsed ? "»" : "«"}</span>
+              </Button>
+            </div>
+            <div className="oneui-sidebar-scroll flex min-h-0 flex-1 gap-1.5 overflow-x-auto overflow-y-hidden px-1 pb-1 pt-2 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:px-1.5 lg:pb-2">
+              {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const itemUnreadCount =
               item.key === "chat"
@@ -4463,44 +5528,38 @@ function App() {
                 data-active={activeView === item.key ? "true" : "false"}
                 aria-current={activeView === item.key ? "page" : undefined}
                 onClick={() => setActiveView(item.key as ViewKey)}
-                className={`menu-item-glass min-w-[140px] shrink-0 rounded-xl px-3 py-3 text-right lg:w-full lg:min-w-0 ${
-                  activeView === item.key ? "bg-primary text-primary-foreground" : ""
+                title={effectiveSidebarCollapsed ? item.title : undefined}
+                className={`menu-item-glass oneui-nav-item min-w-[132px] shrink-0 rounded-xl px-3 py-2.5 text-right transition-all duration-300 lg:min-w-0 ${
+                  effectiveSidebarCollapsed ? "lg:w-full lg:px-2 lg:py-2" : "lg:w-full lg:px-3 lg:py-2.5"
                 }`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Icon className="menu-item-icon h-4 w-4" />
-                    <span>{item.title}</span>
+                {effectiveSidebarCollapsed ? <span className="sidebar-nav-tooltip">{item.title}</span> : null}
+                <div className={`flex items-center gap-2 ${effectiveSidebarCollapsed ? "justify-center" : "justify-between"}`}>
+                  <div className={`flex items-center gap-2.5 ${effectiveSidebarCollapsed ? "justify-center" : ""}`}>
+                    <Icon className={`menu-item-icon ${effectiveSidebarCollapsed ? "h-5 w-5" : "h-4 w-4"}`} />
+                    {!effectiveSidebarCollapsed ? <span className="oneui-nav-label">{item.title}</span> : null}
                   </div>
-                  {itemUnreadCount > 0 && <Badge className="h-5 min-w-5 px-1 text-[10px]">{toFaNum(String(Math.min(99, itemUnreadCount)))}</Badge>}
+                  {itemUnreadCount > 0 ? (
+                    effectiveSidebarCollapsed ? (
+                      <span className="absolute left-2 top-2 inline-flex h-2.5 w-2.5 rounded-full bg-primary" aria-hidden="true" />
+                    ) : (
+                      <Badge className="h-5 min-w-5 px-1 text-[10px]">{toFaNum(String(Math.min(99, itemUnreadCount)))}</Badge>
+                    )
+                  ) : null}
                 </div>
               </button>
             );
           })}
+            </div>
           </div>
         </aside>
 
         <section className="relative min-w-0">
-          {viewSwitchLoading && (
-            <div className="pointer-events-none absolute inset-0 z-20 space-y-4 rounded-2xl bg-background/70 p-2 backdrop-blur-[1px]">
-              <div className="h-24 animate-pulse rounded-xl border bg-muted/40" />
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="h-28 animate-pulse rounded-xl border bg-muted/40" />
-                <div className="h-28 animate-pulse rounded-xl border bg-muted/40" />
-                <div className="h-28 animate-pulse rounded-xl border bg-muted/40" />
-              </div>
-              <div className="h-72 animate-pulse rounded-xl border bg-muted/40" />
-            </div>
-          )}
-          <div
-            className={`space-y-6 transition-all duration-300 ${
-              viewSwitchLoading ? "pointer-events-none translate-y-1 opacity-0" : "view-content-enter translate-y-0 opacity-100"
-            }`}
-          >
+          <div className="space-y-6 view-content-enter">
           <Suspense fallback={null}>
             <LazySmartRemindersCard
               reminders={smartReminders}
-              onView={(reminder) => {
+              onView={(reminder: { targetView: string; targetId?: string; taskId?: string }) => {
                 const targetView = reminder.targetView as ViewKey;
                 if (!canAccessView(targetView)) {
                   pushToast("دسترسی مشاهده این مورد را ندارید.", "error");
@@ -4530,10 +5589,18 @@ function App() {
                 setActiveView={setActiveView}
                 advanceTaskWorkflow={advanceTaskWorkflow}
                 decideTaskWorkflow={decideTaskWorkflow}
+                updateTaskStatus={updateTaskStatus}
                 isoToJalali={isoToJalali}
                 todayIso={todayIso}
                 isoDateTimeToJalali={isoDateTimeToJalali}
                 selectConversation={selectConversation}
+                openContextMenu={openContextMenu}
+                copyTextToClipboard={copyTextToClipboard}
+                setTaskSearch={setTaskSearch}
+                setProjectSearch={setProjectSearch}
+                notificationPreferences={notificationPreferences}
+                setNotificationPreferences={setNotificationPreferences}
+                saveNotificationPreferences={saveNotificationPreferences}
               />
             </Suspense>
           )}
@@ -4541,6 +5608,7 @@ function App() {
           {activeView === "dashboard" && (
             <Suspense fallback={<ViewSkeleton />}>
               <LazyDashboardView
+                shellSidebarCollapsed={effectiveSidebarCollapsed}
                 isTeamDashboard={isTeamDashboard}
                 dashboardRange={dashboardRange}
                 setDashboardRange={setDashboardRange}
@@ -4570,6 +5638,11 @@ function App() {
                 maxProjectCount={maxProjectCount}
                 weeklyTrend={weeklyTrend}
                 maxWeeklyCount={maxWeeklyCount}
+                commandCenter={commandCenter}
+                setActiveView={setActiveView}
+                onCommandCenterAction={handleCommandCenterAction}
+                onCommandCenterQuickAction={handleCommandCenterQuickAction}
+                authUserId={authUser?.id ?? ""}
               />
             </Suspense>
           )}
@@ -4577,6 +5650,7 @@ function App() {
           {activeView === "projects" && (
             <Suspense fallback={<ViewSkeleton />}>
               <LazyProjectsView
+                shellSidebarCollapsed={effectiveSidebarCollapsed}
                 projectOpen={projectOpen}
                 setProjectOpen={setProjectOpen}
                 projectDraft={projectDraft}
@@ -4661,6 +5735,7 @@ function App() {
           {activeView === "accounting" && (
             <Suspense fallback={<ViewSkeleton />}>
               <LazyAccountingView
+                shellSidebarCollapsed={effectiveSidebarCollapsed}
                 accountingStats={accountingStats}
                 formatMoney={formatMoney}
                 showBudgetSection={showBudgetSection}
@@ -4736,6 +5811,8 @@ function App() {
                 openEditTransaction={openEditTransaction}
                 copyTextToClipboard={copyTextToClipboard}
                 removeTransaction={removeTransaction}
+                approveTransactionsBulk={approveTransactionsBulk}
+                removeTransactionsBulk={removeTransactionsBulk}
                 accountNameById={accountNameById}
                 isValidTimeHHMM={isValidTimeHHMM}
                 transactionDetailOpen={transactionDetailOpen}
@@ -4757,8 +5834,9 @@ function App() {
 
           {activeView === "tasks" && (
             <Suspense fallback={<ViewSkeleton />}>
-            <LazyTasksView
-              toFaNum={toFaNum}
+              <LazyTasksView
+              shellSidebarCollapsed={effectiveSidebarCollapsed}
+                toFaNum={toFaNum}
               taskStats={taskStats}
               taskOpen={taskOpen}
               setTaskOpen={setTaskOpen}
@@ -4775,6 +5853,7 @@ function App() {
               taskStatusItems={TASK_STATUS_ITEMS}
               activeTeamMembers={activeTeamMembers}
               projects={projects}
+              allTasks={tasks}
               currentUserId={authUser?.id ?? ""}
               tab={tab}
               setTab={setTab}
@@ -4783,7 +5862,7 @@ function App() {
               taskProjectFilter={taskProjectFilter}
               setTaskProjectFilter={setTaskProjectFilter}
               taskStatusFilter={taskStatusFilter}
-              setTaskStatusFilter={(v) => setTaskStatusFilter(v as "all" | TaskStatus)}
+              setTaskStatusFilter={(v: string) => setTaskStatusFilter(v as "all" | TaskStatus)}
               filteredTasks={filteredTasks}
               tasksVirtual={tasksVirtual}
               visibleTaskRows={visibleTaskRows}
@@ -4795,6 +5874,7 @@ function App() {
               addTaskWorkflowComment={addTaskWorkflowComment}
               copyTextToClipboard={copyTextToClipboard}
               removeTask={removeTask}
+              quickRescheduleTask={quickRescheduleTask}
               taskIsDone={taskIsDone}
               normalizeTaskStatus={normalizeTaskStatus}
               taskStatusBadgeClass={taskStatusBadgeClass}
@@ -4802,6 +5882,7 @@ function App() {
               isoToJalali={isoToJalali}
               taskEditOpen={taskEditOpen}
               setTaskEditOpen={setTaskEditOpen}
+              editingTaskId={editingTaskId}
               setEditingTaskId={setEditingTaskId}
               taskEditDraft={taskEditDraft}
               setTaskEditDraft={setTaskEditDraft}
@@ -4815,6 +5896,7 @@ function App() {
           {activeView === "chat" && (
             <Suspense fallback={<ViewSkeleton />}>
               <LazyChatView
+                shellSidebarCollapsed={effectiveSidebarCollapsed}
                 chatDetailsOpen={chatDetailsOpen}
                 setChatDetailsOpen={setChatDetailsOpen}
                 selectedConversation={selectedConversation}
@@ -4836,11 +5918,15 @@ function App() {
                 setGroupOpen={setGroupOpen}
                 groupTitleDraft={groupTitleDraft}
                 setGroupTitleDraft={setGroupTitleDraft}
+                groupAvatarDraft={groupAvatarDraft}
+                setGroupAvatarDraft={setGroupAvatarDraft}
+                pickGroupAvatar={pickGroupAvatar}
                 activeTeamMembers={activeTeamMembers}
                 authUser={authUser}
                 groupMembersDraft={groupMembersDraft}
                 setGroupMembersDraft={setGroupMembersDraft}
                 createGroupConversation={createGroupConversation}
+                updateGroupConversation={updateGroupConversation}
                 chatBusy={chatBusy}
                 newChatOpen={newChatOpen}
                 setNewChatOpen={setNewChatOpen}
@@ -4874,6 +5960,7 @@ function App() {
                 chatLoadingMore={chatLoadingMore}
                 chatHasMore={chatHasMore}
                 chatTimeline={chatTimeline}
+                chatTimelineRows={chatTimelineRows}
                 chatVirtualWindow={chatVirtualWindow}
                 visibleChatTimelineRows={visibleChatTimelineRows}
                 registerChatRowHeight={registerChatRowHeight}
@@ -4921,6 +6008,35 @@ function App() {
                 CHAT_EMOJI_ITEMS={CHAT_EMOJI_ITEMS}
                 CHAT_STICKER_ITEMS={CHAT_STICKER_ITEMS}
                 chatDraftRef={chatDraftRef}
+                notificationPreferences={notificationPreferences}
+                setNotificationPreferences={setNotificationPreferences}
+                saveNotificationPreferences={saveNotificationPreferences}
+              />
+            </Suspense>
+          )}
+
+          {activeView === "notifications" && (
+            <Suspense fallback={<ViewSkeleton />}>
+              <LazyNotificationsView
+                shellSidebarCollapsed={effectiveSidebarCollapsed}
+                notifications={notifications}
+                unreadCount={unreadNotificationCount}
+                unseenCount={notifications.filter((row) => !row.dismissed && !row.seen).length}
+                refreshNotificationCenter={refreshNotificationCenter}
+                markNotificationRead={markNotificationRead}
+                markNotificationUnread={markNotificationUnread}
+                dismissNotification={dismissNotification}
+                restoreNotification={restoreNotification}
+                markAllNotificationsRead={markAllNotificationsRead}
+                dismissAllNotifications={dismissAllNotifications}
+                handleNotificationNavigate={handleNotificationNavigate}
+                notificationPreferences={notificationPreferences}
+                setNotificationPreferences={setNotificationPreferences}
+                saveNotificationPreferences={saveNotificationPreferences}
+                isoDateTimeToJalali={isoDateTimeToJalali}
+                toFaNum={toFaNum}
+                updateTaskStatus={updateTaskStatus}
+                decideTaskWorkflow={decideTaskWorkflow}
               />
             </Suspense>
           )}
@@ -4929,6 +6045,7 @@ function App() {
           {activeView === "calendar" && (
             <Suspense fallback={<ViewSkeleton />}>
               <LazyCalendarView
+                shellSidebarCollapsed={effectiveSidebarCollapsed}
                 goToPrevCalendarMonth={goToPrevCalendarMonth}
                 goToCurrentCalendarMonth={goToCurrentCalendarMonth}
                 goToNextCalendarMonth={goToNextCalendarMonth}
@@ -4950,22 +6067,22 @@ function App() {
 
           {activeView === "reports" && (
             <Suspense fallback={<ViewSkeleton />}>
-            <LazyReportsView
-              reportEntity={reportEntity}
+              <LazyReportsView
+                shellSidebarCollapsed={effectiveSidebarCollapsed}
+                reportEntity={reportEntity}
               reportQuery={reportQuery}
               reportColumnDefs={reportColumnDefs[reportEntity] ?? []}
               reportColumns={reportColumns}
               reportRowsCount={reportRows.length}
               reportPreviewRowsLength={reportPreviewRows.length}
               reportRowsLength={reportRows.length}
+              reportPreviewRows={reportPreviewRows}
               reportEnabledColumns={reportEnabledColumns}
-              visibleReportPreviewRows={visibleReportPreviewRows}
-              reportPreviewWindow={reportPreviewVirtual.windowState}
               reportPreviewRef={reportPreviewVirtual.ref}
               onReportPreviewScroll={reportPreviewVirtual.onScroll}
-              onReportEntityChange={(v) => setReportEntity(v as ReportEntity)}
+              onReportEntityChange={(v: string) => setReportEntity(v as ReportEntity)}
               onReportQueryChange={setReportQuery}
-              onToggleColumn={(key, enabled) => setReportColumns((prev) => ({ ...prev, [key]: enabled }))}
+              onToggleColumn={(key: string, enabled: boolean) => setReportColumns((prev) => ({ ...prev, [key]: enabled }))}
               onExportCsv={exportCustomReportCsv}
               toFaNum={toFaNum}
               fromDateField={<DatePickerField label="از تاریخ" valueIso={reportFrom} onChange={setReportFrom} clearable placeholder="بدون محدودیت" />}
@@ -4990,6 +6107,7 @@ function App() {
                 removeTransactionCategory={removeTransactionCategory}
                 PERMISSION_ITEMS={PERMISSION_ITEMS}
                 setTeamPermission={setTeamPermission}
+                setTeamPolicyScope={setTeamPolicyScope}
                 TASK_STATUS_ITEMS={TASK_STATUS_ITEMS}
                 setWorkflowTransition={setWorkflowTransition}
                 WEBHOOK_EVENT_ITEMS={WEBHOOK_EVENT_ITEMS}
@@ -5010,6 +6128,7 @@ function App() {
           {activeView === "team" && (
             <Suspense fallback={<ViewSkeleton />}>
             <LazyTeamHrView
+              shellSidebarCollapsed={effectiveSidebarCollapsed}
               memberOpen={memberOpen}
               setMemberOpen={setMemberOpen}
               memberDraft={memberDraft}
@@ -5019,6 +6138,7 @@ function App() {
               pickAvatarForDraft={pickAvatarForDraft}
               addMember={() => void addMember()}
               teams={activeTeams}
+              moduleAccessOptions={MODULE_ACCESS_OPTIONS}
               teamDraft={teamDraft}
               setTeamDraft={setTeamDraft}
               addTeamGroup={() => void addTeamGroup()}
@@ -5028,17 +6148,19 @@ function App() {
               teamMembers={teamMembers}
               filteredTeamMembers={filteredTeamMembers}
               teamMembersVirtual={teamMembersVirtual}
-              visibleTeamRows={visibleTeamRows}
               selectedMemberId={selectedMemberId}
               setSelectedMemberId={setSelectedMemberId}
               setMemberProfileOpen={setMemberProfileOpen}
               openContextMenu={openContextMenu}
               openEditMember={openEditMember}
+              openAccessEditor={openAccessEditor}
               copyTextToClipboard={copyTextToClipboard}
               removeMember={removeMember}
               roleLabel={roleLabel}
               toFaNum={toFaNum}
               hrSummary={hrSummary}
+              accessPresets={settingsDraft.team.accessPresets}
+              saveMemberAccessPreset={saveMemberAccessPreset}
               selectedMember={selectedMember}
               hrProfileDraft={hrProfileDraft}
               setHrProfileDraft={setHrProfileDraft}
@@ -5074,7 +6196,6 @@ function App() {
               saveHrAttendanceRecord={() => void saveHrAttendanceRecord()}
               hrAttendanceVirtual={hrAttendanceVirtual}
               visibleHrAttendanceRecords={visibleHrAttendanceRecords}
-              visibleHrAttendanceRows={visibleHrAttendanceRows}
               hrAttendanceBadgeClass={hrAttendanceBadgeClass}
               HR_ATTENDANCE_STATUS_ITEMS={HR_ATTENDANCE_STATUS_ITEMS}
               editHrAttendanceRecord={editHrAttendanceRecord}
@@ -5093,11 +6214,15 @@ function App() {
               normalizeTaskStatus={normalizeTaskStatus}
               memberEditOpen={memberEditOpen}
               setMemberEditOpen={setMemberEditOpen}
+              memberAccessOpen={memberAccessOpen}
+              setMemberAccessOpen={setMemberAccessOpen}
               setEditingMemberId={setEditingMemberId}
+              memberEditInitialStep={memberEditInitialStep}
               memberEditDraft={memberEditDraft}
               setMemberEditDraft={setMemberEditDraft}
               memberEditErrors={memberEditErrors}
               updateMember={() => void updateMember()}
+              updateMemberAccess={() => void updateMemberAccess()}
             />
             </Suspense>
           )}
@@ -5110,8 +6235,6 @@ function App() {
               auditBusy={auditBusy}
               auditSort={auditSort}
               sortedAuditLogs={sortedAuditLogs}
-              visibleSortedAuditLogs={visibleSortedAuditLogs}
-              auditVirtualWindow={auditVirtualWindow}
               auditScrollRef={auditScrollRef}
               onAuditQueryChange={setAuditQuery}
               onAuditEntityFilterChange={setAuditEntityFilter}

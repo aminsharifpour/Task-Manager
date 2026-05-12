@@ -1,9 +1,11 @@
+import { useEffect, useMemo, useState } from "react";
 import { FileText, Pencil, Trash2, UserSquare2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import TeamMemberAddDialog from "@/components/app/team-member-add-dialog";
+import { TablePagination } from "@/components/ui/table-pagination";
 
 type TeamMembersCardProps = {
   memberOpen: boolean;
@@ -24,15 +26,19 @@ type TeamMembersCardProps = {
   totalTeamMembers: number;
   filteredTeamMembers: any[];
   teamMembersVirtual: any;
-  visibleTeamRows: any[];
   selectedMemberId: string | null;
   setSelectedMemberId: (id: string) => void;
   setMemberProfileOpen: (open: boolean) => void;
   openContextMenu: (event: React.MouseEvent, title: string, items: any[]) => void;
   openEditMember: (member: any) => void;
+  openAccessEditor: (member: any) => void;
   copyTextToClipboard: (text: string, successMessage: string) => Promise<void>;
   removeMember: (id: string) => Promise<void>;
   roleLabel: (role: any) => string;
+  toFaNum: (value: string) => string;
+  moduleAccessOptions: Array<{ key: string; label: string }>;
+  accessPresets: Array<any>;
+  saveMemberAccessPreset: (payload: any) => Promise<void>;
 };
 
 export default function TeamMembersCard({
@@ -54,19 +60,76 @@ export default function TeamMembersCard({
   totalTeamMembers,
   filteredTeamMembers,
   teamMembersVirtual,
-  visibleTeamRows,
   selectedMemberId,
   setSelectedMemberId,
   setMemberProfileOpen,
   openContextMenu,
   openEditMember,
+  openAccessEditor,
   copyTextToClipboard,
   removeMember,
   roleLabel,
+  toFaNum,
+  moduleAccessOptions,
+  accessPresets,
+  saveMemberAccessPreset,
 }: TeamMembersCardProps) {
+  const [membersPage, setMembersPage] = useState(1);
+  const [membersPageSize, setMembersPageSize] = useState(20);
+  const paginatedMembers = useMemo(() => {
+    const start = (membersPage - 1) * membersPageSize;
+    return filteredTeamMembers.slice(start, start + membersPageSize);
+  }, [filteredTeamMembers, membersPage, membersPageSize]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(filteredTeamMembers.length / membersPageSize));
+    if (membersPage > totalPages) setMembersPage(totalPages);
+  }, [filteredTeamMembers.length, membersPage, membersPageSize]);
+
+  const summarizeModuleAccess = (
+    moduleAccess?: Record<string, boolean>,
+    permissionOverrides?: Record<string, boolean>,
+    policyOverrides?: Record<string, Record<string, string>>,
+  ) => {
+    const enabled = moduleAccessOptions.filter((item) => moduleAccess?.[item.key] !== false);
+    const disabled = moduleAccessOptions.filter((item) => moduleAccess?.[item.key] === false);
+    const hasCustomPermissions = Boolean(permissionOverrides && Object.keys(permissionOverrides).length > 0);
+    const hasCustomPolicies = Boolean(policyOverrides && Object.keys(policyOverrides).length > 0);
+
+    if (disabled.length === 0) {
+      return (
+        <div className="flex flex-wrap gap-1">
+          <Badge variant="secondary">کامل</Badge>
+          {hasCustomPermissions || hasCustomPolicies ? <Badge variant="outline">سفارشی</Badge> : null}
+        </div>
+      );
+    }
+
+    if (disabled.length <= 2) {
+      return (
+        <div className="flex flex-wrap gap-1">
+          {disabled.map((item) => (
+            <Badge key={item.key} variant="outline" className="text-[11px]">
+              بدون {item.label}
+            </Badge>
+          ))}
+          {hasCustomPermissions || hasCustomPolicies ? <Badge variant="outline">سفارشی</Badge> : null}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-foreground">فعال: {toFaNum(String(enabled.length))} ماژول</p>
+        <p className="text-[11px] text-muted-foreground">غیرفعال: {disabled.slice(0, 2).map((item) => item.label).join("، ")}{disabled.length > 2 ? " ..." : ""}</p>
+        {hasCustomPermissions || hasCustomPolicies ? <p className="text-[11px] text-primary">دسترسی سفارشی فعال است</p> : null}
+      </div>
+    );
+  };
+
   return (
     <section className="space-y-4">
-      <Card className="liquid-glass lift-on-hover">
+      <Card className="oneui-hr-shell liquid-glass">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>اعضای تیم</CardTitle>
@@ -82,10 +145,13 @@ export default function TeamMembersCard({
             pickAvatarForDraft={pickAvatarForDraft}
             addMember={addMember}
             teams={teams}
+            moduleAccessOptions={moduleAccessOptions}
+            accessPresets={accessPresets}
+            saveMemberAccessPreset={saveMemberAccessPreset}
           />
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="rounded-xl border p-3">
+          <div className="oneui-hr-panel rounded-[1.4rem] border p-3">
             <p className="mb-2 text-xs text-muted-foreground">مدیریت تیم‌ها</p>
             <div className="grid gap-2 md:grid-cols-[1fr_1.5fr_auto]">
               <Input
@@ -115,112 +181,121 @@ export default function TeamMembersCard({
               {totalTeamMembers > 0 ? "نتیجه‌ای برای جستجوی فعلی پیدا نشد." : "هنوز عضوی ثبت نشده است."}
             </div>
           ) : (
-            <div ref={teamMembersVirtual.ref} onScroll={teamMembersVirtual.onScroll} className="max-h-[68vh] overflow-auto rounded-xl border">
-              <table className="min-w-full text-sm">
-                <thead className="bg-muted/40 text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 text-right font-medium">نام</th>
-                    <th className="px-3 py-2 text-right font-medium">سمت</th>
-                    <th className="px-3 py-2 text-right font-medium">تیم‌ها</th>
-                    <th className="px-3 py-2 text-right font-medium">نقش</th>
-                    <th className="px-3 py-2 text-right font-medium">وضعیت</th>
-                    <th className="px-3 py-2 text-right font-medium">ایمیل</th>
-                    <th className="px-3 py-2 text-right font-medium">عملیات</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teamMembersVirtual.windowState.paddingTop > 0 && (
-                    <tr aria-hidden="true">
-                      <td colSpan={7} style={{ height: teamMembersVirtual.windowState.paddingTop }} />
+            <>
+              <div ref={teamMembersVirtual.ref} onScroll={teamMembersVirtual.onScroll} className="oneui-shared-table-shell max-h-[68vh] overflow-auto rounded-[1.5rem] border">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-muted/40 text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-right font-medium">نام</th>
+                      <th className="px-3 py-2 text-right font-medium">سمت</th>
+                      <th className="px-3 py-2 text-right font-medium">تیم‌ها</th>
+                      <th className="px-3 py-2 text-right font-medium">نقش</th>
+                      <th className="px-3 py-2 text-right font-medium">دسترسی</th>
+                      <th className="px-3 py-2 text-right font-medium">وضعیت</th>
+                      <th className="px-3 py-2 text-right font-medium">ایمیل</th>
+                      <th className="px-3 py-2 text-right font-medium">عملیات</th>
                     </tr>
-                  )}
-                  {visibleTeamRows.map((member) => (
-                    <tr
-                      key={member.id}
-                      className={`cursor-pointer border-t transition-colors hover:bg-muted/30 ${selectedMemberId === member.id ? "bg-primary/5" : ""}`}
-                      onClick={() => {
-                        setSelectedMemberId(member.id);
-                        setMemberProfileOpen(true);
-                      }}
-                      onContextMenu={(event) =>
-                        openContextMenu(event, `عضو: ${member.fullName}`, [
-                          {
-                            id: "member-open",
-                            label: "نمایش پروفایل",
-                            icon: UserSquare2,
-                            onSelect: () => {
-                              setSelectedMemberId(member.id);
-                              setMemberProfileOpen(true);
+                  </thead>
+                  <tbody>
+                    {paginatedMembers.map((member) => (
+                      <tr
+                        key={member.id}
+                        className={`cursor-pointer border-t transition-colors hover:bg-muted/30 ${selectedMemberId === member.id ? "bg-primary/5" : ""}`}
+                        onClick={() => {
+                          setSelectedMemberId(member.id);
+                          setMemberProfileOpen(true);
+                        }}
+                        onContextMenu={(event) =>
+                          openContextMenu(event, `عضو: ${member.fullName}`, [
+                            {
+                              id: "member-open",
+                              label: "نمایش پروفایل",
+                              icon: UserSquare2,
+                              onSelect: () => {
+                                setSelectedMemberId(member.id);
+                                setMemberProfileOpen(true);
+                              },
                             },
-                          },
-                          { id: "member-edit", label: "ویرایش عضو", icon: Pencil, onSelect: () => openEditMember(member) },
-                          {
-                            id: "member-copy-name",
-                            label: "کپی نام عضو",
-                            icon: FileText,
-                            onSelect: () => {
-                              void copyTextToClipboard(member.fullName, "نام عضو کپی شد.");
+                            { id: "member-edit", label: "ویرایش عضو", icon: Pencil, onSelect: () => openEditMember(member) },
+                            { id: "member-access", label: "مدیریت دسترسی", icon: UserSquare2, onSelect: () => openAccessEditor(member) },
+                            {
+                              id: "member-copy-name",
+                              label: "کپی نام عضو",
+                              icon: FileText,
+                              onSelect: () => {
+                                void copyTextToClipboard(member.fullName, "نام عضو کپی شد.");
+                              },
                             },
-                          },
-                          {
-                            id: "member-delete",
-                            label: "حذف عضو",
-                            icon: Trash2,
-                            tone: "danger",
-                            onSelect: () => {
-                              void removeMember(member.id);
+                            {
+                              id: "member-delete",
+                              label: "حذف عضو",
+                              icon: Trash2,
+                              tone: "danger",
+                              onSelect: () => {
+                                void removeMember(member.id);
+                              },
                             },
-                          },
-                        ])
-                      }
-                    >
-                      <td className="px-3 py-2 font-medium">{member.fullName}</td>
-                      <td className="px-3 py-2">{member.role || "بدون سمت"}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex flex-wrap gap-1">
-                          {(member.teamIds ?? []).length === 0 ? (
-                            <Badge variant="outline">بدون تیم</Badge>
-                          ) : (
-                            (member.teamIds ?? []).map((teamId: string) => {
-                              const team = teams.find((row) => row.id === teamId);
-                              return (
-                                <Badge key={`${member.id}-${teamId}`} variant="secondary">
-                                  {team?.name ?? "نامشخص"}
-                                </Badge>
-                              );
-                            })
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <Badge variant="outline">{roleLabel(member.appRole)}</Badge>
-                      </td>
-                      <td className="px-3 py-2">
-                        <Badge variant={member.isActive === false ? "secondary" : "default"}>
-                          {member.isActive === false ? "غیرفعال" : "فعال"}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2">{member.email || "بدون ایمیل"}</td>
-                      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1">
-                          <Button size="icon" variant="ghost" onClick={() => openEditMember(member)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="text-destructive" onClick={() => void removeMember(member.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {teamMembersVirtual.windowState.paddingBottom > 0 && (
-                    <tr aria-hidden="true">
-                      <td colSpan={7} style={{ height: teamMembersVirtual.windowState.paddingBottom }} />
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                          ])
+                        }
+                      >
+                        <td className="px-3 py-2 font-medium">{member.fullName}</td>
+                        <td className="px-3 py-2">{member.role || "بدون سمت"}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            {(member.teamIds ?? []).length === 0 ? (
+                              <Badge variant="outline">بدون تیم</Badge>
+                            ) : (
+                              (member.teamIds ?? []).map((teamId: string) => {
+                                const team = teams.find((row) => row.id === teamId);
+                                return (
+                                  <Badge key={`${member.id}-${teamId}`} variant="secondary">
+                                    {team?.name ?? "نامشخص"}
+                                  </Badge>
+                                );
+                              })
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge variant="outline">{roleLabel(member.appRole)}</Badge>
+                        </td>
+                        <td className="px-3 py-2">{summarizeModuleAccess(member.moduleAccess, member.permissionOverrides, member.policyOverrides)}</td>
+                        <td className="px-3 py-2">
+                          <Badge variant={member.isActive === false ? "secondary" : "default"}>
+                            {member.isActive === false ? "غیرفعال" : "فعال"}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2">{member.email || "بدون ایمیل"}</td>
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-1">
+                            <Button size="icon" variant="ghost" className="app-table-action" onClick={() => openEditMember(member)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="app-table-action" onClick={() => openAccessEditor(member)} title="مدیریت دسترسی">
+                              <UserSquare2 className="h-4 w-4" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="app-table-action text-destructive" onClick={() => void removeMember(member.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <TablePagination
+                page={membersPage}
+                pageSize={membersPageSize}
+                totalItems={filteredTeamMembers.length}
+                onPageChange={setMembersPage}
+                onPageSizeChange={(pageSize) => {
+                  setMembersPageSize(pageSize);
+                  setMembersPage(1);
+                }}
+                toFaNum={toFaNum}
+              />
+            </>
           )}
           {memberErrors.fullName && <p className="text-xs text-destructive">{memberErrors.fullName}</p>}
         </CardContent>

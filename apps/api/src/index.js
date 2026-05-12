@@ -1,5 +1,7 @@
+import "./load-env.js";
 import path from "node:path";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -17,6 +19,7 @@ import {
   createChatConversation,
   createChatMessage,
   createHrLeaveRequest,
+  createNotificationEntry,
   createProject,
   createTask,
   createTeam,
@@ -29,19 +32,30 @@ import {
   deleteTask,
   deleteTeam,
   deleteTeamMember,
+  dismissAllNotifications,
+  dismissNotificationForUser,
   findUserById,
   findUserByPhone,
   getAuditLogState,
   getAccountingState,
   getCoreState,
+  getNotificationPreferenceState,
   getSettingsState,
+  listNotificationsForUser,
+  markAllNotificationsRead,
+  markAllNotificationsSeen,
+  markNotificationReadForUser,
+  markNotificationUnreadForUser,
   saveSettingsState,
+  saveNotificationPreferenceState,
   setAccountingBudget,
   markConversationRead,
+  restoreNotificationForUser,
   upsertHrAttendanceRecord,
   upsertHrProfile,
   updateAccountingAccount,
   updateAccountingTransaction,
+  updateChatConversation,
   updateChatMessage,
   updateHrLeaveRequest,
   updateProject,
@@ -59,6 +73,7 @@ const API_ROOT = path.resolve(CURRENT_DIR, "..");
 const PROJECT_ROOT = path.resolve(API_ROOT, "..", "..");
 const LEGACY_SERVER_ROOT = path.resolve(PROJECT_ROOT, "server");
 const CLIENT_DIST = path.resolve(PROJECT_ROOT, "apps", "web", "dist");
+const LOGS_DIR = path.resolve(API_ROOT, "logs");
 const DEFAULT_UPLOADS_DIR = path.resolve(API_ROOT, "data", "uploads");
 const LEGACY_UPLOADS_DIR = path.resolve(LEGACY_SERVER_ROOT, "data", "uploads");
 const UPLOADS_DIR = DEFAULT_UPLOADS_DIR;
@@ -66,7 +81,12 @@ const JWT_SECRET = String(process.env.JWT_SECRET || "");
 const JWT_EXPIRES_IN = String(process.env.JWT_EXPIRES_IN || "12h");
 const CORS_ORIGIN = String(process.env.CORS_ORIGIN || "").trim();
 const SERVE_CLIENT = String(process.env.SERVE_CLIENT || "").trim().toLowerCase() === "true";
-const SERVER_LOG_LEVEL = String(process.env.SERVER_LOG_LEVEL || "info").trim().toLowerCase();
+const SERVER_LOG_LEVEL = String(process.env.SERVER_LOG_LEVEL || "warn").trim().toLowerCase();
+const HTTP_ACCESS_LOG_MODE = String(process.env.HTTP_ACCESS_LOG || "errors").trim().toLowerCase();
+const SERVER_LOG_DEDUPE_WINDOW_MS = Number(process.env.SERVER_LOG_DEDUPE_WINDOW_MS || 15_000);
+const SERVER_LOG_TO_FILE = String(process.env.SERVER_LOG_TO_FILE || "true").trim().toLowerCase() !== "false";
+const SERVER_LOG_FILE = path.resolve(LOGS_DIR, String(process.env.SERVER_LOG_FILE || "server.log").trim() || "server.log");
+const TRUST_PROXY = String(process.env.TRUST_PROXY || (process.env.NODE_ENV === "production" ? "1" : "0")).trim();
 const LOG_LEVEL_ORDER = { debug: 10, info: 20, warn: 30, error: 40 };
 const WEBHOOK_ALLOWED_EVENTS = [
   "task.created",
@@ -80,8 +100,21 @@ const WEBHOOK_ALLOWED_EVENTS = [
 ];
 const WEBHOOK_TIMEOUT_MS = 4_000;
 const shouldLogLevel = (level) => (LOG_LEVEL_ORDER[level] ?? 20) >= (LOG_LEVEL_ORDER[SERVER_LOG_LEVEL] ?? 20);
+const recentServerLogMap = new Map();
+let logDirectoryReady = false;
+const ensureLogDirectory = () => {
+  if (logDirectoryReady || !SERVER_LOG_TO_FILE) return;
+  fs.mkdirSync(LOGS_DIR, { recursive: true });
+  logDirectoryReady = true;
+};
+ensureLogDirectory();
 const logServer = (level, event, details = {}) => {
   if (!shouldLogLevel(level)) return;
+  const dedupeKey = `${level}:${event}:${JSON.stringify(details)}`;
+  const now = Date.now();
+  const lastAt = Number(recentServerLogMap.get(dedupeKey) ?? 0);
+  if (lastAt && now - lastAt < SERVER_LOG_DEDUPE_WINDOW_MS) return;
+  recentServerLogMap.set(dedupeKey, now);
   const payload = {
     ts: new Date().toISOString(),
     level,
@@ -89,6 +122,14 @@ const logServer = (level, event, details = {}) => {
     ...details,
   };
   const line = JSON.stringify(payload);
+  if (SERVER_LOG_TO_FILE) {
+    try {
+      ensureLogDirectory();
+      fs.appendFile(SERVER_LOG_FILE, `${line}\n`, () => {});
+    } catch {
+      // ignore file logging failures
+    }
+  }
   if (level === "error") {
     // eslint-disable-next-line no-console
     console.error(line);
@@ -103,6 +144,61 @@ const logServer = (level, event, details = {}) => {
   console.log(line);
 };
 
+const shouldLogHttpRequest = (statusCode) => {
+  if (HTTP_ACCESS_LOG_MODE === "off" || HTTP_ACCESS_LOG_MODE === "false" || HTTP_ACCESS_LOG_MODE === "0") {
+    return false;
+  }
+  if (HTTP_ACCESS_LOG_MODE === "all" || HTTP_ACCESS_LOG_MODE === "true" || HTTP_ACCESS_LOG_MODE === "1") {
+    return true;
+  }
+  return Number(statusCode) >= 400;
+};
+
+const normalizeTrustProxy = (value) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized || normalized === "0" || normalized === "false" || normalized === "off") return false;
+  if (normalized === "1" || normalized === "true" || normalized === "on") return true;
+  const numeric = Number(normalized);
+  if (Number.isFinite(numeric) && numeric >= 0) return numeric;
+  return normalized;
+};
+
+const ensureRuntimeDirectory = (dirPath) => {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const validateRuntimeReadiness = () => {
+  const checks = [];
+  const addCheck = (name, ok, details = "") => {
+    checks.push({ name, ok: Boolean(ok), details: String(details || "") });
+  };
+
+  addCheck("jwt_secret", Boolean(JWT_SECRET), JWT_SECRET ? "" : "JWT_SECRET is missing.");
+  addCheck("uploads_dir", ensureRuntimeDirectory(UPLOADS_DIR), UPLOADS_DIR);
+  addCheck(
+    "cors_origin",
+    process.env.NODE_ENV !== "production" || SERVE_CLIENT || Boolean(CORS_ORIGIN),
+    process.env.NODE_ENV === "production" && !SERVE_CLIENT && !CORS_ORIGIN
+      ? "CORS_ORIGIN must be set in production when SERVE_CLIENT=false."
+      : "",
+  );
+  addCheck(
+    "client_dist",
+    !SERVE_CLIENT || (fs.existsSync(CLIENT_DIST) && fs.existsSync(path.join(CLIENT_DIST, "index.html"))),
+    SERVE_CLIENT ? CLIENT_DIST : "",
+  );
+
+  return {
+    ok: checks.every((row) => row.ok),
+    checks,
+  };
+};
+
 if (!JWT_SECRET) {
   if (process.env.NODE_ENV === "production") {
     throw new Error("JWT_SECRET is required in production.");
@@ -111,6 +207,7 @@ if (!JWT_SECRET) {
   console.warn("[security] JWT_SECRET is not set. Using a development fallback secret.");
 }
 const ACTIVE_JWT_SECRET = JWT_SECRET || "dev-insecure-secret-change-me";
+const JWT_VERIFY_SECRETS = Array.from(new Set([ACTIVE_JWT_SECRET, "dev-insecure-secret-change-me"].filter(Boolean)));
 const chatTypingByConversation = new Map();
 const CHAT_TYPING_TTL_MS = 12_000;
 const CHAT_MESSAGE_MUTATION_WINDOW_MS = 6 * 60 * 60 * 1000;
@@ -123,6 +220,9 @@ const taskCreateIdempotencyMap = new Map();
 const TASK_CREATE_IDEMPOTENCY_TTL_MS = 2 * 60 * 1000;
 const PRESENCE_HEARTBEAT_TTL_MS = 70_000;
 
+app.disable("x-powered-by");
+app.set("trust proxy", normalizeTrustProxy(TRUST_PROXY));
+
 app.use(
   cors(
     CORS_ORIGIN
@@ -132,6 +232,17 @@ app.use(
       : undefined,
   ),
 );
+app.use((req, res, next) => {
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("x-frame-options", "DENY");
+  res.setHeader("referrer-policy", "strict-origin-when-cross-origin");
+  res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("cross-origin-opener-policy", "same-origin");
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader("content-security-policy", "frame-ancestors 'none'; base-uri 'self'");
+  }
+  next();
+});
 app.use(express.json({ limit: "5mb" }));
 app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "30d", fallthrough: true }));
 app.use((req, res, next) => {
@@ -140,6 +251,7 @@ app.use((req, res, next) => {
   req.requestId = requestId;
   res.setHeader("x-request-id", requestId);
   res.on("finish", () => {
+    if (!shouldLogHttpRequest(res.statusCode)) return;
     const durationMs = Date.now() - start;
     const level = res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info";
     logServer(level, "http.request", {
@@ -596,6 +708,7 @@ const normalizeChatConversations = (value) => {
       id: String(c.id ?? "").trim() || crypto.randomUUID(),
       type: c.type === "group" ? "group" : "direct",
       title: String(c.title ?? "").trim(),
+      avatarDataUrl: String(c.avatarDataUrl ?? "").trim(),
       participantIds: normalizeIdArray(c.participantIds ?? []),
       createdById: String(c.createdById ?? "").trim(),
       createdAt: String(c.createdAt ?? new Date().toISOString()),
@@ -638,17 +751,20 @@ const parseBearerToken = (headerValue) => {
 const resolveAuthUserFromToken = async (token) => {
   const safeToken = String(token ?? "").trim();
   if (!safeToken) return null;
-  try {
-    const decoded = jwt.verify(safeToken, ACTIVE_JWT_SECRET);
-    const userId = String(decoded?.sub ?? "").trim();
-    const role = normalizeAppRole(decoded?.role);
-    if (!userId) return null;
-    const user = await findUserById(userId);
-    if (!user || user.isActive === false) return null;
-    return { userId, role, user };
-  } catch {
-    return null;
+  for (const secret of JWT_VERIFY_SECRETS) {
+    try {
+      const decoded = jwt.verify(safeToken, secret);
+      const userId = String(decoded?.sub ?? "").trim();
+      const role = normalizeAppRole(decoded?.role);
+      if (!userId) return null;
+      const user = await findUserById(userId);
+      if (!user || user.isActive === false) return null;
+      return { userId, role, user };
+    } catch {
+      // try next known secret
+    }
   }
+  return null;
 };
 const getSocketTypingRowsForConversation = (conversationId, currentUserId = "") => {
   const room = chatTypingByConversation.get(conversationId);
@@ -850,6 +966,24 @@ const normalizeSettingsPayload = (value) => {
         manager: normalizePermissionRole(incoming.team?.permissions?.manager, defaults.team.permissions.manager),
         member: normalizePermissionRole(incoming.team?.permissions?.member, defaults.team.permissions.member),
       },
+      policyMatrix: {
+        admin: defaults.team.policyMatrix.admin,
+        manager: defaults.team.policyMatrix.manager,
+        member: defaults.team.policyMatrix.member,
+      },
+      accessPresets: Array.isArray(incoming.team?.accessPresets)
+        ? incoming.team.accessPresets
+            .filter((row) => row && typeof row === "object")
+            .map((row) => ({
+              id: String(row.id ?? crypto.randomUUID()),
+              name: String(row.name ?? "").trim(),
+              moduleAccess: normalizeModuleAccess(row.moduleAccess) ?? {},
+              permissionOverrides: normalizeMemberPermissionOverrides(row.permissionOverrides) ?? {},
+              policyOverrides: normalizeMemberPolicyOverrides(row.policyOverrides) ?? {},
+            }))
+            .filter((row) => row.name)
+            .slice(0, 50)
+        : defaults.team.accessPresets ?? [],
     },
     workflow: {
       requireBlockedReason: bool(incoming.workflow?.requireBlockedReason, defaults.workflow.requireBlockedReason),
@@ -874,9 +1008,71 @@ const normalizeSettingsPayload = (value) => {
     },
   };
 };
+const MODULE_ACCESS_VIEW_KEYS = ["tasks", "projects", "minutes", "accounting", "calendar", "chat", "notifications", "team", "audit", "reports"];
+const MEMBER_PERMISSION_ACTIONS = ["projectCreate", "projectUpdate", "projectDelete", "taskCreate", "taskUpdate", "taskDelete", "taskChangeStatus", "teamCreate", "teamUpdate", "teamDelete"];
+const MEMBER_POLICY_ENTITIES = ["project", "task", "teamMember"];
+const MEMBER_POLICY_OPERATIONS = ["view", "create", "update", "delete", "approve"];
+const MEMBER_POLICY_SCOPES = ["none", "self", "owner", "assigned", "project", "team", "all"];
+const normalizeModuleAccess = (value) => {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value;
+  const hasExplicitKey = MODULE_ACCESS_VIEW_KEYS.some((key) => typeof source[key] === "boolean");
+  if (!hasExplicitKey) return undefined;
+  return Object.fromEntries(
+    MODULE_ACCESS_VIEW_KEYS.map((key) => [key, source[key] !== false]),
+  );
+};
+const moduleAccessDefaultsForRole = (role) => {
+  const safeRole = normalizeAppRole(role);
+  return {
+    tasks: true,
+    projects: true,
+    minutes: true,
+    accounting: true,
+    calendar: true,
+    chat: true,
+    notifications: true,
+    team: safeRole !== "member",
+    audit: safeRole !== "member",
+    reports: true,
+  };
+};
+const resolveMemberModuleAccess = (member, role) => normalizeModuleAccess(member?.moduleAccess) ?? moduleAccessDefaultsForRole(role ?? member?.appRole);
+const normalizeMemberPermissionOverrides = (value) => {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value;
+  const hasExplicitKey = MEMBER_PERMISSION_ACTIONS.some((key) => typeof source[key] === "boolean");
+  if (!hasExplicitKey) return undefined;
+  return Object.fromEntries(MEMBER_PERMISSION_ACTIONS.map((key) => [key, source[key] === true]));
+};
+const normalizeMemberPolicyOverrides = (value) => {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value;
+  const hasExplicitKey = MEMBER_POLICY_ENTITIES.some((entity) =>
+    MEMBER_POLICY_OPERATIONS.some((operation) => MEMBER_POLICY_SCOPES.includes(String(source?.[entity]?.[operation] ?? "").trim())),
+  );
+  if (!hasExplicitKey) return undefined;
+  return Object.fromEntries(
+    MEMBER_POLICY_ENTITIES.map((entity) => [
+      entity,
+      Object.fromEntries(
+        MEMBER_POLICY_OPERATIONS.map((operation) => {
+          const next = String(source?.[entity]?.[operation] ?? "none").trim();
+          return [operation, MEMBER_POLICY_SCOPES.includes(next) ? next : "none"];
+        }),
+      ),
+    ]),
+  );
+};
 const sanitizeMember = (m) => {
   const { passwordHash, ...safe } = m;
-  return { ...safe, teamIds: normalizeIdArray(safe.teamIds ?? []) };
+  return {
+    ...safe,
+    teamIds: normalizeIdArray(safe.teamIds ?? []),
+    moduleAccess: normalizeModuleAccess(safe.moduleAccess),
+    permissionOverrides: normalizeMemberPermissionOverrides(safe.permissionOverrides),
+    policyOverrides: normalizeMemberPolicyOverrides(safe.policyOverrides),
+  };
 };
 const signToken = (user) =>
   jwt.sign(
@@ -888,6 +1084,19 @@ const signToken = (user) =>
     ACTIVE_JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN },
   );
+const ensureModuleAccess = (req, res, db, viewKey) => {
+  if (!MODULE_ACCESS_VIEW_KEYS.includes(String(viewKey ?? "").trim())) return true;
+  const safeUserId = String(req?.auth?.userId ?? "").trim();
+  const safeRole = normalizeAppRole(req?.auth?.role);
+  const members = Array.isArray(db?.teamMembers) ? db.teamMembers : [];
+  const member = members.find((row) => String(row?.id ?? "").trim() === safeUserId);
+  const moduleAccess = resolveMemberModuleAccess(member, safeRole);
+  if (moduleAccess?.[viewKey] === false) {
+    res.status(403).json({ message: "Module access denied." });
+    return false;
+  }
+  return true;
+};
 const requireAuth = async (req, res, next) => {
   const token = parseBearerToken(req.headers.authorization);
   if (!token) {
@@ -913,12 +1122,82 @@ const requireSelfOrRole = (...roles) => (req, res, next) => {
   if (roles.includes(req.auth.role)) return next();
   return res.status(403).json({ message: "Forbidden." });
 };
-const canRoleDoAction = (settings, role, action) => {
+const canRoleDoAction = (settings, role, action, db = null, userId = "") => {
   const safeRole = normalizeAppRole(role);
+  const member = Array.isArray(db?.teamMembers)
+    ? db.teamMembers.find((row) => String(row?.id ?? "").trim() === String(userId ?? "").trim())
+    : null;
+  const memberPermissionOverrides = normalizeMemberPermissionOverrides(member?.permissionOverrides);
+  if (memberPermissionOverrides && Object.prototype.hasOwnProperty.call(memberPermissionOverrides, action)) {
+    return Boolean(memberPermissionOverrides[action]);
+  }
   if (safeRole === "admin") return true;
   const matrix = settings?.team?.permissions ?? {};
   const roleMap = matrix[safeRole] ?? {};
   return Boolean(roleMap[action]);
+};
+const getPolicyScope = (settings, role, entity, operation, db = null, userId = "") => {
+  const safeRole = normalizeAppRole(role);
+  const member = Array.isArray(db?.teamMembers)
+    ? db.teamMembers.find((row) => String(row?.id ?? "").trim() === String(userId ?? "").trim())
+    : null;
+  const memberPolicyOverrides = normalizeMemberPolicyOverrides(member?.policyOverrides);
+  const memberScope = String(memberPolicyOverrides?.[entity]?.[operation] ?? "").trim();
+  if (MEMBER_POLICY_SCOPES.includes(memberScope)) return memberScope;
+  if (safeRole === "admin") return "all";
+  return String(settings?.team?.policyMatrix?.[safeRole]?.[entity]?.[operation] ?? "none").trim();
+};
+const taskAssignedToUser = (task, userId) => {
+  const safeUserId = String(userId ?? "").trim();
+  if (!safeUserId) return false;
+  return (
+    String(task?.assigneePrimaryId ?? "").trim() === safeUserId ||
+    String(task?.assigneeSecondaryId ?? "").trim() === safeUserId ||
+    normalizeIdArray(task?.workflowPendingAssigneeIds ?? []).includes(safeUserId)
+  );
+};
+const canRoleAccessEntity = ({ db, role, userId, entity, operation, project = null, task = null, targetMemberId = "" }) => {
+  const safeRole = normalizeAppRole(role);
+  if (safeRole === "admin") return true;
+  const scope = getPolicyScope(db?.settings ?? getDefaultSettings(), safeRole, entity, operation, db, userId);
+  if (scope === "none") return false;
+  if (scope === "all") return true;
+  const safeUserId = String(userId ?? "").trim();
+  const memberScope = memberScopeForUser(db, safeUserId, safeRole);
+  if (entity === "teamMember") {
+    const memberId = String(targetMemberId ?? "").trim();
+    if (!memberId) return operation === "create" && scope !== "none";
+    if (scope === "self") return memberId === safeUserId;
+    if (scope === "team") return memberScope.has(memberId);
+    return false;
+  }
+  if (entity === "project") {
+    if (operation === "create" && !project) return scope !== "none";
+    if (!project) return false;
+    if (scope === "owner") return String(project?.ownerId ?? "").trim() === safeUserId;
+    if (scope === "project") return canAccessProject(project, safeUserId, safeRole);
+    if (scope === "team") {
+      const projectMemberIds = [String(project?.ownerId ?? "").trim(), ...normalizeIdArray(project?.memberIds ?? [])].filter(Boolean);
+      return projectMemberIds.every((id) => memberScope.has(id));
+    }
+    return false;
+  }
+  if (entity === "task") {
+    if (operation === "create" && !task) return scope !== "none";
+    if (!task) return false;
+    const taskProject =
+      project ??
+      (Array.isArray(db?.projects) ? db.projects.find((row) => String(row?.name ?? "").trim() === String(task?.projectName ?? "").trim()) : null);
+    if (scope === "owner") return String(task?.assignerId ?? "").trim() === safeUserId;
+    if (scope === "assigned" || scope === "self") return taskAssignedToUser(task, safeUserId);
+    if (scope === "project") return canAccessProject(taskProject, safeUserId, safeRole);
+    if (scope === "team") {
+      const ids = [String(task?.assignerId ?? "").trim(), String(task?.assigneePrimaryId ?? "").trim(), String(task?.assigneeSecondaryId ?? "").trim()].filter(Boolean);
+      return ids.every((id) => memberScope.has(id)) || canAccessProject(taskProject, safeUserId, safeRole);
+    }
+    return false;
+  }
+  return true;
 };
 const ensurePermission = (req, res, db, action, options = {}) => {
   if (!req.auth) {
@@ -927,10 +1206,36 @@ const ensurePermission = (req, res, db, action, options = {}) => {
   }
   const selfId = String(options.selfId ?? "").trim();
   if (options.allowSelf && selfId && req.auth.userId === selfId) return true;
-  const allowed = canRoleDoAction(db?.settings ?? getDefaultSettings(), req.auth.role, action);
+  const allowed = canRoleDoAction(db?.settings ?? getDefaultSettings(), req.auth.role, action, db, req.auth.userId);
   if (!allowed) {
     res.status(403).json({ message: "You do not have permission for this action." });
     return false;
+  }
+  const entity = options.entity ?? (action.startsWith("project") ? "project" : action.startsWith("task") ? "task" : action.startsWith("team") ? "teamMember" : "");
+  const operation =
+    options.operation ??
+    (action === "projectCreate" || action === "taskCreate" || action === "teamCreate"
+      ? "create"
+      : action === "projectDelete" || action === "taskDelete" || action === "teamDelete"
+        ? "delete"
+        : action === "taskChangeStatus"
+          ? "approve"
+          : "update");
+  if (entity) {
+    const scopeAllowed = canRoleAccessEntity({
+      db,
+      role: req.auth.role,
+      userId: req.auth.userId,
+      entity,
+      operation,
+      project: options.project ?? null,
+      task: options.task ?? null,
+      targetMemberId: options.targetMemberId ?? options.selfId ?? "",
+    });
+    if (!scopeAllowed) {
+      res.status(403).json({ message: "You do not have policy access for this action." });
+      return false;
+    }
   }
   return true;
 };
@@ -991,12 +1296,28 @@ const emitTypingUpdate = (conversationId) => {
     users: getSocketTypingRowsForConversation(conversationId),
   });
 };
-const emitNewMessageToParticipants = (conversation, message) => {
+const emitNewMessageToParticipants = async (db, conversation, message) => {
   for (const participantId of conversation.participantIds) {
+    if (participantId !== String(message?.senderId ?? "").trim()) {
+      const isMention = normalizeIdArray(message?.mentionMemberIds ?? []).includes(String(participantId ?? "").trim());
+      await createServerNotification(db, {
+        userId: participantId,
+        kind: isMention ? "mention" : "chat",
+        category: isMention ? "chat.mention" : "chat.message",
+        title: isMention ? `منشن جدید از ${String(message?.senderName ?? "").trim()}` : `پیام جدید از ${String(message?.senderName ?? "").trim()}`,
+        description: String(message?.text ?? "").trim() || (Array.isArray(message?.attachments) && message.attachments.length > 0 ? "فایل/voice" : "پیام جدید"),
+        targetView: "chat",
+        entityType: "chat-message",
+        entityId: String(message?.id ?? "").trim(),
+        conversationId: String(conversation?.id ?? "").trim(),
+        actionLabel: "مشاهده گفتگو",
+        dedupeKey: `${isMention ? "mention" : "chat"}:${String(message?.id ?? "").trim()}:${participantId}`,
+      });
+    }
     io.to(`user:${participantId}`).emit("chat:message:new", message);
   }
 };
-const emitTaskAssignedToUsers = (task, assignerId = "") => {
+const emitTaskAssignedToUsers = async (db, task, assignerId = "") => {
   const recipients = Array.from(
     new Set([
       String(task?.assigneePrimaryId ?? "").trim(),
@@ -1004,11 +1325,174 @@ const emitTaskAssignedToUsers = (task, assignerId = "") => {
     ].filter(Boolean)),
   ).filter((userId) => userId !== String(assignerId ?? "").trim());
   for (const userId of recipients) {
+    await createServerNotification(db, {
+      userId,
+      kind: "task",
+      category: "task.assigned",
+      title: `تسک جدید: ${String(task?.title ?? "").trim() || "بدون عنوان"}`,
+      description: "یک تسک به شما ارجاع شده است.",
+      targetView: "tasks",
+      entityType: "task",
+      entityId: String(task?.id ?? "").trim(),
+      taskId: String(task?.id ?? "").trim(),
+      actionLabel: "مشاهده تسک",
+      dedupeKey: `task-assigned:${String(task?.id ?? "").trim()}:${userId}`,
+    });
     io.to(`user:${userId}`).emit("task:assigned", {
       task,
       createdAt: new Date().toISOString(),
     });
   }
+};
+const normalizeNotificationKind = (value) => {
+  const text = String(value ?? "").trim();
+  return ["task", "project", "chat", "mention", "approval", "system"].includes(text) ? text : "system";
+};
+const defaultNotificationPreference = (userId = "") => ({
+  userId: String(userId ?? "").trim(),
+  channels: {
+    task: true,
+    project: true,
+    chat: true,
+    mention: true,
+    approval: true,
+    system: true,
+  },
+  delivery: {
+    task: { center: true, toast: true, sound: false },
+    project: { center: true, toast: true, sound: false },
+    chat: { center: true, toast: true, sound: true },
+    mention: { center: true, toast: true, sound: true },
+    approval: { center: true, toast: true, sound: false },
+    system: { center: true, toast: true, sound: false },
+  },
+  mutedKinds: [],
+  mutedCategories: [],
+  updatedAt: new Date().toISOString(),
+});
+const normalizeNotificationPreference = (preference, userId = "") => {
+  const base = defaultNotificationPreference(userId);
+  const delivery = preference?.delivery && typeof preference.delivery === "object" ? preference.delivery : {};
+  return {
+    ...base,
+    ...preference,
+    userId: String(preference?.userId ?? userId ?? "").trim(),
+    channels: {
+      ...base.channels,
+      ...(preference?.channels ?? {}),
+    },
+    delivery: Object.fromEntries(
+      Object.keys(base.delivery).map((kind) => [
+        kind,
+        {
+          ...base.delivery[kind],
+          ...((delivery && typeof delivery[kind] === "object" ? delivery[kind] : {}) ?? {}),
+        },
+      ]),
+    ),
+    mutedKinds: Array.isArray(preference?.mutedKinds)
+      ? Array.from(new Set(preference.mutedKinds.map((item) => String(item ?? "").trim()).filter(Boolean))).slice(0, 20)
+      : [],
+    mutedCategories: Array.isArray(preference?.mutedCategories)
+      ? Array.from(new Set(preference.mutedCategories.map((item) => String(item ?? "").trim()).filter(Boolean))).slice(0, 40)
+      : [],
+    updatedAt: String(preference?.updatedAt ?? "").trim() || new Date().toISOString(),
+  };
+};
+const getNotificationPreference = async (db, userId) => {
+  const safeUserId = String(userId ?? "").trim();
+  const fromRepo = await getNotificationPreferenceState(safeUserId);
+  const normalized = normalizeNotificationPreference(fromRepo, safeUserId);
+  if (db && Array.isArray(db.notificationPreferences)) {
+    const index = db.notificationPreferences.findIndex((row) => String(row?.userId ?? "").trim() === safeUserId);
+    if (index === -1) db.notificationPreferences = [normalized, ...db.notificationPreferences];
+    else db.notificationPreferences[index] = normalized;
+  }
+  return normalized;
+};
+const upsertNotificationPreference = async (db, preference) => {
+  const normalized = normalizeNotificationPreference(preference, preference?.userId);
+  const saved = normalizeNotificationPreference(await saveNotificationPreferenceState(normalized), normalized.userId);
+  if (db && Array.isArray(db.notificationPreferences)) {
+    const index = db.notificationPreferences.findIndex((row) => String(row?.userId ?? "").trim() === saved.userId);
+    if (index === -1) db.notificationPreferences = [saved, ...db.notificationPreferences];
+    else db.notificationPreferences[index] = saved;
+  }
+  return saved;
+};
+const shouldDeliverNotification = async (db, userId, kind, category = "") => {
+  const preference = await getNotificationPreference(db, userId);
+  const normalizedKind = normalizeNotificationKind(kind);
+  if (preference.mutedKinds.includes(normalizedKind)) return false;
+  if (category && preference.mutedCategories.includes(String(category ?? "").trim())) return false;
+  return preference.delivery?.[normalizedKind]?.center !== false && preference.channels?.[normalizedKind] !== false;
+};
+const createServerNotification = async (db, payload) => {
+  const userId = String(payload?.userId ?? "").trim();
+  if (!userId) return null;
+  const kind = normalizeNotificationKind(payload?.kind);
+  const category = String(payload?.category ?? kind).trim().slice(0, 60);
+  if (!(await shouldDeliverNotification(db, userId, kind, category))) return null;
+  const notification = await createNotificationEntry({
+    id: crypto.randomUUID(),
+    userId,
+    kind,
+    category,
+    title: String(payload?.title ?? "").trim().slice(0, 200),
+    description: String(payload?.description ?? "").trim().slice(0, 1200),
+    createdAt: new Date().toISOString(),
+    seenAt: "",
+    readAt: "",
+    dismissedAt: "",
+    targetView: String(payload?.targetView ?? "").trim().slice(0, 40),
+    entityType: String(payload?.entityType ?? "").trim().slice(0, 60),
+    entityId: String(payload?.entityId ?? "").trim().slice(0, 120),
+    conversationId: String(payload?.conversationId ?? "").trim(),
+    taskId: String(payload?.taskId ?? "").trim(),
+    projectId: String(payload?.projectId ?? "").trim(),
+    actionLabel: String(payload?.actionLabel ?? "مشاهده").trim().slice(0, 80),
+    dedupeKey: String(payload?.dedupeKey ?? "").trim(),
+    meta: payload?.meta && typeof payload.meta === "object" ? payload.meta : {},
+  });
+  if (db && notification) {
+    const rows = Array.isArray(db.notifications) ? db.notifications : [];
+    db.notifications = [notification, ...rows.filter((row) => String(row?.id ?? "").trim() !== String(notification.id ?? "").trim())].slice(0, 12000);
+  }
+  io.to(`user:${userId}`).emit("notification:new", notification);
+  return notification;
+};
+const createTaskWorkflowNotifications = async (db, task, project, actorUserId = "") => {
+  const pendingIds = normalizeIdArray(task?.workflowPendingAssigneeIds ?? []);
+  const currentIndex = Number.isFinite(Number(task?.workflowCurrentStep)) ? Number(task.workflowCurrentStep) : -1;
+  const steps = normalizeWorkflowSteps(task?.workflowSteps ?? []);
+  const currentStep = currentIndex >= 0 ? steps[currentIndex] : null;
+  const requiresApproval = Boolean(currentStep?.requiresApproval);
+  for (const userId of pendingIds) {
+    if (userId === String(actorUserId ?? "").trim()) continue;
+    await createServerNotification(db, {
+      userId,
+      kind: requiresApproval ? "approval" : "task",
+      category: requiresApproval ? "workflow.approval" : "workflow.pending",
+      title: requiresApproval ? `نیاز به تایید: ${String(task?.title ?? "").trim()}` : `اقدام روی تسک: ${String(task?.title ?? "").trim()}`,
+      description: requiresApproval
+        ? `مرحله "${String(currentStep?.title ?? "نامشخص")}" منتظر تایید شماست.`
+        : `مرحله "${String(currentStep?.title ?? "نامشخص")}" منتظر اقدام شماست.`,
+      targetView: "inbox",
+      entityType: "task",
+      entityId: String(task?.id ?? "").trim(),
+      taskId: String(task?.id ?? "").trim(),
+      projectId: String(project?.id ?? "").trim(),
+      actionLabel: requiresApproval ? "بررسی" : "اقدام",
+      dedupeKey: `workflow:${String(task?.id ?? "").trim()}:${currentIndex}:${userId}:${requiresApproval ? "approval" : "pending"}`,
+    });
+  }
+};
+const persistNotificationState = (db) => {
+  if (isPostgresMode) return;
+  const store = readStore();
+  store.notifications = Array.isArray(db?.notifications) ? db.notifications : [];
+  store.notificationPreferences = Array.isArray(db?.notificationPreferences) ? db.notificationPreferences : [];
+  writeStore(store);
 };
 const cleanupTaskCreateIdempotency = () => {
   const now = Date.now();
@@ -1071,12 +1555,32 @@ const triggerWebhookEvent = (db, event, payload = {}) => {
 
 app.get("/api/health", (_req, res) => {
   const heapUsedMb = Math.round((process.memoryUsage().heapUsed / 1024 / 1024) * 10) / 10;
+  const runtime = validateRuntimeReadiness();
   res.json({
     ok: true,
     now: new Date().toISOString(),
     uptimeSec: Math.floor(process.uptime()),
     heapUsedMb,
     socketClients: io.engine.clientsCount,
+    database: getDatabaseHealth(),
+    runtime,
+  });
+});
+
+app.get("/api/ready", (_req, res) => {
+  const runtime = validateRuntimeReadiness();
+  if (!runtime.ok) {
+    return res.status(503).json({
+      ok: false,
+      now: new Date().toISOString(),
+      runtime,
+      database: getDatabaseHealth(),
+    });
+  }
+  return res.json({
+    ok: true,
+    now: new Date().toISOString(),
+    runtime,
     database: getDatabaseHealth(),
   });
 });
@@ -1109,6 +1613,9 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
         appRole: normalizeAppRole(user.appRole),
         avatarDataUrl: user.avatarDataUrl ?? "",
         teamIds: normalizeIdArray(user.teamIds ?? []),
+        moduleAccess: resolveMemberModuleAccess(user, user.appRole),
+        permissionOverrides: normalizeMemberPermissionOverrides(user.permissionOverrides),
+        policyOverrides: normalizeMemberPolicyOverrides(user.policyOverrides),
       },
     });
   } catch (error) {
@@ -1143,6 +1650,116 @@ app.post("/api/client-logs", async (req, res) => {
 app.use("/api", (req, res, next) => {
   if (req.path === "/health" || req.path === "/auth/login" || req.path === "/client-logs") return next();
   return requireAuth(req, res, next);
+});
+
+app.get("/api/auth/me", async (req, res) => {
+  try {
+    const user = await findUserById(String(req.auth?.userId ?? "").trim());
+    if (!user || user.isActive === false) {
+      return res.status(401).json({ message: "invalid credentials." });
+    }
+    return res.json({
+      id: user.id,
+      fullName: user.fullName,
+      phone: user.phone,
+      appRole: normalizeAppRole(user.appRole),
+      avatarDataUrl: user.avatarDataUrl ?? "",
+      teamIds: normalizeIdArray(user.teamIds ?? []),
+      moduleAccess: resolveMemberModuleAccess(user, user.appRole),
+      permissionOverrides: normalizeMemberPermissionOverrides(user.permissionOverrides),
+      policyOverrides: normalizeMemberPolicyOverrides(user.policyOverrides),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: "Failed to resolve current user." });
+  }
+});
+
+app.get("/api/notification-preferences/me", async (req, res) => {
+  return res.json(await getNotificationPreference(req.auth?.userId ? { notificationPreferences: [] } : null, req.auth?.userId));
+});
+
+app.put("/api/notification-preferences/me", async (req, res) => {
+  const db = await getCoreState();
+  const current = await getNotificationPreference(db, req.auth?.userId);
+  const next = await upsertNotificationPreference(db, {
+    ...current,
+    channels: {
+      ...current.channels,
+      ...(req.body?.channels ?? {}),
+    },
+    delivery: {
+      ...current.delivery,
+      ...(req.body?.delivery ?? {}),
+    },
+    mutedKinds: Array.isArray(req.body?.mutedKinds) ? req.body.mutedKinds : current.mutedKinds,
+    mutedCategories: Array.isArray(req.body?.mutedCategories) ? req.body.mutedCategories : current.mutedCategories,
+  });
+  persistNotificationState(db);
+  return res.json(next);
+});
+
+app.get("/api/notifications", async (req, res) => {
+  const userId = String(req.auth?.userId ?? "").trim();
+  const includeDismissed = String(req.query?.includeDismissed ?? "").trim() === "true";
+  const kindFilter = String(req.query?.kind ?? "").trim() ? normalizeNotificationKind(req.query?.kind) : "";
+  const categoryFilter = String(req.query?.category ?? "").trim();
+  const unreadOnly = String(req.query?.unreadOnly ?? "").trim() === "true";
+  const [rows, activeRows] = await Promise.all([
+    listNotificationsForUser(userId, { includeDismissed, kind: kindFilter, category: categoryFilter, unreadOnly }),
+    listNotificationsForUser(userId, { includeDismissed: false }),
+  ]);
+  return res.json({
+    items: rows.slice(0, 200),
+    unreadCount: activeRows.filter((row) => !String(row?.readAt ?? "").trim()).length,
+    unseenCount: activeRows.filter((row) => !String(row?.seenAt ?? "").trim()).length,
+  });
+});
+
+app.post("/api/notifications/seen-all", async (req, res) => {
+  const nowIso = await markAllNotificationsSeen(req.auth?.userId);
+  return res.json({ ok: true, seenAt: nowIso });
+});
+
+app.post("/api/notifications/read-all", async (req, res) => {
+  const nowIso = await markAllNotificationsRead(req.auth?.userId);
+  return res.json({ ok: true, readAt: nowIso });
+});
+
+app.post("/api/notifications/dismiss-all", async (req, res) => {
+  const nowIso = await dismissAllNotifications(req.auth?.userId);
+  return res.json({ ok: true, dismissedAt: nowIso });
+});
+
+app.post("/api/notifications/:id/read", async (req, res) => {
+  const notificationId = String(req.params.id ?? "").trim();
+  if (!notificationId) return res.status(400).json({ message: "Notification id is required." });
+  const changed = await markNotificationReadForUser(req.auth?.userId, notificationId);
+  if (!changed) return res.status(404).json({ message: "Notification not found." });
+  return res.json({ ok: true });
+});
+
+app.post("/api/notifications/:id/unread", async (req, res) => {
+  const notificationId = String(req.params.id ?? "").trim();
+  if (!notificationId) return res.status(400).json({ message: "Notification id is required." });
+  const changed = await markNotificationUnreadForUser(req.auth?.userId, notificationId);
+  if (!changed) return res.status(404).json({ message: "Notification not found." });
+  return res.json({ ok: true });
+});
+
+app.post("/api/notifications/:id/dismiss", async (req, res) => {
+  const notificationId = String(req.params.id ?? "").trim();
+  if (!notificationId) return res.status(400).json({ message: "Notification id is required." });
+  const changed = await dismissNotificationForUser(req.auth?.userId, notificationId);
+  if (!changed) return res.status(404).json({ message: "Notification not found." });
+  return res.json({ ok: true });
+});
+
+app.post("/api/notifications/:id/restore", async (req, res) => {
+  const notificationId = String(req.params.id ?? "").trim();
+  if (!notificationId) return res.status(400).json({ message: "Notification id is required." });
+  const changed = await restoreNotificationForUser(req.auth?.userId, notificationId);
+  if (!changed) return res.status(404).json({ message: "Notification not found." });
+  return res.json({ ok: true });
 });
 
 app.get("/api/settings", async (_req, res) => {
@@ -1311,7 +1928,7 @@ app.get("/api/teams", async (req, res) => {
 
 app.post("/api/teams", async (req, res) => {
   const db = await getCoreState();
-  if (!ensurePermission(req, res, db, "teamCreate")) return;
+  if (!ensurePermission(req, res, db, "teamCreate", { entity: "teamMember", operation: "create" })) return;
   const name = String(req.body?.name ?? "").trim();
   const description = String(req.body?.description ?? "").trim();
   if (name.length < 2) return res.status(400).json({ message: "Team name is required (min 2 chars)." });
@@ -1419,22 +2036,22 @@ app.delete("/api/teams/:id", async (req, res) => {
 
 app.get("/api/team-members", async (req, res) => {
   const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "team")) return;
   const safeRole = normalizeAppRole(req.auth?.role);
+  const safeUserId = String(req.auth?.userId ?? "").trim();
   const allMembers = Array.isArray(db.teamMembers) ? db.teamMembers : [];
-  if (safeRole === "admin") {
-    return res.json(
-      allMembers.map((m) => ({
-        ...sanitizeMember(m),
-        appRole: normalizeAppRole(m.appRole),
-        isActive: m.isActive !== false,
-      })),
-    );
-  }
-  const scope = memberScopeForUser(db, req.auth?.userId, req.auth?.role);
-  let visibleMembers = allMembers.filter((member) => scope.has(String(member?.id ?? "").trim()));
+  let visibleMembers = allMembers.filter((member) =>
+    canRoleAccessEntity({
+      db,
+      role: safeRole,
+      userId: safeUserId,
+      entity: "teamMember",
+      operation: "view",
+      targetMemberId: String(member?.id ?? "").trim(),
+    }),
+  );
   if (visibleMembers.length === 0) {
-    const selfId = String(req.auth?.userId ?? "").trim();
-    const self = allMembers.find((member) => String(member?.id ?? "").trim() === selfId);
+    const self = allMembers.find((member) => String(member?.id ?? "").trim() === safeUserId);
     visibleMembers = self ? [self] : allMembers.slice(0, 1);
   }
   return res.json(
@@ -1490,8 +2107,8 @@ app.get("/api/presence/admin", requireRoles("admin"), (_req, res) => {
   return res.json(rows);
 });
 
-app.post("/api/team-members", requireRoles("admin"), async (req, res) => {
-  const { fullName, role = "", email = "", phone = "", password = "", bio = "", avatarDataUrl = "", appRole = "member", isActive = true, teamIds = [] } = req.body ?? {};
+app.post("/api/team-members", requireAuth, async (req, res) => {
+  const { fullName, role = "", email = "", phone = "", password = "", bio = "", avatarDataUrl = "", appRole = "member", isActive = true, teamIds = [], moduleAccess = {}, permissionOverrides = {}, policyOverrides = {} } = req.body ?? {};
   const payload = {
     fullName: String(fullName ?? "").trim(),
     role: String(role ?? "").trim(),
@@ -1503,6 +2120,9 @@ app.post("/api/team-members", requireRoles("admin"), async (req, res) => {
     appRole: normalizeAppRole(appRole),
     isActive: Boolean(isActive),
     teamIds: normalizeIdArray(teamIds),
+    moduleAccess: normalizeModuleAccess(moduleAccess),
+    permissionOverrides: normalizeMemberPermissionOverrides(permissionOverrides),
+    policyOverrides: normalizeMemberPolicyOverrides(policyOverrides),
   };
 
   if (!payload.fullName || !payload.phone || payload.password.length < 4) {
@@ -1510,7 +2130,11 @@ app.post("/api/team-members", requireRoles("admin"), async (req, res) => {
   }
 
   const db = await getCoreState();
-  if (!ensurePermission(req, res, db, "teamCreate")) return;
+  if (!ensureModuleAccess(req, res, db, "team")) return;
+  if (!ensurePermission(req, res, db, "teamCreate", { entity: "teamMember", operation: "create" })) return;
+  if (normalizeAppRole(req.auth?.role) === "manager" && payload.appRole !== "member") {
+    return res.status(403).json({ message: "Manager can only create member accounts." });
+  }
   const validTeamIds = new Set(normalizeTeamRows(db.teams).map((team) => team.id));
   if (payload.teamIds.length > 0 && !allIdsWithinScope(payload.teamIds, validTeamIds)) {
     return res.status(400).json({ message: "One or more selected teams are invalid." });
@@ -1536,6 +2160,9 @@ app.post("/api/team-members", requireRoles("admin"), async (req, res) => {
     appRole: payload.appRole,
     isActive: payload.isActive,
     teamIds: payload.teamIds.length > 0 ? payload.teamIds : fallbackTeamId ? [fallbackTeamId] : [],
+    moduleAccess: payload.moduleAccess,
+    permissionOverrides: payload.permissionOverrides,
+    policyOverrides: payload.policyOverrides,
     passwordHash: hashPasswordForStore(payload.password),
     createdAt: new Date().toISOString(),
   };
@@ -1552,7 +2179,7 @@ app.post("/api/team-members", requireRoles("admin"), async (req, res) => {
 
 app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), async (req, res) => {
   const { id } = req.params;
-  const { fullName, role = "", email = "", phone = "", password = "", bio = "", avatarDataUrl = "", appRole = "member", isActive = true, teamIds } = req.body ?? {};
+  const { fullName, role = "", email = "", phone = "", password = "", bio = "", avatarDataUrl = "", appRole = "member", isActive = true, teamIds, moduleAccess = {}, permissionOverrides = {}, policyOverrides = {} } = req.body ?? {};
   const payload = {
     fullName: String(fullName ?? "").trim(),
     role: String(role ?? "").trim(),
@@ -1564,6 +2191,9 @@ app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), async 
     appRole: normalizeAppRole(appRole),
     isActive: Boolean(isActive),
     teamIds: teamIds === undefined ? undefined : normalizeIdArray(teamIds),
+    moduleAccess: normalizeModuleAccess(moduleAccess),
+    permissionOverrides: normalizeMemberPermissionOverrides(permissionOverrides),
+    policyOverrides: normalizeMemberPolicyOverrides(policyOverrides),
   };
 
   if (!payload.fullName || !payload.phone) {
@@ -1571,7 +2201,8 @@ app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), async 
   }
 
   const db = await getCoreState();
-  if (!ensurePermission(req, res, db, "teamUpdate", { allowSelf: true, selfId: id })) return;
+  if (!ensureModuleAccess(req, res, db, "team")) return;
+  if (!ensurePermission(req, res, db, "teamUpdate", { allowSelf: true, selfId: id, entity: "teamMember", operation: "update", targetMemberId: id })) return;
   const index = db.teamMembers.findIndex((m) => m.id === id);
   if (index === -1) {
     return res.status(404).json({ message: "Team member not found." });
@@ -1591,6 +2222,9 @@ app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), async 
     payload.appRole = normalizeAppRole(target.appRole);
     payload.isActive = target.isActive !== false;
     payload.teamIds = memberTeamIds(target);
+    payload.moduleAccess = normalizeModuleAccess(target.moduleAccess);
+    payload.permissionOverrides = normalizeMemberPermissionOverrides(target.permissionOverrides);
+    payload.policyOverrides = normalizeMemberPolicyOverrides(target.policyOverrides);
   }
   if (isManager && !isSelf) {
     payload.appRole = normalizeAppRole(target.appRole);
@@ -1608,6 +2242,11 @@ app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), async 
   if (phoneExists) {
     return res.status(409).json({ message: "Phone already exists." });
   }
+  const beforeAccess = {
+    moduleAccess: normalizeModuleAccess(target.moduleAccess),
+    permissionOverrides: normalizeMemberPermissionOverrides(target.permissionOverrides),
+    policyOverrides: normalizeMemberPolicyOverrides(target.policyOverrides),
+  };
 
   db.teamMembers[index] = {
     ...db.teamMembers[index],
@@ -1619,6 +2258,9 @@ app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), async 
     avatarDataUrl: payload.avatarDataUrl,
     appRole: payload.appRole,
     isActive: payload.isActive,
+    moduleAccess: payload.moduleAccess,
+    permissionOverrides: payload.permissionOverrides,
+    policyOverrides: payload.policyOverrides,
     teamIds:
       payload.teamIds === undefined
         ? memberTeamIds(db.teamMembers[index])
@@ -1630,11 +2272,40 @@ app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), async 
     ...(payload.password.length >= 4 ? { passwordHash: hashPasswordForStore(payload.password) } : {}),
   };
   await updateTeamMember(db.teamMembers[index]);
+  const afterAccess = {
+    moduleAccess: normalizeModuleAccess(db.teamMembers[index].moduleAccess),
+    permissionOverrides: normalizeMemberPermissionOverrides(db.teamMembers[index].permissionOverrides),
+    policyOverrides: normalizeMemberPolicyOverrides(db.teamMembers[index].policyOverrides),
+  };
+  const accessChanged = JSON.stringify(beforeAccess) !== JSON.stringify(afterAccess);
+  const changedAccessSummary = (() => {
+    if (!accessChanged) return "";
+    const changedModules = MODULE_ACCESS_VIEW_KEYS.filter(
+      (key) => Boolean(beforeAccess.moduleAccess?.[key]) !== Boolean(afterAccess.moduleAccess?.[key]),
+    );
+    const changedPermissions = MEMBER_PERMISSION_ACTIONS.filter(
+      (key) => Boolean(beforeAccess.permissionOverrides?.[key]) !== Boolean(afterAccess.permissionOverrides?.[key]),
+    );
+    const changedPolicies = MEMBER_POLICY_ENTITIES.flatMap((entity) =>
+      MEMBER_POLICY_OPERATIONS
+        .filter(
+          (operation) =>
+            String(beforeAccess.policyOverrides?.[entity]?.[operation] ?? "") !==
+            String(afterAccess.policyOverrides?.[entity]?.[operation] ?? ""),
+        )
+        .map((operation) => `${entity}.${operation}`),
+    );
+    return [changedModules.length ? `modules: ${changedModules.join(", ")}` : "", changedPermissions.length ? `permissions: ${changedPermissions.join(", ")}` : "", changedPolicies.length ? `policies: ${changedPolicies.join(", ")}` : ""]
+      .filter(Boolean)
+      .join(" | ");
+  })();
   await appendAuditLog(req, db, {
     action: "team.update",
     entityType: "team-member",
     entityId: id,
-    summary: `Team member updated: ${payload.fullName}`,
+    summary: accessChanged
+      ? `Team member updated with access changes: ${payload.fullName}${changedAccessSummary ? ` (${changedAccessSummary})` : ""}`
+      : `Team member updated: ${payload.fullName}`,
   });
   return res.json(sanitizeMember(db.teamMembers[index]));
 });
@@ -1642,7 +2313,8 @@ app.patch("/api/team-members/:id", requireSelfOrRole("admin", "manager"), async 
 app.delete("/api/team-members/:id", requireRoles("admin", "manager"), async (req, res) => {
   const { id } = req.params;
   const db = await getCoreState();
-  if (!ensurePermission(req, res, db, "teamDelete")) return;
+  if (!ensureModuleAccess(req, res, db, "team")) return;
+  if (!ensurePermission(req, res, db, "teamDelete", { entity: "teamMember", operation: "delete", targetMemberId: id })) return;
   const member = db.teamMembers.find((m) => m.id === id);
   if (!member) {
     return res.status(404).json({ message: "Team member not found." });
@@ -1947,10 +2619,20 @@ app.get("/api/hr/summary", async (req, res) => {
 
 app.get("/api/projects", async (req, res) => {
   const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "projects")) return;
   const userId = String(req.auth?.userId ?? "").trim();
   const role = normalizeAppRole(req.auth?.role);
   const projects = Array.isArray(db.projects) ? db.projects : [];
-  const visibleProjects = projects.filter((project) => canAccessProject(project, userId, role));
+  const visibleProjects = projects.filter((project) =>
+    canRoleAccessEntity({
+      db,
+      role,
+      userId,
+      entity: "project",
+      operation: "view",
+      project,
+    }),
+  );
   res.json(visibleProjects);
 });
 
@@ -1968,7 +2650,8 @@ app.post("/api/projects", async (req, res) => {
   }
 
   const db = await getCoreState();
-  if (!ensurePermission(req, res, db, "projectCreate")) return;
+  if (!ensureModuleAccess(req, res, db, "projects")) return;
+  if (!ensurePermission(req, res, db, "projectCreate", { entity: "project", operation: "create", project: { ownerId: cleanOwnerId, memberIds: cleanMemberIds } })) return;
   const memberScope = memberScopeForUser(db, req.auth?.userId, req.auth?.role);
   if (!memberScope.has(cleanOwnerId) || !allIdsWithinScope(cleanMemberIds, memberScope)) {
     return res.status(403).json({ message: "You can only add members from your own team scope." });
@@ -2010,6 +2693,22 @@ app.post("/api/projects", async (req, res) => {
     name: project.name,
     ownerId: project.ownerId,
   });
+  for (const userId of Array.from(new Set(normalizeIdArray(project.memberIds ?? []))).filter((id) => id !== String(req.auth?.userId ?? "").trim())) {
+    await createServerNotification(db, {
+      userId,
+      kind: "project",
+      category: "project.created",
+      title: `پروژه جدید: ${project.name}`,
+      description: "شما به یک پروژه جدید اضافه شده‌اید.",
+      targetView: "projects",
+      entityType: "project",
+      entityId: project.id,
+      projectId: project.id,
+      actionLabel: "مشاهده پروژه",
+      dedupeKey: `project-created:${project.id}:${userId}`,
+    });
+  }
+  persistNotificationState(db);
   return res.status(201).json(project);
 });
 
@@ -2031,11 +2730,12 @@ app.patch("/api/projects/:id", async (req, res) => {
   }
 
   const db = await getCoreState();
-  if (!ensurePermission(req, res, db, "projectUpdate")) return;
+  if (!ensureModuleAccess(req, res, db, "projects")) return;
   const index = db.projects.findIndex((p) => p.id === id);
   if (index === -1) {
     return res.status(404).json({ message: "Project not found." });
   }
+  if (!ensurePermission(req, res, db, "projectUpdate", { entity: "project", operation: "update", project: db.projects[index] })) return;
   const targetProject = db.projects[index];
   if (!canAccessProject(targetProject, req.auth?.userId, req.auth?.role)) {
     return res.status(403).json({ message: "You can only edit projects that you are a member of." });
@@ -2081,11 +2781,12 @@ app.patch("/api/projects/:id", async (req, res) => {
 app.delete("/api/projects/:id", async (req, res) => {
   const { id } = req.params;
   const db = await getCoreState();
-  if (!ensurePermission(req, res, db, "projectDelete")) return;
+  if (!ensureModuleAccess(req, res, db, "projects")) return;
   const project = db.projects.find((p) => p.id === id);
   if (!project) {
     return res.status(404).json({ message: "Project not found." });
   }
+  if (!ensurePermission(req, res, db, "projectDelete", { entity: "project", operation: "delete", project })) return;
   if (!canAccessProject(project, req.auth?.userId, req.auth?.role)) {
     return res.status(403).json({ message: "You can only delete projects that you are a member of." });
   }
@@ -2108,8 +2809,22 @@ app.delete("/api/projects/:id", async (req, res) => {
 
 app.get("/api/tasks", async (req, res) => {
   const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "tasks")) return;
+  const userId = String(req.auth?.userId ?? "").trim();
+  const role = normalizeAppRole(req.auth?.role);
   const memberScope = memberScopeForUser(db, req.auth?.userId, req.auth?.role);
   const visible = (Array.isArray(db.tasks) ? db.tasks : []).filter((task) => {
+    if (
+      canRoleAccessEntity({
+        db,
+        role,
+        userId,
+        entity: "task",
+        operation: "view",
+        task,
+      })
+    )
+      return true;
     if (normalizeAppRole(req.auth?.role) === "admin") return true;
     const assignerId = String(task?.assignerId ?? "").trim();
     const assigneePrimaryId = String(task?.assigneePrimaryId ?? "").trim();
@@ -2136,6 +2851,7 @@ app.get("/api/tasks", async (req, res) => {
       ...task,
       status,
       blockedReason: normalizeBlockedReason(task?.blockedReason, status),
+      predecessorTaskIds: normalizeIdArray(task?.predecessorTaskIds ?? []),
       workflowSteps,
       workflowCurrentStep,
       workflowPendingAssigneeIds: normalizeIdArray(task?.workflowPendingAssigneeIds ?? []),
@@ -2155,6 +2871,7 @@ app.get("/api/inbox", (req, res) => {
     const userId = String(req.auth?.userId ?? "").trim();
     const today = todayIsoLocal();
     const db = readStore();
+    if (!ensureModuleAccess(req, res, db, "tasks")) return;
     const tasks = Array.isArray(db.tasks) ? db.tasks : [];
     const projects = Array.isArray(db.projects) ? db.projects : [];
     const conversations = normalizeChatConversations(db.chatConversations);
@@ -2273,6 +2990,7 @@ app.post("/api/tasks", async (req, res) => {
     assignerId,
     assigneePrimaryId,
     assigneeSecondaryId = "",
+    predecessorTaskIds = [],
     projectName,
     announceDate,
     executionDate,
@@ -2289,6 +3007,7 @@ app.post("/api/tasks", async (req, res) => {
     assignerId: String(assignerId ?? "").trim(),
     assigneePrimaryId: String(assigneePrimaryId ?? "").trim(),
     assigneeSecondaryId: String(assigneeSecondaryId ?? "").trim(),
+    predecessorTaskIds: normalizeIdArray(predecessorTaskIds),
     projectName: String(projectName ?? "").trim(),
     announceDate: String(announceDate ?? "").trim(),
     executionDate: String(executionDate ?? "").trim(),
@@ -2309,6 +3028,7 @@ app.post("/api/tasks", async (req, res) => {
     return res.status(400).json({ message: "Missing required task fields." });
   }
   const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "tasks")) return;
   cleanupTaskCreateIdempotency();
   const requesterId = String(req.auth?.userId ?? "").trim();
   const idempotencyKeyRaw = String(req.get("x-idempotency-key") ?? "").trim();
@@ -2320,7 +3040,8 @@ app.post("/api/tasks", async (req, res) => {
       return res.status(200).json(cached.task);
     }
   }
-  if (!ensurePermission(req, res, db, "taskCreate")) return;
+  const project = db.projects.find((p) => String(p?.name ?? "").trim() === payload.projectName);
+  if (!ensurePermission(req, res, db, "taskCreate", { entity: "task", operation: "create", task: payload, project })) return;
   const memberScope = memberScopeForUser(db, req.auth?.userId, req.auth?.role);
   if (!memberScope.has(payload.assignerId) || !memberScope.has(payload.assigneePrimaryId) || (payload.assigneeSecondaryId && !memberScope.has(payload.assigneeSecondaryId))) {
     return res.status(403).json({ message: "You can only assign tasks within your own team scope." });
@@ -2328,7 +3049,6 @@ app.post("/api/tasks", async (req, res) => {
   if (payload.status === "blocked" && requiresBlockedReason(db.settings) && !payload.blockedReason) {
     return res.status(400).json({ message: "blockedReason is required when status is blocked." });
   }
-  const project = db.projects.find((p) => String(p?.name ?? "").trim() === payload.projectName);
   if (!project) {
     return res.status(400).json({ message: "Selected project does not exist." });
   }
@@ -2394,6 +3114,7 @@ app.post("/api/tasks", async (req, res) => {
     workflowSteps: resolvedWorkflowSteps,
     workflowCurrentStep: resolvedWorkflowSteps.length > 0 ? 0 : -1,
     workflowPendingAssigneeIds: initialPendingAssigneeIds,
+    predecessorTaskIds: payload.predecessorTaskIds,
     workflowStepComments: [],
     workflowCompletedAt: "",
     assigner: assigner.fullName,
@@ -2422,7 +3143,9 @@ app.post("/api/tasks", async (req, res) => {
     assigneePrimaryId: task.assigneePrimaryId,
     assigneeSecondaryId: task.assigneeSecondaryId,
   });
-  emitTaskAssignedToUsers(task, payload.assignerId);
+  await createTaskWorkflowNotifications(db, task, project, payload.assignerId);
+  persistNotificationState(db);
+  await emitTaskAssignedToUsers(db, task, payload.assignerId);
   return res.status(201).json(task);
 });
 
@@ -2430,6 +3153,7 @@ app.patch("/api/tasks/:id", async (req, res) => {
   const { id } = req.params;
   const body = req.body ?? {};
   const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "tasks")) return;
   const settings = db.settings ?? getDefaultSettings();
   const index = db.tasks.findIndex((t) => t.id === id);
   if (index === -1) {
@@ -2437,7 +3161,7 @@ app.patch("/api/tasks/:id", async (req, res) => {
   }
 
   if (typeof body.done === "boolean" && Object.keys(body).length === 1) {
-    if (!ensurePermission(req, res, db, "taskChangeStatus")) return;
+    if (!ensurePermission(req, res, db, "taskChangeStatus", { entity: "task", operation: "approve", task: db.tasks[index] })) return;
     const nowIso = new Date().toISOString();
     const nextStatus = body.done ? "done" : "todo";
     const prevStatus = normalizeTaskStatus(db.tasks[index]?.status, Boolean(db.tasks[index]?.done));
@@ -2473,7 +3197,7 @@ app.patch("/api/tasks/:id", async (req, res) => {
   }
 
   if (typeof body.status === "string" && Object.keys(body).length <= 2 && (Object.keys(body).length === 1 || Object.prototype.hasOwnProperty.call(body, "blockedReason"))) {
-    if (!ensurePermission(req, res, db, "taskChangeStatus")) return;
+    if (!ensurePermission(req, res, db, "taskChangeStatus", { entity: "task", operation: "approve", task: db.tasks[index] })) return;
     const status = normalizeTaskStatus(body.status, Boolean(db.tasks[index].done));
     const blockedReason = normalizeBlockedReason(body.blockedReason, status);
     const prevStatus = normalizeTaskStatus(db.tasks[index]?.status, Boolean(db.tasks[index]?.done));
@@ -2512,12 +3236,41 @@ app.patch("/api/tasks/:id", async (req, res) => {
     return res.json(db.tasks[index]);
   }
 
+  if (
+    typeof body.announceDate === "string" &&
+    typeof body.executionDate === "string" &&
+    Object.keys(body).every((key) => key === "announceDate" || key === "executionDate")
+  ) {
+    if (!ensurePermission(req, res, db, "taskUpdate", { entity: "task", operation: "update", task: db.tasks[index] })) return;
+    const announceDate = String(body.announceDate ?? "").trim();
+    const executionDate = String(body.executionDate ?? "").trim();
+    if (!announceDate || !executionDate || executionDate < announceDate) {
+      return res.status(400).json({ message: "Invalid task schedule." });
+    }
+    const nowIso = new Date().toISOString();
+    db.tasks[index] = {
+      ...db.tasks[index],
+      announceDate,
+      executionDate,
+      updatedAt: nowIso,
+    };
+    await updateTask(db.tasks[index]);
+    await appendAuditLog(req, db, {
+      action: "task.schedule.update",
+      entityType: "task",
+      entityId: id,
+      summary: `Task schedule updated: ${db.tasks[index]?.title ?? id}`,
+    });
+    return res.json(db.tasks[index]);
+  }
+
   const payload = {
     title: String(body.title ?? "").trim(),
     description: String(body.description ?? "").trim(),
     assignerId: String(body.assignerId ?? "").trim(),
     assigneePrimaryId: String(body.assigneePrimaryId ?? "").trim(),
     assigneeSecondaryId: String(body.assigneeSecondaryId ?? "").trim(),
+    predecessorTaskIds: normalizeIdArray(body.predecessorTaskIds ?? db.tasks[index]?.predecessorTaskIds ?? []),
     projectName: String(body.projectName ?? "").trim(),
     announceDate: String(body.announceDate ?? "").trim(),
     executionDate: String(body.executionDate ?? "").trim(),
@@ -2536,7 +3289,7 @@ app.patch("/api/tasks/:id", async (req, res) => {
   ) {
     return res.status(400).json({ message: "Missing required task fields." });
   }
-  if (!ensurePermission(req, res, db, "taskUpdate")) return;
+  if (!ensurePermission(req, res, db, "taskUpdate", { entity: "task", operation: "update", task: db.tasks[index] })) return;
   const memberScope = memberScopeForUser(db, req.auth?.userId, req.auth?.role);
   if (!memberScope.has(payload.assignerId) || !memberScope.has(payload.assigneePrimaryId) || (payload.assigneeSecondaryId && !memberScope.has(payload.assigneeSecondaryId))) {
     return res.status(403).json({ message: "You can only assign tasks within your own team scope." });
@@ -2599,6 +3352,7 @@ app.patch("/api/tasks/:id", async (req, res) => {
     workflowSteps: nextWorkflowSteps,
     workflowCurrentStep: normalizedWorkflowCurrentStep,
     workflowPendingAssigneeIds: nextWorkflowPendingAssigneeIds,
+    predecessorTaskIds: payload.predecessorTaskIds,
     workflowStepComments: normalizeWorkflowStepComments(db.tasks[index]?.workflowStepComments ?? []),
     workflowCompletedAt: payload.status === "done" ? String(db.tasks[index]?.workflowCompletedAt ?? nowIso) : "",
     assigner: assigner.fullName,
@@ -2626,8 +3380,10 @@ app.patch("/api/tasks/:id", async (req, res) => {
   const nextAssigneePrimaryId = String(db.tasks[index]?.assigneePrimaryId ?? "").trim();
   const nextAssigneeSecondaryId = String(db.tasks[index]?.assigneeSecondaryId ?? "").trim();
   if (prevAssigneePrimaryId !== nextAssigneePrimaryId || prevAssigneeSecondaryId !== nextAssigneeSecondaryId) {
-    emitTaskAssignedToUsers(db.tasks[index], payload.assignerId);
+    await emitTaskAssignedToUsers(db, db.tasks[index], payload.assignerId);
   }
+  await createTaskWorkflowNotifications(db, db.tasks[index], project, payload.assignerId);
+  persistNotificationState(db);
   return res.json(db.tasks[index]);
 });
 
@@ -2638,6 +3394,7 @@ app.post("/api/tasks/:id/workflow/comments", async (req, res) => {
   if (!stepId) return res.status(400).json({ message: "stepId is required." });
   if (!text) return res.status(400).json({ message: "Comment text is required." });
   const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "tasks")) return;
   const index = db.tasks.findIndex((t) => t.id === id);
   if (index === -1) return res.status(404).json({ message: "Task not found." });
   const task = db.tasks[index];
@@ -2681,16 +3438,19 @@ app.post("/api/tasks/:id/workflow/comments", async (req, res) => {
     title: db.tasks[index]?.title,
     status: db.tasks[index]?.status,
   });
+  await createTaskWorkflowNotifications(db, db.tasks[index], project, userId);
+  persistNotificationState(db);
   return res.json(db.tasks[index]);
 });
 
 app.post("/api/tasks/:id/workflow/advance", async (req, res) => {
   const { id } = req.params;
   const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "tasks")) return;
   const index = db.tasks.findIndex((t) => t.id === id);
   if (index === -1) return res.status(404).json({ message: "Task not found." });
-  if (!ensurePermission(req, res, db, "taskChangeStatus")) return;
   const task = db.tasks[index];
+  if (!ensurePermission(req, res, db, "taskChangeStatus", { entity: "task", operation: "approve", task })) return;
   const project = db.projects.find((p) => String(p?.name ?? "").trim() === String(task?.projectName ?? "").trim());
   if (!canAccessProject(project, req.auth?.userId, req.auth?.role)) {
     return res.status(403).json({ message: "You can only update tasks in projects you can access." });
@@ -2742,6 +3502,8 @@ app.post("/api/tasks/:id/workflow/advance", async (req, res) => {
     title: db.tasks[index]?.title,
     status: db.tasks[index]?.status,
   });
+  await createTaskWorkflowNotifications(db, db.tasks[index], project, userId);
+  persistNotificationState(db);
   return res.json(db.tasks[index]);
 });
 
@@ -2752,10 +3514,11 @@ app.post("/api/tasks/:id/workflow/decision", async (req, res) => {
     return res.status(400).json({ message: "decision must be approve or reject." });
   }
   const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "tasks")) return;
   const index = db.tasks.findIndex((t) => t.id === id);
   if (index === -1) return res.status(404).json({ message: "Task not found." });
-  if (!ensurePermission(req, res, db, "taskChangeStatus")) return;
   const task = db.tasks[index];
+  if (!ensurePermission(req, res, db, "taskChangeStatus", { entity: "task", operation: "approve", task })) return;
   const userId = String(req.auth?.userId ?? "").trim();
   const project = db.projects.find((p) => String(p?.name ?? "").trim() === String(task?.projectName ?? "").trim());
   if (!canAccessProject(project, req.auth?.userId, req.auth?.role)) {
@@ -2817,18 +3580,21 @@ app.post("/api/tasks/:id/workflow/decision", async (req, res) => {
     title: db.tasks[index]?.title,
     status: db.tasks[index]?.status,
   });
+  await createTaskWorkflowNotifications(db, db.tasks[index], project, userId);
+  persistNotificationState(db);
   return res.json(db.tasks[index]);
 });
 
 app.delete("/api/tasks/:id", async (req, res) => {
   const { id } = req.params;
   const db = await getCoreState();
-  if (!ensurePermission(req, res, db, "taskDelete")) return;
+  if (!ensureModuleAccess(req, res, db, "tasks")) return;
   const exists = db.tasks.some((t) => t.id === id);
+  const task = db.tasks.find((t) => t.id === id);
+  if (!ensurePermission(req, res, db, "taskDelete", { entity: "task", operation: "delete", task })) return;
   if (!exists) {
     return res.status(404).json({ message: "Task not found." });
   }
-  const task = db.tasks.find((t) => t.id === id);
   db.tasks = db.tasks.filter((t) => t.id !== id);
   await deleteTask(id);
   await appendAuditLog(req, db, {
@@ -2846,6 +3612,7 @@ app.delete("/api/tasks/:id", async (req, res) => {
 
 app.get("/api/minutes", (_req, res) => {
   const db = readStore();
+  if (!ensureModuleAccess(_req, res, db, "minutes")) return;
   res.json(db.meetingMinutes);
 });
 
@@ -2868,6 +3635,7 @@ app.post("/api/minutes", (req, res) => {
   }
 
   const db = readStore();
+  if (!ensureModuleAccess(req, res, db, "minutes")) return;
   const minute = {
     id: crypto.randomUUID(),
     ...payload,
@@ -2904,6 +3672,7 @@ app.patch("/api/minutes/:id", (req, res) => {
   }
 
   const db = readStore();
+  if (!ensureModuleAccess(req, res, db, "minutes")) return;
   const index = db.meetingMinutes.findIndex((m) => m.id === id);
   if (index === -1) {
     return res.status(404).json({ message: "Minute not found." });
@@ -2922,6 +3691,7 @@ app.patch("/api/minutes/:id", (req, res) => {
 app.delete("/api/minutes/:id", (req, res) => {
   const { id } = req.params;
   const db = readStore();
+  if (!ensureModuleAccess(req, res, db, "minutes")) return;
   const exists = db.meetingMinutes.some((m) => m.id === id);
   if (!exists) {
     return res.status(404).json({ message: "Minute not found." });
@@ -2948,9 +3718,11 @@ const migrateLegacyAccountingForUser = (db, userId) => {
     return { ...row, ownerId: userId };
   });
   db.accountingTransactions = (Array.isArray(db.accountingTransactions) ? db.accountingTransactions : []).map((row) => {
-    if (String(row?.ownerId ?? "").trim()) return row;
+    const hasOwnerId = String(row?.ownerId ?? "").trim();
+    const nextStatus = String(row?.status ?? "").trim() === "pending" ? "pending" : "approved";
+    if (hasOwnerId && String(row?.status ?? "").trim() === nextStatus) return row;
     changed = true;
-    return { ...row, ownerId: userId };
+    return { ...row, ownerId: hasOwnerId || userId, status: nextStatus };
   });
   db.accountingBudgetHistory = (Array.isArray(db.accountingBudgetHistory) ? db.accountingBudgetHistory : []).map((row) => {
     if (String(row?.ownerId ?? "").trim()) return row;
@@ -2973,6 +3745,8 @@ const migrateLegacyAccountingForUser = (db, userId) => {
 
 app.get("/api/accounting/transactions", async (req, res) => {
   const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
   const accounting = await getAccountingState(userId);
   const rows = (Array.isArray(accounting.transactions) ? accounting.transactions : [])
     .filter((t) => String(t?.ownerId ?? "") === userId)
@@ -2985,12 +3759,16 @@ app.get("/api/accounting/transactions", async (req, res) => {
 
 app.get("/api/accounting/accounts", async (req, res) => {
   const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
   const accounting = await getAccountingState(userId);
   res.json((Array.isArray(accounting.accounts) ? accounting.accounts : []).filter((a) => String(a?.ownerId ?? "") === userId));
 });
 
 app.post("/api/accounting/accounts", async (req, res) => {
   const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
   const { name, bankName = "", cardLast4 = "" } = req.body ?? {};
   const payload = {
     name: String(name ?? "").trim(),
@@ -3018,7 +3796,7 @@ app.post("/api/accounting/accounts", async (req, res) => {
     createdAt: new Date().toISOString(),
   };
   await createAccountingAccount(account);
-  await appendAuditLog(req, await getCoreState(), {
+  await appendAuditLog(req, db, {
     action: "account.create",
     entityType: "accounting-account",
     entityId: account.id,
@@ -3029,6 +3807,8 @@ app.post("/api/accounting/accounts", async (req, res) => {
 
 app.patch("/api/accounting/accounts/:id", async (req, res) => {
   const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
   const { id } = req.params;
   const { name, bankName = "", cardLast4 = "" } = req.body ?? {};
   const payload = {
@@ -3056,7 +3836,7 @@ app.patch("/api/accounting/accounts/:id", async (req, res) => {
 
   accounting.accounts[index] = { ...accounting.accounts[index], ...payload };
   await updateAccountingAccount(accounting.accounts[index]);
-  await appendAuditLog(req, await getCoreState(), {
+  await appendAuditLog(req, db, {
     action: "account.update",
     entityType: "accounting-account",
     entityId: id,
@@ -3067,6 +3847,8 @@ app.patch("/api/accounting/accounts/:id", async (req, res) => {
 
 app.delete("/api/accounting/accounts/:id", async (req, res) => {
   const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
   const { id } = req.params;
   const accounting = await getAccountingState(userId);
   const account = accounting.accounts.find((a) => a.id === id && String(a?.ownerId ?? "") === userId);
@@ -3079,7 +3861,7 @@ app.delete("/api/accounting/accounts/:id", async (req, res) => {
   }
 
   await deleteAccountingAccount(id);
-  await appendAuditLog(req, await getCoreState(), {
+  await appendAuditLog(req, db, {
     action: "account.delete",
     entityType: "accounting-account",
     entityId: id,
@@ -3090,10 +3872,13 @@ app.delete("/api/accounting/accounts/:id", async (req, res) => {
 
 app.post("/api/accounting/transactions", async (req, res) => {
   const userId = getAccountingUserId(req);
-  const { type, title, amount, category, date, time = "", note = "", accountId } = req.body ?? {};
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
+  const { type, title, amount, category, date, time = "", note = "", accountId, status } = req.body ?? {};
   const normalizedTime = normalizeTimeHHMM(time);
   const payload = {
     type: String(type ?? "").trim(),
+    status: String(status ?? "pending").trim() === "approved" ? "approved" : "pending",
     title: String(title ?? "").trim(),
     amount: Number(amount),
     category: String(category ?? "").trim(),
@@ -3132,7 +3917,7 @@ app.post("/api/accounting/transactions", async (req, res) => {
   };
 
   await createAccountingTransaction(transaction);
-  await appendAuditLog(req, await getCoreState(), {
+  await appendAuditLog(req, db, {
     action: "transaction.create",
     entityType: "accounting-transaction",
     entityId: transaction.id,
@@ -3143,11 +3928,14 @@ app.post("/api/accounting/transactions", async (req, res) => {
 
 app.patch("/api/accounting/transactions/:id", async (req, res) => {
   const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
   const { id } = req.params;
-  const { type, title, amount, category, date, time = "", note = "", accountId } = req.body ?? {};
+  const { type, title, amount, category, date, time = "", note = "", accountId, status } = req.body ?? {};
   const normalizedTime = normalizeTimeHHMM(time);
   const payload = {
     type: String(type ?? "").trim(),
+    status: String(status ?? "").trim(),
     title: String(title ?? "").trim(),
     amount: Number(amount),
     category: String(category ?? "").trim(),
@@ -3184,12 +3972,20 @@ app.patch("/api/accounting/transactions/:id", async (req, res) => {
     normalizeTimeHHMM(accounting.transactions[index]?.time) ||
     currentTimeHHMMLocal();
 
+  const resolvedStatus =
+    payload.status === "approved" || payload.status === "pending"
+      ? payload.status
+      : String(accounting.transactions[index]?.status ?? "pending").trim() === "approved"
+        ? "approved"
+        : "pending";
+
   accounting.transactions[index] = {
     ...accounting.transactions[index],
     ...payload,
+    status: resolvedStatus,
   };
   await updateAccountingTransaction(accounting.transactions[index]);
-  await appendAuditLog(req, await getCoreState(), {
+  await appendAuditLog(req, db, {
     action: "transaction.update",
     entityType: "accounting-transaction",
     entityId: id,
@@ -3198,8 +3994,63 @@ app.patch("/api/accounting/transactions/:id", async (req, res) => {
   return res.json(accounting.transactions[index]);
 });
 
+app.post("/api/accounting/transactions/bulk-status", async (req, res) => {
+  const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((id) => String(id ?? "").trim()).filter(Boolean) : [];
+  const status = String(req.body?.status ?? "").trim() === "approved" ? "approved" : "";
+  if (ids.length === 0 || !status) {
+    return res.status(400).json({ message: "Missing ids or status." });
+  }
+  const accounting = await getAccountingState(userId);
+  const idSet = new Set(ids);
+  const updatedRows = [];
+  for (let index = 0; index < accounting.transactions.length; index += 1) {
+    const row = accounting.transactions[index];
+    if (!idSet.has(String(row?.id ?? "").trim()) || String(row?.ownerId ?? "").trim() !== userId) continue;
+    const updated = { ...row, status };
+    accounting.transactions[index] = updated;
+    updatedRows.push(updated);
+    await updateAccountingTransaction(updated);
+  }
+  await appendAuditLog(req, db, {
+    action: "transaction.bulk-status",
+    entityType: "accounting-transaction",
+    entityId: ids.join(","),
+    summary: `${updatedRows.length} transaction(s) marked as ${status}.`,
+  });
+  return res.json(updatedRows);
+});
+
+app.post("/api/accounting/transactions/bulk-delete", async (req, res) => {
+  const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((id) => String(id ?? "").trim()).filter(Boolean) : [];
+  if (ids.length === 0) {
+    return res.status(400).json({ message: "Missing ids." });
+  }
+  const accounting = await getAccountingState(userId);
+  const deletableIds = accounting.transactions
+    .filter((row) => ids.includes(String(row?.id ?? "").trim()) && String(row?.ownerId ?? "").trim() === userId)
+    .map((row) => String(row?.id ?? "").trim());
+  for (const transactionId of deletableIds) {
+    await deleteAccountingTransaction(transactionId);
+  }
+  await appendAuditLog(req, db, {
+    action: "transaction.bulk-delete",
+    entityType: "accounting-transaction",
+    entityId: deletableIds.join(","),
+    summary: `${deletableIds.length} transaction(s) deleted.`,
+  });
+  return res.status(204).send();
+});
+
 app.delete("/api/accounting/transactions/:id", async (req, res) => {
   const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
   const { id } = req.params;
   const accounting = await getAccountingState(userId);
   const exists = accounting.transactions.some((t) => t.id === id && String(t?.ownerId ?? "") === userId);
@@ -3207,7 +4058,7 @@ app.delete("/api/accounting/transactions/:id", async (req, res) => {
     return res.status(404).json({ message: "Transaction not found." });
   }
   await deleteAccountingTransaction(id);
-  await appendAuditLog(req, await getCoreState(), {
+  await appendAuditLog(req, db, {
     action: "transaction.delete",
     entityType: "accounting-transaction",
     entityId: id,
@@ -3218,6 +4069,8 @@ app.delete("/api/accounting/transactions/:id", async (req, res) => {
 
 app.get("/api/accounting/budgets/:month", async (req, res) => {
   const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
   const { month } = req.params;
   if (!/^\d{4}-\d{2}$/.test(month)) {
     return res.status(400).json({ message: "Month must be in YYYY-MM format." });
@@ -3230,6 +4083,8 @@ app.get("/api/accounting/budgets/:month", async (req, res) => {
 
 app.get("/api/accounting/budgets-history", async (req, res) => {
   const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
   const month = String(req.query.month ?? "").trim();
   const accounting = await getAccountingState(userId);
   const rows = Array.isArray(accounting.budgetHistory) ? accounting.budgetHistory : [];
@@ -3240,6 +4095,8 @@ app.get("/api/accounting/budgets-history", async (req, res) => {
 
 app.put("/api/accounting/budgets/:month", async (req, res) => {
   const userId = getAccountingUserId(req);
+  const db = await getCoreState();
+  if (!ensureModuleAccess(req, res, db, "accounting")) return;
   const { month } = req.params;
   const { amount } = req.body ?? {};
   const parsedAmount = Number(amount);
@@ -3254,7 +4111,7 @@ app.put("/api/accounting/budgets/:month", async (req, res) => {
   const budgetKey = budgetKeyForUser(userId, month);
   const previousAmount = Number(accounting.budgets[budgetKey] ?? 0);
   await setAccountingBudget({ userId, month, amount: parsedAmount, previousAmount: Number.isFinite(previousAmount) ? previousAmount : 0 });
-  await appendAuditLog(req, await getCoreState(), {
+  await appendAuditLog(req, db, {
     action: "budget.update",
     entityType: "accounting-budget",
     entityId: month,
@@ -3268,6 +4125,7 @@ app.get("/api/chat/conversations", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
     const db = await getCoreState();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     const conversations = normalizeChatConversations(db.chatConversations);
     const messages = normalizeChatMessages(db.chatMessages);
     const visible = conversations.filter((c) => c.participantIds.includes(userId));
@@ -3301,6 +4159,7 @@ app.post("/api/chat/conversations/direct", async (req, res) => {
       return res.status(400).json({ message: "Valid memberId is required." });
     }
     const db = await getCoreState();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     if (!canAccessMemberByTeam(db, userId, req.auth?.role, memberId)) {
       return res.status(403).json({ message: "You can only chat with members in your team scope." });
     }
@@ -3346,6 +4205,7 @@ app.post("/api/chat/conversations/group", async (req, res) => {
     const userId = String(req.auth?.userId ?? "").trim();
     const title = String(req.body?.title ?? "").trim();
     const participantIds = normalizeIdArray(req.body?.participantIds ?? []);
+    const avatarDataUrl = String(req.body?.avatarDataUrl ?? "").trim();
     if (title.length < 2 || title.length > 80) {
       return res.status(400).json({ message: "Group title must be between 2 and 80 characters." });
     }
@@ -3354,6 +4214,7 @@ app.post("/api/chat/conversations/group", async (req, res) => {
       return res.status(400).json({ message: "Group requires at least 2 members." });
     }
     const db = await getCoreState();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     const memberScope = memberScopeForUser(db, userId, req.auth?.role);
     if (!allIdsWithinScope(merged, memberScope)) {
       return res.status(403).json({ message: "You can only create groups with members in your team scope." });
@@ -3368,6 +4229,7 @@ app.post("/api/chat/conversations/group", async (req, res) => {
       id: crypto.randomUUID(),
       type: "group",
       title,
+      avatarDataUrl,
       participantIds: merged,
       createdById: userId,
       createdAt: now,
@@ -3395,6 +4257,7 @@ app.delete("/api/chat/conversations/:id", async (req, res) => {
     const userRole = normalizeAppRole(req.auth?.role);
     const { id } = req.params;
     const db = await getCoreState();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     const conversations = normalizeChatConversations(db.chatConversations);
     const conversation = conversations.find((c) => c.id === id);
     if (!conversation) return res.status(404).json({ message: "Conversation not found." });
@@ -3426,11 +4289,76 @@ app.delete("/api/chat/conversations/:id", async (req, res) => {
   }
 });
 
+app.put("/api/chat/conversations/:id", async (req, res) => {
+  try {
+    const userId = String(req.auth?.userId ?? "").trim();
+    const userRole = normalizeAppRole(req.auth?.role);
+    const { id } = req.params;
+    const db = await getCoreState();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
+    const conversations = normalizeChatConversations(db.chatConversations);
+    const conversation = conversations.find((c) => c.id === id);
+    if (!conversation) return res.status(404).json({ message: "Conversation not found." });
+    if (conversation.type !== "group") {
+      return res.status(400).json({ message: "Only group conversations can be updated." });
+    }
+    if (!conversation.participantIds.includes(userId)) {
+      return res.status(403).json({ message: "Forbidden." });
+    }
+    const canManage = userRole === "admin" || conversation.createdById === userId;
+    if (!canManage) {
+      return res.status(403).json({ message: "Only group creator or admin can manage this group." });
+    }
+    const title = String(req.body?.title ?? conversation.title ?? "").trim();
+    const avatarDataUrl = String(req.body?.avatarDataUrl ?? conversation.avatarDataUrl ?? "").trim();
+    if (title.length < 2 || title.length > 80) {
+      return res.status(400).json({ message: "Group title must be between 2 and 80 characters." });
+    }
+    const requestedParticipants = normalizeIdArray(req.body?.participantIds ?? conversation.participantIds ?? []);
+    const merged = Array.from(new Set([conversation.createdById, userId, ...requestedParticipants]));
+    if (merged.length < 2) {
+      return res.status(400).json({ message: "Group requires at least 2 members." });
+    }
+    const memberScope = memberScopeForUser(db, userId, req.auth?.role);
+    if (!allIdsWithinScope(merged, memberScope)) {
+      return res.status(403).json({ message: "You can only keep members in your team scope." });
+    }
+    const allActive = merged.every((memberId) => db.teamMembers.some((m) => m.id === memberId && m.isActive !== false));
+    if (!allActive) {
+      return res.status(400).json({ message: "One or more participants are invalid or inactive." });
+    }
+    const updatedAt = new Date().toISOString();
+    const updated = await updateChatConversation(id, {
+      title,
+      avatarDataUrl,
+      participantIds: merged,
+      updatedAt,
+    });
+    const response = normalizeChatConversation({ ...conversation, ...updated, id, type: "group", createdById: conversation.createdById });
+    await appendAuditLog(req, db, {
+      action: "conversation.update",
+      entityType: "chat-conversation",
+      entityId: id,
+      summary: `Group conversation updated: ${title}`,
+      meta: { type: "group", participantIds: merged },
+    });
+    io.to(`conversation:${id}`).emit("chat:conversation:updated", { conversation: response });
+    for (const participantId of merged) {
+      io.to(`user:${participantId}`).emit("chat:conversation:updated", { conversation: response });
+    }
+    return res.json(response);
+  } catch (error) {
+    console.error("[chat/conversation:update] internal error:", error);
+    return res.status(500).json({ message: "Failed to update group conversation." });
+  }
+});
+
 app.get("/api/chat/conversations/:id/messages", async (req, res) => {
   try {
     const userId = String(req.auth?.userId ?? "").trim();
     const { id } = req.params;
     const db = await getCoreState();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     const conversations = normalizeChatConversations(db.chatConversations);
     const messages = normalizeChatMessages(db.chatMessages);
     const conversation = conversations.find((c) => c.id === id);
@@ -3464,6 +4392,7 @@ app.post("/api/chat/conversations/:id/messages", async (req, res) => {
     const userId = String(req.auth?.userId ?? "").trim();
     const { id } = req.params;
     const db = await getCoreState();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     const conversations = normalizeChatConversations(db.chatConversations);
     const result = buildChatMessage({
       db,
@@ -3505,7 +4434,8 @@ app.post("/api/chat/conversations/:id/messages", async (req, res) => {
         mentionMemberIds: result.message.mentionMemberIds,
       });
     }
-    emitNewMessageToParticipants(result.conversation, result.message);
+    await emitNewMessageToParticipants(db, result.conversation, result.message);
+    persistNotificationState(db);
     io.to(`conversation:${id}`).emit("chat:conversation:updated", {
       id,
       updatedAt: result.message.createdAt,
@@ -3529,6 +4459,7 @@ app.post("/api/chat/messages/:id/reactions", async (req, res) => {
     if (!emoji) return res.status(400).json({ message: "emoji is required." });
 
     const db = await getCoreState();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     const conversations = normalizeChatConversations(db.chatConversations);
     const messages = normalizeChatMessages(db.chatMessages);
     const messageIndex = messages.findIndex((m) => m.id === messageId);
@@ -3594,6 +4525,7 @@ app.patch("/api/chat/messages/:id", async (req, res) => {
     if (text.length > 2000) return res.status(400).json({ message: "Message is too long." });
 
     const db = await getCoreState();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     const conversations = normalizeChatConversations(db.chatConversations);
     const messages = normalizeChatMessages(db.chatMessages);
     const messageIndex = messages.findIndex((m) => m.id === messageId);
@@ -3636,6 +4568,7 @@ app.delete("/api/chat/messages/:id", async (req, res) => {
     if (!messageId) return res.status(400).json({ message: "Message id is required." });
 
     const db = await getCoreState();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     const conversations = normalizeChatConversations(db.chatConversations);
     const messages = normalizeChatMessages(db.chatMessages);
     const messageIndex = messages.findIndex((m) => m.id === messageId);
@@ -3688,6 +4621,7 @@ app.post("/api/chat/conversations/:id/read", async (req, res) => {
     const userId = String(req.auth?.userId ?? "").trim();
     const { id } = req.params;
     const db = await getCoreState();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     const conversations = normalizeChatConversations(db.chatConversations);
     const conversation = conversations.find((c) => c.id === id);
     if (!conversation) return res.status(404).json({ message: "Conversation not found." });
@@ -3716,6 +4650,7 @@ app.post("/api/chat/conversations/:id/typing", (req, res) => {
     const { id } = req.params;
     const isTyping = Boolean(req.body?.isTyping);
     const db = readStore();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     const { conversation } = getConversationForMember(db, id, userId);
     if (!conversation) return res.status(404).json({ message: "Conversation not found." });
     const member = db.teamMembers.find((m) => m.id === userId);
@@ -3746,6 +4681,7 @@ app.get("/api/chat/conversations/:id/typing", (req, res) => {
     const userId = String(req.auth?.userId ?? "").trim();
     const { id } = req.params;
     const db = readStore();
+    if (!ensureModuleAccess(req, res, db, "chat")) return;
     const { conversation } = getConversationForMember(db, id, userId);
     if (!conversation) return res.status(404).json({ message: "Conversation not found." });
     return res.json(getSocketTypingRowsForConversation(id, userId));
@@ -3890,7 +4826,8 @@ io.on("connection", (socket) => {
           mentionMemberIds: result.message.mentionMemberIds,
         });
       }
-      emitNewMessageToParticipants(result.conversation, result.message);
+      await emitNewMessageToParticipants(db, result.conversation, result.message);
+      persistNotificationState(db);
       io.to(`conversation:${conversationId}`).emit("chat:conversation:updated", {
         id: conversationId,
         updatedAt: result.message.createdAt,
@@ -3968,6 +4905,16 @@ connectDatabase()
     });
   })
   .finally(() => {
+    const runtime = validateRuntimeReadiness();
+    if (!runtime.ok) {
+      logServer("warn", "runtime.readiness.degraded", {
+        checks: runtime.checks,
+      });
+    } else {
+      logServer("info", "runtime.ready", {
+        checks: runtime.checks,
+      });
+    }
     httpServer.listen(PORT, "0.0.0.0", () => {
       logServer("info", "server.started", {
         url: `http://0.0.0.0:${PORT}`,

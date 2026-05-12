@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState } from "react";
+import { jalaaliMonthLength, toGregorian, toJalaali } from "jalaali-js";
 import { ArrowDown, ArrowUp, Expand, GitBranch, GripVertical, MessageSquare, Plus, Route, ShieldCheck, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export type WorkflowStepEditorRow = {
@@ -60,6 +62,113 @@ const ROUTE_ITEMS = [
   { value: "stay", label: "باقی بماند" },
   { value: "done", label: "اتمام تسک" },
 ];
+
+const jalaliMonthNames = [
+  "فروردین",
+  "اردیبهشت",
+  "خرداد",
+  "تیر",
+  "مرداد",
+  "شهریور",
+  "مهر",
+  "آبان",
+  "آذر",
+  "دی",
+  "بهمن",
+  "اسفند",
+];
+
+const faDigits = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
+const toFaNum = (value: string) => String(value ?? "").replace(/\d/g, (digit) => faDigits[Number(digit)] ?? digit);
+const pad2 = (value: number) => String(value).padStart(2, "0");
+const jalaliDateToIso = (jy: number, jm: number, jd: number) => {
+  const g = toGregorian(jy, jm, jd);
+  return `${g.gy}-${pad2(g.gm)}-${pad2(g.gd)}`;
+};
+const isoToJalaliLabel = (iso: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso ?? ""))) return "—";
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return "—";
+  try {
+    const j = toJalaali(year, month, day);
+    return `${toFaNum(String(j.jd))} ${jalaliMonthNames[j.jm - 1] ?? ""} ${toFaNum(String(j.jy))}`.trim();
+  } catch {
+    return "—";
+  }
+};
+
+function JalaliDateField({
+  label,
+  valueIso,
+  onChange,
+  placeholder = "انتخاب تاریخ",
+}: {
+  label: string;
+  valueIso: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  const now = new Date();
+  const jNow = toJalaali(now.getFullYear(), now.getMonth() + 1, now.getDate());
+  const selected = (() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(valueIso ?? ""))) {
+      return { jy: jNow.jy, jm: jNow.jm, jd: jNow.jd, hasValue: false };
+    }
+    try {
+      const [year, month, day] = valueIso.split("-").map(Number);
+      const j = toJalaali(year, month, day);
+      return { jy: j.jy, jm: j.jm, jd: j.jd, hasValue: true };
+    } catch {
+      return { jy: jNow.jy, jm: jNow.jm, jd: jNow.jd, hasValue: false };
+    }
+  })();
+
+  const years = Array.from({ length: 11 }, (_, index) => jNow.jy - 5 + index);
+  const daysInMonth = jalaaliMonthLength(selected.jy, selected.jm);
+  const applyDate = (nextYear: number, nextMonth: number, nextDay: number) => {
+    const safeDay = Math.min(Math.max(nextDay, 1), jalaaliMonthLength(nextYear, nextMonth));
+    onChange(jalaliDateToIso(nextYear, nextMonth, safeDay));
+  };
+
+  return (
+    <div className="space-y-1">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <div className="space-y-2 rounded-md border border-input bg-background px-2.5 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs">{selected.hasValue ? isoToJalaliLabel(valueIso) : placeholder}</span>
+          {selected.hasValue ? (
+            <Button type="button" variant="ghost" size="sm" className="h-6 px-1.5 text-[11px]" onClick={() => onChange("")}>
+              پاک کردن
+            </Button>
+          ) : null}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <NativeSelect
+            className="h-9 text-xs"
+            value={String(selected.jy)}
+            onChange={(event) => applyDate(Number(event.target.value), selected.jm, selected.jd)}
+            options={years.map((year) => ({ value: String(year), label: toFaNum(String(year)) }))}
+          />
+          <NativeSelect
+            className="h-9 text-xs"
+            value={pad2(selected.jm)}
+            onChange={(event) => applyDate(selected.jy, Number(event.target.value), selected.jd)}
+            options={jalaliMonthNames.map((name, index) => ({ value: pad2(index + 1), label: name }))}
+          />
+          <NativeSelect
+            className="h-9 text-xs"
+            value={pad2(selected.jd)}
+            onChange={(event) => applyDate(selected.jy, selected.jm, Number(event.target.value))}
+            options={Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => ({
+              value: pad2(day),
+              label: toFaNum(String(day)),
+            }))}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const buildStepId = () => `step-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -345,8 +454,8 @@ export default function WorkflowStepEditor({
               </div>
               <div className="line-clamp-1 text-[11px] text-muted-foreground">{assigneeLabel(row, members)}</div>
               <div className="mt-1 text-[10px] text-muted-foreground">وضعیت مرحله: {stageLabelFa(row)}</div>
-              <div className="mt-1 text-[10px] text-muted-foreground">تاریخ انجام: {row.dueDate || "—"}</div>
-              {row.requiresApproval && <div className="mt-1 text-[10px] text-muted-foreground">ددلاین تایید/رد: {row.approvalDeadline || "—"}</div>}
+              <div className="mt-1 text-[10px] text-muted-foreground">تاریخ انجام: {isoToJalaliLabel(row.dueDate || "")}</div>
+              {row.requiresApproval && <div className="mt-1 text-[10px] text-muted-foreground">ددلاین تایید/رد: {isoToJalaliLabel(row.approvalDeadline || "")}</div>}
               {row.requiresApproval ? (
                 <div className="mt-1.5 space-y-0.5 text-[11px]">
                   <div className="line-clamp-1 text-muted-foreground">{approvalAssigneeLabel(row, members)}</div>
@@ -392,12 +501,10 @@ export default function WorkflowStepEditor({
                   <SelectItem value="done">انجام‌شده</SelectItem>
                 </SelectContent>
               </Select>
-              <Input
-                type="date"
-                value={activeContextStep.dueDate || ""}
-                onChange={(e) => updateAt(contextMenu.index, { dueDate: e.target.value })}
-                className="h-9 text-xs"
-                placeholder="تاریخ انجام مرحله"
+              <JalaliDateField
+                label="تاریخ انجام مرحله"
+                valueIso={activeContextStep.dueDate || ""}
+                onChange={(value) => updateAt(contextMenu.index, { dueDate: value })}
               />
 
               <label className="flex items-center gap-2 text-xs">
@@ -428,12 +535,10 @@ export default function WorkflowStepEditor({
                 </div>
               )}
               {activeContextStep.requiresApproval && (
-                <Input
-                  type="date"
-                  value={activeContextStep.approvalDeadline || ""}
-                  onChange={(e) => updateAt(contextMenu.index, { approvalDeadline: e.target.value })}
-                  className="h-9 text-xs"
-                  placeholder="ددلاین تایید/رد"
+                <JalaliDateField
+                  label="ددلاین تایید/رد"
+                  valueIso={activeContextStep.approvalDeadline || ""}
+                  onChange={(value) => updateAt(contextMenu.index, { approvalDeadline: value })}
                 />
               )}
 
@@ -589,15 +694,9 @@ export default function WorkflowStepEditor({
                   )}
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <p className="text-[11px] text-muted-foreground">تاریخ انجام مرحله</p>
-                    <Input type="date" value={row.dueDate || ""} onChange={(e) => updateAt(index, { dueDate: e.target.value })} className="h-9 text-xs" />
-                  </div>
+                  <JalaliDateField label="تاریخ انجام مرحله" valueIso={row.dueDate || ""} onChange={(value) => updateAt(index, { dueDate: value })} />
                   {row.requiresApproval ? (
-                    <div className="space-y-1">
-                      <p className="text-[11px] text-muted-foreground">ددلاین تایید/رد</p>
-                      <Input type="date" value={row.approvalDeadline || ""} onChange={(e) => updateAt(index, { approvalDeadline: e.target.value })} className="h-9 text-xs" />
-                    </div>
+                    <JalaliDateField label="ددلاین تایید/رد" valueIso={row.approvalDeadline || ""} onChange={(value) => updateAt(index, { approvalDeadline: value })} />
                   ) : (
                     <div className="space-y-1">
                       <p className="text-[11px] text-muted-foreground">ددلاین تایید/رد</p>

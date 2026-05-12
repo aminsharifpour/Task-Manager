@@ -22,6 +22,14 @@ type MinuteTemplate = {
 type Args = {
   apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
   pushToast: (message: string, tone?: "success" | "error") => void;
+  scheduleUndoableDelete: (options: {
+    message: string;
+    onRemoveLocal: () => void;
+    onRestoreLocal: () => void;
+    onCommit: () => Promise<void>;
+    errorMessage: string;
+    restoredMessage?: string;
+  }) => void;
   confirmAction: (message: string, options?: any) => Promise<boolean>;
   todayIso: () => string;
   minuteTemplates: MinuteTemplate[];
@@ -50,6 +58,7 @@ const emptyMinuteDraft = (todayIso: () => string): MinuteDraft => ({
 export const useMinuteActions = ({
   apiRequest,
   pushToast,
+  scheduleUndoableDelete,
   confirmAction,
   todayIso,
   minuteTemplates,
@@ -179,9 +188,14 @@ export const useMinuteActions = ({
     });
     if (!confirmed) return;
     try {
-      await apiRequest<void>(`/api/minutes/${id}`, { method: "DELETE" });
-      setMinutes((prev) => prev.filter((minute) => minute.id !== id));
-      pushToast("صورتجلسه حذف شد.");
+      const previousMinutes = minutes;
+      scheduleUndoableDelete({
+        message: "صورتجلسه حذف شد.",
+        onRemoveLocal: () => setMinutes((prev) => prev.filter((minute) => minute.id !== id)),
+        onRestoreLocal: () => setMinutes(previousMinutes),
+        onCommit: () => apiRequest<void>(`/api/minutes/${id}`, { method: "DELETE" }),
+        errorMessage: "حذف صورتجلسه ناموفق بود.",
+      });
     } catch {
       pushToast("حذف صورتجلسه ناموفق بود.", "error");
     }

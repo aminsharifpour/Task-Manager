@@ -7,6 +7,14 @@ export default defineConfig(({ mode }) => {
   const apiBase = String(env.VITE_API_BASE || "").trim();
   const devApiProxy = String(env.VITE_DEV_API_PROXY || "http://127.0.0.1:8787").trim();
   const useDevProxy = !apiBase && /^https?:\/\//i.test(devApiProxy);
+  const proxyConfig = {
+    "/api": devApiProxy,
+    "/uploads": devApiProxy,
+    "/socket.io": {
+      target: devApiProxy,
+      ws: true,
+    },
+  };
 
   return {
     root: __dirname,
@@ -36,16 +44,35 @@ export default defineConfig(({ mode }) => {
     },
     server: useDevProxy
       ? {
-          proxy: {
-            "/api": devApiProxy,
-            "/uploads": devApiProxy,
-            "/socket.io": {
-              target: devApiProxy,
-              ws: true,
-            },
+          host: "0.0.0.0",
+          strictPort: true,
+          hmr: {
+            overlay: false,
+            timeout: 20_000,
           },
+          watch: {
+            ignored: ["**/apps/api/data/**", "**/apps/api/prisma/**", "**/dist/**"],
+          },
+          proxy: proxyConfig,
         }
-      : undefined,
+      : {
+          host: "0.0.0.0",
+          strictPort: true,
+          hmr: {
+            overlay: false,
+            timeout: 20_000,
+          },
+        },
+    preview: useDevProxy
+      ? {
+          host: "0.0.0.0",
+          strictPort: true,
+          proxy: proxyConfig,
+        }
+      : {
+          host: "0.0.0.0",
+          strictPort: true,
+        },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "src"),

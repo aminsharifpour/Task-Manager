@@ -57,6 +57,11 @@ enum AccountingType {
   expense
 }
 
+enum AccountingTransactionStatus {
+  pending
+  approved
+}
+
 enum ConversationType {
   direct
   group
@@ -99,6 +104,7 @@ model User {
   leaveReviewed          HrLeaveRequest[]          @relation("LeaveReviewer")
   attendanceRecords      HrAttendanceRecord[]
   notifications          Notification[]
+  notificationPreference NotificationPreference?
   accounts               AccountingAccount[]
   transactions           AccountingTransaction[]
   conversationLinks      ChatConversationMember[]
@@ -274,6 +280,7 @@ model AccountingTransaction {
   userId      String
   accountId   String?
   type        AccountingType
+  status      AccountingTransactionStatus @default(pending)
   title       String
   amount      Decimal       @db.Decimal(18, 2)
   category    String?
@@ -305,6 +312,7 @@ model ChatConversation {
   id             String                   @id
   type           ConversationType
   title          String?
+  avatarUrl      String?
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
   participants   ChatConversationMember[]
@@ -357,14 +365,36 @@ model ChatMessageReaction {
 model Notification {
   id         String   @id
   userId      String
-  type        String
+  kind        String
+  category    String?
   title       String
-  body        String?
-  payload     Json?
-  isRead      Boolean  @default(false)
+  description String?
+  seenAt      DateTime?
+  readAt      DateTime?
+  dismissedAt DateTime?
+  targetView  String?
+  entityType  String?
+  entityId    String?
+  conversationId String?
+  taskId      String?
+  projectId   String?
+  actionLabel String?
+  dedupeKey   String?
+  meta        Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model NotificationPreference {
+  id              String   @id
+  userId          String   @unique
+  delivery        Json
+  mutedKinds      Json?
+  mutedCategories Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model AppSetting {

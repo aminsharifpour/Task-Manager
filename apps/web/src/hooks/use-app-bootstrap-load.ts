@@ -49,6 +49,7 @@ type UseAppBootstrapLoadDeps<
   setAuthToken: (value: string) => void;
   setAuthUser: Dispatch<SetStateAction<any | null>>;
   setAuthError: (value: string) => void;
+  setAuthBootstrapPending: Dispatch<SetStateAction<boolean>>;
   setKnownTaskIds: (ids: string[]) => void;
   setKnownProjectIds: (ids: string[]) => void;
   setKnownConversationIds: (ids: string[]) => void;
@@ -106,6 +107,7 @@ export function useAppBootstrapLoad<
   setAuthToken,
   setAuthUser,
   setAuthError,
+  setAuthBootstrapPending,
   setKnownTaskIds,
   setKnownProjectIds,
   setKnownConversationIds,
@@ -130,12 +132,23 @@ export function useAppBootstrapLoad<
   THrAttendance,
   THrSummary
 >) {
+  const keepPreviousIfTransientEmpty = <TValue,>(nextValue: TValue[], previousValue: TValue[]) => {
+    if (!Array.isArray(nextValue)) return previousValue;
+    if (nextValue.length === 0 && previousValue.length > 0) return previousValue;
+    return nextValue;
+  };
+
   useEffect(() => {
-    if (!authToken) return;
+    if (!authToken) {
+      setAuthBootstrapPending(false);
+      return;
+    }
     let mounted = true;
+    setAuthBootstrapPending(true);
     (async () => {
       try {
         const settled = await Promise.allSettled([
+          apiRequest<any>("/api/auth/me"),
           apiRequest<TTask[]>("/api/tasks"),
           apiRequest<TMinute[]>("/api/minutes"),
           apiRequest<unknown>("/api/projects"),
@@ -153,21 +166,20 @@ export function useAppBootstrapLoad<
           apiRequest<THrSummary>("/api/hr/summary"),
         ]);
         const getMessage = (reason: unknown) => String((reason as Error)?.message ?? "");
-        const hasAuthError = settled.some(
-          (result) =>
-            result.status === "rejected" &&
-            (
-              getMessage(result.reason).includes("Missing bearer token") ||
-              getMessage(result.reason).includes("Invalid or expired token") ||
-              getMessage(result.reason).includes("Unauthorized") ||
-              getMessage(result.reason).includes("Forbidden")
-            ),
-        );
-        if (hasAuthError) {
+        const authMeResult = settled[0];
+        const authMeFailed =
+          authMeResult?.status === "rejected" &&
+          (
+            getMessage(authMeResult.reason).includes("Missing bearer token") ||
+            getMessage(authMeResult.reason).includes("Invalid or expired token") ||
+            getMessage(authMeResult.reason).includes("Unauthorized")
+          );
+        if (authMeFailed) {
           if (!mounted) return;
           setAuthToken("");
           setAuthUser(null);
           setAuthError("نشست شما منقضی شده یا معتبر نیست. لطفا دوباره وارد شوید.");
+          setAuthBootstrapPending(false);
           return;
         }
         const pick = <TValue,>(index: number, fallback: TValue): TValue => {
@@ -175,40 +187,59 @@ export function useAppBootstrapLoad<
           if (result?.status === "fulfilled") return result.value as TValue;
           return fallback;
         };
-        const tasksData = pick<TTask[]>(0, []);
-        const minutesData = pick<TMinute[]>(1, []);
-        const projectsData = pick<unknown>(2, []);
-        const teamMembersData = pick<TTeamMember[]>(3, []);
-        const chatConversationsData = pick<unknown>(4, []);
-        const transactionsData = pick<TTransaction[]>(5, []);
-        const accountsData = pick<TAccount[]>(6, []);
-        const budgetHistoryData = pick<TBudgetHistory[]>(7, []);
-        const teamsData = pick<TTeam[]>(8, []);
-        const settingsData = pick<TSettings>(9, mergeSettingsWithDefaults(null) as TSettings);
-        const inboxPayload = pick<TInbox>(10, null as TInbox);
-        const hrProfilesData = pick<THrProfile[]>(11, []);
-        const hrLeavesData = pick<THrLeave[]>(12, []);
-        const hrAttendanceData = pick<THrAttendance[]>(13, []);
-        const hrSummaryData = pick<THrSummary>(14, null as THrSummary);
+        const authMe = pick<any>(0, null);
+        const tasksData = pick<TTask[]>(1, []);
+        const minutesData = pick<TMinute[]>(2, []);
+        const projectsData = pick<unknown>(3, []);
+        const teamMembersData = pick<TTeamMember[]>(4, []);
+        const chatConversationsData = pick<unknown>(5, []);
+        const transactionsData = pick<TTransaction[]>(6, []);
+        const accountsData = pick<TAccount[]>(7, []);
+        const budgetHistoryData = pick<TBudgetHistory[]>(8, []);
+        const teamsData = pick<TTeam[]>(9, []);
+        const settingsData = pick<TSettings>(10, mergeSettingsWithDefaults(null) as TSettings);
+        const inboxPayload = pick<TInbox>(11, null as TInbox);
+        const hrProfilesData = pick<THrProfile[]>(12, []);
+        const hrLeavesData = pick<THrLeave[]>(13, []);
+        const hrAttendanceData = pick<THrAttendance[]>(14, []);
+        const hrSummaryData = pick<THrSummary>(15, null as THrSummary);
 
         if (!mounted) return;
 
         const normalizedProjects = normalizeProjects(projectsData);
         const normalizedConversations = normalizeChatConversations(chatConversationsData);
-        setTasks(tasksData);
+        if (authMe?.id) {
+          setAuthUser((prev: any) => {
+            if (
+              prev &&
+              prev.id === authMe.id &&
+              prev.fullName === authMe.fullName &&
+              prev.phone === authMe.phone &&
+              prev.appRole === authMe.appRole &&
+              (prev.avatarDataUrl ?? "") === (authMe.avatarDataUrl ?? "") &&
+              JSON.stringify(prev.teamIds ?? []) === JSON.stringify(authMe.teamIds ?? [])
+            ) {
+              return prev;
+            }
+            return authMe;
+          });
+        }
+        setTasks((prev) => keepPreviousIfTransientEmpty(tasksData, prev));
         setMinutes(minutesData);
-        setProjects(normalizedProjects);
-        setTeamMembers(teamMembersData);
-        setChatConversations(normalizedConversations);
-        setTransactions(transactionsData);
-        setAccounts(accountsData);
-        setBudgetHistory(budgetHistoryData);
-        setTeams(teamsData);
-        setSettingsDraft(mergeSettingsWithDefaults(settingsData as TSettings | null | undefined));
+        setProjects((prev) => keepPreviousIfTransientEmpty(normalizedProjects, prev));
+        setTeamMembers((prev) => keepPreviousIfTransientEmpty(teamMembersData, prev));
+        setChatConversations((prev) => keepPreviousIfTransientEmpty(normalizedConversations, prev));
+        setTransactions((prev) => keepPreviousIfTransientEmpty(transactionsData, prev));
+        setAccounts((prev) => keepPreviousIfTransientEmpty(accountsData, prev));
+        setBudgetHistory((prev) => keepPreviousIfTransientEmpty(budgetHistoryData, prev));
+        setTeams((prev) => keepPreviousIfTransientEmpty(teamsData, prev));
+        setSettingsDraft((prev) =>
+          settled[10]?.status === "fulfilled" ? mergeSettingsWithDefaults(settingsData as TSettings | null | undefined) : prev,
+        );
         setInboxData(inboxPayload);
-        setHrProfiles(Array.isArray(hrProfilesData) ? hrProfilesData : []);
-        setHrLeaveRequests(Array.isArray(hrLeavesData) ? hrLeavesData : []);
-        setHrAttendanceRecords(Array.isArray(hrAttendanceData) ? hrAttendanceData : []);
+        setHrProfiles((prev) => keepPreviousIfTransientEmpty(Array.isArray(hrProfilesData) ? hrProfilesData : [], prev));
+        setHrLeaveRequests((prev) => keepPreviousIfTransientEmpty(Array.isArray(hrLeavesData) ? hrLeavesData : [], prev));
+        setHrAttendanceRecords((prev) => keepPreviousIfTransientEmpty(Array.isArray(hrAttendanceData) ? hrAttendanceData : [], prev));
         setHrSummary(hrSummaryData ?? null);
         setKnownTaskIds(tasksData.map((t) => t.id));
         setKnownProjectIds(normalizedProjects.map((p) => p.id));
@@ -242,8 +273,9 @@ export function useAppBootstrapLoad<
           setChatHasMore(false);
         }
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error(error);
+        // ignore bootstrap fetch noise; UI recovery path handles this state
+      } finally {
+        if (mounted) setAuthBootstrapPending(false);
       }
     })();
     return () => {
@@ -265,6 +297,7 @@ export function useAppBootstrapLoad<
     selectedConversationId,
     setAccounts,
     setAuthError,
+    setAuthBootstrapPending,
     setAuthToken,
     setAuthUser,
     setBudgetHistory,

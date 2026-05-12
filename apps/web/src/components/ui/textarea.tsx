@@ -1,22 +1,25 @@
 import * as React from "react"
+import { TextArea as HeroTextArea } from "@heroui/react"
 
 import { cn } from "@/lib/utils"
 
-const Textarea = React.forwardRef<
-  HTMLTextAreaElement,
-  React.ComponentProps<"textarea">
->(({ className, ...props }, ref) => {
-  return (
-    <textarea
-      className={cn(
-        "flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
-        className
-      )}
-      ref={ref}
-      {...props}
-    />
-  )
-})
+type TextareaProps = React.ComponentProps<"textarea">
+
+const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
+  ({ className, ...props }, ref) => {
+    const heroProps = props as unknown as React.ComponentProps<typeof HeroTextArea>
+
+    return (
+      <HeroTextArea
+        ref={ref}
+        variant="primary"
+        className={cn("oneui-textarea min-h-[7.5rem]", className)}
+        {...heroProps}
+      />
+    )
+  }
+)
+
 Textarea.displayName = "Textarea"
 
 export { Textarea }

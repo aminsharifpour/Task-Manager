@@ -4,6 +4,14 @@ import { normalizeUiMessage } from "@/lib/api-client";
 type Args = {
   apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
   pushToast: (message: string, tone?: "success" | "error") => void;
+  scheduleUndoableDelete: (options: {
+    message: string;
+    onRemoveLocal: () => void;
+    onRestoreLocal: () => void;
+    onCommit: () => Promise<void>;
+    errorMessage: string;
+    restoredMessage?: string;
+  }) => void;
   confirmAction: (message: string, options?: any) => Promise<boolean>;
   parseAmountInput: (value: string) => number;
   normalizeTimeInput: (value: string) => string;
@@ -17,6 +25,7 @@ type Args = {
   hrProfileDraft: any;
   hrLeaveDraft: any;
   hrAttendanceDraft: any;
+  hrAttendanceRecords: any[];
   setHrProfileErrors: (errors: Record<string, string>) => void;
   setHrLeaveErrors: (errors: Record<string, string>) => void;
   setHrAttendanceErrors: (errors: Record<string, string>) => void;
@@ -35,6 +44,7 @@ type Args = {
 export const useHrActions = ({
   apiRequest,
   pushToast,
+  scheduleUndoableDelete,
   confirmAction,
   parseAmountInput,
   normalizeTimeInput,
@@ -48,6 +58,7 @@ export const useHrActions = ({
   hrProfileDraft,
   hrLeaveDraft,
   hrAttendanceDraft,
+  hrAttendanceRecords,
   setHrProfileErrors,
   setHrLeaveErrors,
   setHrAttendanceErrors,
@@ -201,7 +212,7 @@ export const useHrActions = ({
       const normalizedCheckIn = isLeaveStatus ? "" : inputCheckIn;
       const normalizedCheckOut = isLeaveStatus ? "" : inputCheckOut;
       const autoWorkHours = isLeaveStatus ? 0 : calculateWorkHoursFromTime(normalizedCheckIn, normalizedCheckOut);
-      await apiRequest<any>(`/api/hr/attendance/${hrAttendanceDraft.memberId}/${hrAttendanceDraft.date}`, {
+      const saved = await apiRequest<any>(`/api/hr/attendance/${hrAttendanceDraft.memberId}/${hrAttendanceDraft.date}`, {
         method: "PUT",
         body: JSON.stringify({
           checkIn: normalizedCheckIn,
@@ -217,9 +228,28 @@ export const useHrActions = ({
         checkOut: normalizedCheckOut,
         workHours: String(autoWorkHours),
       }));
+      setHrAttendanceRecords((prev) => {
+        const index = prev.findIndex((row) => String(row?.id ?? "").trim() === String(saved?.id ?? "").trim());
+        if (index !== -1) {
+          const nextRows = [...prev];
+          nextRows[index] = saved;
+          return nextRows;
+        }
+        const duplicateIndex = prev.findIndex(
+          (row) =>
+            String(row?.memberId ?? "").trim() === String(saved?.memberId ?? "").trim() &&
+            String(row?.date ?? "").trim() === String(saved?.date ?? "").trim(),
+        );
+        if (duplicateIndex !== -1) {
+          const nextRows = [...prev];
+          nextRows[duplicateIndex] = saved;
+          return nextRows;
+        }
+        return [saved, ...prev];
+      });
       setHrAttendanceErrors({});
       pushToast("رکورد حضور و غیاب ذخیره شد.");
-      await refreshHrAttendance(hrAttendanceMonth, isHrManager ? "" : authUserId ?? "");
+      void refreshHrAttendance(hrAttendanceMonth, isHrManager ? "" : authUserId ?? "").catch(() => undefined);
       void refreshHrSummary();
     } catch (error) {
       const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "ثبت حضور و غیاب ناموفق بود.");
@@ -259,10 +289,17 @@ export const useHrActions = ({
     });
     if (!confirmed) return;
     try {
-      await apiRequest<void>(`/api/hr/attendance/record/${row.id}`, { method: "DELETE" });
-      setHrAttendanceRecords((prev) => prev.filter((record) => record.id !== row.id));
-      pushToast("رکورد حضور و غیاب حذف شد.");
-      void refreshHrSummary();
+      const previousRecords = hrAttendanceRecords;
+      scheduleUndoableDelete({
+        message: "رکورد حضور و غیاب حذف شد.",
+        onRemoveLocal: () => setHrAttendanceRecords((prev) => prev.filter((record) => record.id !== row.id)),
+        onRestoreLocal: () => setHrAttendanceRecords(previousRecords),
+        onCommit: async () => {
+          await apiRequest<void>(`/api/hr/attendance/record/${row.id}`, { method: "DELETE" });
+          await refreshHrSummary();
+        },
+        errorMessage: "حذف رکورد حضور و غیاب ناموفق بود.",
+      });
     } catch (error) {
       const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "حذف رکورد حضور و غیاب ناموفق بود.");
       pushToast(msg || "حذف رکورد حضور و غیاب ناموفق بود.", "error");

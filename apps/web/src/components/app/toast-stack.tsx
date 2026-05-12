@@ -4,6 +4,8 @@ export type ToastItemViewModel = {
   id: string;
   message: string;
   tone: "success" | "error";
+  actionLabel?: string;
+  onAction?: () => void;
 };
 
 type Props = {
@@ -49,9 +51,20 @@ export default function ToastStack({ toasts }: Props) {
             key={toast.id}
             className={`pointer-events-auto rounded-xl border px-3 py-2 text-sm shadow-sm backdrop-blur-sm ${visual.container}`}
           >
-            <div className="flex items-center gap-2">
-              {visual.icon}
-              <span className="line-clamp-2">{toast.message}</span>
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5">{visual.icon}</span>
+              <div className="min-w-0 flex-1">
+                <span className="line-clamp-2 block">{toast.message}</span>
+                {toast.actionLabel && toast.onAction ? (
+                  <button
+                    type="button"
+                    className="mt-2 inline-flex h-8 items-center rounded-full border border-current/20 bg-background/40 px-3 text-xs font-semibold transition hover:bg-background/60"
+                    onClick={toast.onAction}
+                  >
+                    {toast.actionLabel}
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
         );

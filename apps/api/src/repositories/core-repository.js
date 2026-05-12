@@ -4,6 +4,21 @@ import prisma from "../prisma.js";
 import { isPostgresMode } from "../db-mode.js";
 import { getDefaultSettings, readStore, writeStore } from "../store.js";
 
+const isPrismaMissingModelError = (error) => {
+  const code = String(error?.code ?? "").trim();
+  const message = String(error?.message ?? "");
+  return code === "P2021" || code === "P2022" || /does not exist|not exist|Unknown field|Unknown arg/i.test(message);
+};
+
+const fallbackOnMissingModel = async (runner, fallback) => {
+  try {
+    return await runner();
+  } catch (error) {
+    if (isPrismaMissingModelError(error)) return await fallback();
+    throw error;
+  }
+};
+
 const toIso = (value) => {
   if (!value) return "";
   if (value instanceof Date) return value.toISOString();
@@ -27,6 +42,61 @@ const toDateOrNull = (value, { dateOnly = false } = {}) => {
 };
 
 const normalizeArray = (value) => (Array.isArray(value) ? value : []);
+const NOTIFICATION_KINDS = ["task", "project", "chat", "mention", "approval", "system"];
+const normalizeNotificationKind = (value) => {
+  const kind = String(value ?? "").trim();
+  return NOTIFICATION_KINDS.includes(kind) ? kind : "system";
+};
+const defaultNotificationPreference = (userId = "") => ({
+  userId: String(userId ?? "").trim(),
+  channels: {
+    task: true,
+    project: true,
+    chat: true,
+    mention: true,
+    approval: true,
+    system: true,
+  },
+  delivery: {
+    task: { center: true, toast: true, sound: false },
+    project: { center: true, toast: true, sound: false },
+    chat: { center: true, toast: true, sound: true },
+    mention: { center: true, toast: true, sound: true },
+    approval: { center: true, toast: true, sound: false },
+    system: { center: true, toast: true, sound: false },
+  },
+  mutedKinds: [],
+  mutedCategories: [],
+  updatedAt: "",
+});
+const normalizeNotificationPreferenceShape = (preference, userId = "") => {
+  const base = defaultNotificationPreference(userId);
+  const incomingDelivery = preference?.delivery && typeof preference.delivery === "object" ? preference.delivery : {};
+  return {
+    userId: String(preference?.userId ?? userId ?? "").trim(),
+    channels: {
+      task: typeof preference?.channels?.task === "boolean" ? preference.channels.task : base.channels.task,
+      project: typeof preference?.channels?.project === "boolean" ? preference.channels.project : base.channels.project,
+      chat: typeof preference?.channels?.chat === "boolean" ? preference.channels.chat : base.channels.chat,
+      mention: typeof preference?.channels?.mention === "boolean" ? preference.channels.mention : base.channels.mention,
+      approval: typeof preference?.channels?.approval === "boolean" ? preference.channels.approval : base.channels.approval,
+      system: typeof preference?.channels?.system === "boolean" ? preference.channels.system : base.channels.system,
+    },
+    delivery: Object.fromEntries(
+      NOTIFICATION_KINDS.map((kind) => [
+        kind,
+        {
+          center: typeof incomingDelivery?.[kind]?.center === "boolean" ? incomingDelivery[kind].center : base.delivery[kind].center,
+          toast: typeof incomingDelivery?.[kind]?.toast === "boolean" ? incomingDelivery[kind].toast : base.delivery[kind].toast,
+          sound: typeof incomingDelivery?.[kind]?.sound === "boolean" ? incomingDelivery[kind].sound : base.delivery[kind].sound,
+        },
+      ]),
+    ),
+    mutedKinds: Array.from(new Set(normalizeArray(preference?.mutedKinds).map((item) => normalizeNotificationKind(item)).filter(Boolean))).slice(0, 20),
+    mutedCategories: Array.from(new Set(normalizeArray(preference?.mutedCategories).map((item) => String(item ?? "").trim()).filter(Boolean))).slice(0, 40),
+    updatedAt: toIso(preference?.updatedAt),
+  };
+};
 
 const buildLegacyTeam = (team) => ({
   id: String(team?.id ?? "").trim(),
@@ -159,6 +229,7 @@ const buildLegacyChatConversation = (row) => ({
   id: String(row?.id ?? "").trim(),
   type: String(row?.type ?? "direct").trim() === "group" ? "group" : "direct",
   title: String(row?.title ?? "").trim(),
+  avatarDataUrl: String(row?.avatarDataUrl ?? row?.avatarUrl ?? "").trim(),
   participantIds: normalizeArray(row?.participants).map((item) => String(item?.userId ?? "").trim()).filter(Boolean),
   createdById: String(row?.createdById ?? "").trim(),
   createdAt: toIso(row?.createdAt),
@@ -214,66 +285,155 @@ const buildLegacyAuditLog = (row) => ({
   meta: row?.meta && typeof row.meta === "object" ? row.meta : {},
 });
 
+const buildLegacyNotification = (row) => ({
+  id: String(row?.id ?? "").trim(),
+  userId: String(row?.userId ?? "").trim(),
+  kind: normalizeNotificationKind(row?.kind ?? row?.type),
+  category: String(row?.category ?? row?.kind ?? row?.type ?? "system").trim(),
+  title: String(row?.title ?? "").trim(),
+  description: String(row?.description ?? row?.body ?? "").trim(),
+  createdAt: toIso(row?.createdAt),
+  seenAt: toIso(row?.seenAt),
+  readAt: toIso(row?.readAt) || (row?.isRead ? toIso(row?.updatedAt || row?.createdAt) : ""),
+  dismissedAt: toIso(row?.dismissedAt),
+  targetView: String(row?.targetView ?? "").trim(),
+  entityType: String(row?.entityType ?? "").trim(),
+  entityId: String(row?.entityId ?? "").trim(),
+  conversationId: String(row?.conversationId ?? "").trim(),
+  taskId: String(row?.taskId ?? "").trim(),
+  projectId: String(row?.projectId ?? "").trim(),
+  actionLabel: String(row?.actionLabel ?? "مشاهده").trim(),
+  dedupeKey: String(row?.dedupeKey ?? "").trim(),
+  meta: row?.meta && typeof row.meta === "object" ? row.meta : {},
+});
+
 export async function getCoreState() {
   if (!isPostgresMode) {
     return readStore();
   }
 
-  const [legacyStore, appSetting, teams, users, projects, tasks, hrProfiles, hrLeaveRequests, hrAttendanceRecords, chatConversations, chatMessages, auditLogs] = await Promise.all([
-    Promise.resolve(readStore()),
-    prisma.appSetting.findUnique({ where: { key: "app" } }),
-    prisma.team.findMany({ orderBy: { createdAt: "desc" } }),
-    prisma.user.findMany({
-      include: { teams: true },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.project.findMany({
-      include: { members: true },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.task.findMany({
-      include: {
-        project: true,
-        assigner: { select: { fullName: true } },
-        assigneePrimary: { select: { fullName: true } },
-        assigneeSecondary: { select: { fullName: true } },
-        workflowComments: {
-          include: { author: { select: { fullName: true } } },
+  const legacyStore = readStore();
+  const [
+    appSetting,
+    teams,
+    users,
+    projects,
+    tasks,
+    hrProfiles,
+    hrLeaveRequests,
+    hrAttendanceRecords,
+    chatConversations,
+    chatMessages,
+    notifications,
+    notificationPreferences,
+    auditLogs,
+  ] = await Promise.all([
+    fallbackOnMissingModel(() => prisma.appSetting.findUnique({ where: { key: "app" } }), async () => null),
+    fallbackOnMissingModel(() => prisma.team.findMany({ orderBy: { createdAt: "desc" } }), async () => normalizeArray(legacyStore.teams)),
+    fallbackOnMissingModel(
+      () =>
+        prisma.user.findMany({
+          include: { teams: true },
+          orderBy: { createdAt: "desc" },
+        }),
+      async () => [],
+    ),
+    fallbackOnMissingModel(
+      () =>
+        prisma.project.findMany({
+          include: { members: true },
+          orderBy: { createdAt: "desc" },
+        }),
+      async () => [],
+    ),
+    fallbackOnMissingModel(
+      () =>
+        prisma.task.findMany({
+          include: {
+            project: true,
+            assigner: { select: { fullName: true } },
+            assigneePrimary: { select: { fullName: true } },
+            assigneeSecondary: { select: { fullName: true } },
+            workflowComments: {
+              include: { author: { select: { fullName: true } } },
+              orderBy: { createdAt: "asc" },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        }),
+      async () => [],
+    ),
+    fallbackOnMissingModel(() => prisma.hrProfile.findMany(), async () => []),
+    fallbackOnMissingModel(() => prisma.hrLeaveRequest.findMany({ orderBy: { createdAt: "desc" } }), async () => []),
+    fallbackOnMissingModel(() => prisma.hrAttendanceRecord.findMany({ orderBy: { date: "desc" } }), async () => []),
+    fallbackOnMissingModel(
+      () =>
+        prisma.chatConversation.findMany({
+          include: { participants: true },
+          orderBy: { updatedAt: "desc" },
+        }),
+      async () => [],
+    ),
+    fallbackOnMissingModel(
+      () =>
+        prisma.chatMessage.findMany({
+          include: {
+            sender: { select: { fullName: true, avatarUrl: true } },
+            reactions: true,
+          },
           orderBy: { createdAt: "asc" },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.hrProfile.findMany(),
-    prisma.hrLeaveRequest.findMany({ orderBy: { createdAt: "desc" } }),
-    prisma.hrAttendanceRecord.findMany({ orderBy: { date: "desc" } }),
-    prisma.chatConversation.findMany({
-      include: { participants: true },
-      orderBy: { updatedAt: "desc" },
-    }),
-    prisma.chatMessage.findMany({
-      include: {
-        sender: { select: { fullName: true, avatarUrl: true } },
-        reactions: true,
-      },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 5000 }),
+        }),
+      async () => [],
+    ),
+    fallbackOnMissingModel(() => prisma.notification.findMany({ orderBy: { createdAt: "desc" }, take: 1000 }), async () => normalizeArray(legacyStore.notifications)),
+    fallbackOnMissingModel(() => prisma.notificationPreference.findMany({ orderBy: { updatedAt: "desc" } }), async () => normalizeArray(legacyStore.notificationPreferences)),
+    fallbackOnMissingModel(() => prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 5000 }), async () => normalizeArray(legacyStore.auditLogs)),
   ]);
 
   return {
     ...legacyStore,
     settings: (appSetting?.payload && typeof appSetting.payload === "object" ? appSetting.payload : legacyStore?.settings) ?? getDefaultSettings(),
-    teams: teams.map(buildLegacyTeam),
-    teamMembers: users.map(buildLegacyMember),
-    projects: projects.map(buildLegacyProject),
-    tasks: tasks.map(buildLegacyTask),
-    hrProfiles: hrProfiles.map(buildLegacyHrProfile),
-    hrLeaveRequests: hrLeaveRequests.map(buildLegacyLeave),
-    hrAttendanceRecords: hrAttendanceRecords.map(buildLegacyAttendance),
-    chatConversations: chatConversations.map(buildLegacyChatConversation),
-    chatMessages: chatMessages.map(buildLegacyChatMessage),
-    auditLogs: auditLogs.map(buildLegacyAuditLog),
+    teams: Array.isArray(teams) && teams.length > 0 && teams[0]?.memberships !== undefined ? teams.map(buildLegacyTeam) : normalizeArray(legacyStore.teams),
+    teamMembers: Array.isArray(users) && users.length > 0 && users[0]?.phone !== undefined ? users.map(buildLegacyMember) : normalizeArray(legacyStore.teamMembers),
+    projects: Array.isArray(projects) && projects.length > 0 && projects[0]?.ownerId !== undefined && projects[0]?.members !== undefined ? projects.map(buildLegacyProject) : normalizeArray(legacyStore.projects),
+    tasks: Array.isArray(tasks) && tasks.length > 0 && tasks[0]?.assignerId !== undefined ? tasks.map(buildLegacyTask) : normalizeArray(legacyStore.tasks),
+    hrProfiles: Array.isArray(hrProfiles) && hrProfiles.length > 0 && hrProfiles[0]?.userId !== undefined ? hrProfiles.map(buildLegacyHrProfile) : normalizeArray(legacyStore.hrProfiles),
+    hrLeaveRequests: Array.isArray(hrLeaveRequests) && hrLeaveRequests.length > 0 && hrLeaveRequests[0]?.userId !== undefined ? hrLeaveRequests.map(buildLegacyLeave) : normalizeArray(legacyStore.hrLeaveRequests),
+    hrAttendanceRecords: Array.isArray(hrAttendanceRecords) && hrAttendanceRecords.length > 0 && hrAttendanceRecords[0]?.userId !== undefined ? hrAttendanceRecords.map(buildLegacyAttendance) : normalizeArray(legacyStore.hrAttendanceRecords),
+    chatConversations:
+      Array.isArray(chatConversations) && chatConversations.length > 0 && chatConversations[0]?.participants !== undefined
+        ? chatConversations.map(buildLegacyChatConversation)
+        : normalizeArray(legacyStore.chatConversations),
+    chatMessages:
+      Array.isArray(chatMessages) && chatMessages.length > 0 && chatMessages[0]?.senderId !== undefined
+        ? chatMessages.map(buildLegacyChatMessage)
+        : normalizeArray(legacyStore.chatMessages),
+    notifications:
+      Array.isArray(notifications) && notifications.length > 0 && (notifications[0]?.userId !== undefined || notifications[0]?.kind !== undefined)
+        ? notifications.map(buildLegacyNotification)
+        : normalizeArray(legacyStore.notifications),
+    notificationPreferences:
+      Array.isArray(notificationPreferences) && notificationPreferences.length > 0 && notificationPreferences[0]?.userId !== undefined
+        ? notificationPreferences.map((row) =>
+            normalizeNotificationPreferenceShape(
+              {
+                userId: row.userId,
+                channels: row.delivery && typeof row.delivery === "object"
+                  ? Object.fromEntries(NOTIFICATION_KINDS.map((kind) => [kind, row.delivery?.[kind]?.center !== false]))
+                  : {},
+                delivery: row.delivery && typeof row.delivery === "object" ? row.delivery : {},
+                mutedKinds: normalizeArray(row.mutedKinds),
+                mutedCategories: normalizeArray(row.mutedCategories),
+                updatedAt: row.updatedAt,
+              },
+              row.userId,
+            ),
+          )
+        : normalizeArray(legacyStore.notificationPreferences).map((row) => normalizeNotificationPreferenceShape(row, row?.userId)),
+    auditLogs:
+      Array.isArray(auditLogs) && auditLogs.length > 0 && (auditLogs[0]?.action !== undefined || auditLogs[0]?.actorUserId !== undefined)
+        ? auditLogs.map((row) => (row?.actor ? row : buildLegacyAuditLog(row)))
+        : normalizeArray(legacyStore.auditLogs),
   };
 }
 
@@ -883,6 +1043,7 @@ const buildLegacyAccount = (row) => ({
 const buildLegacyTransaction = (row) => ({
   id: String(row?.id ?? "").trim(),
   type: String(row?.type ?? "").trim(),
+  status: String(row?.status ?? "approved").trim() === "pending" ? "pending" : "approved",
   title: String(row?.title ?? "").trim(),
   amount: Number(row?.amount ?? 0) || 0,
   category: String(row?.category ?? "").trim(),
@@ -997,6 +1158,7 @@ export async function createAccountingTransaction(transaction) {
       type: transaction.type,
       title: transaction.title,
       amount: Number(transaction.amount ?? 0),
+      status: String(transaction.status ?? "pending").trim() === "approved" ? "approved" : "pending",
       category: transaction.category || null,
       date: toDateOrNull(transaction.date, { dateOnly: true }) ?? new Date(),
       timeHHMM: transaction.time || null,
@@ -1021,6 +1183,7 @@ export async function updateAccountingTransaction(transaction) {
       type: transaction.type,
       title: transaction.title,
       amount: Number(transaction.amount ?? 0),
+      status: String(transaction.status ?? "pending").trim() === "approved" ? "approved" : "pending",
       category: transaction.category || null,
       date: toDateOrNull(transaction.date, { dateOnly: true }) ?? new Date(),
       timeHHMM: transaction.time || null,
@@ -1083,9 +1246,10 @@ export async function getSettingsState() {
     const db = readStore();
     return db.settings ?? getDefaultSettings();
   }
-  const row = await prisma.appSetting.findUnique({ where: { key: "app" } });
+  const row = await fallbackOnMissingModel(() => prisma.appSetting.findUnique({ where: { key: "app" } }), async () => null);
   if (row?.payload && typeof row.payload === "object") return row.payload;
-  return getDefaultSettings();
+  const db = readStore();
+  return db.settings ?? getDefaultSettings();
 }
 
 export async function saveSettingsState(settings) {
@@ -1095,11 +1259,20 @@ export async function saveSettingsState(settings) {
     writeStore(db);
     return settings;
   }
-  await prisma.appSetting.upsert({
-    where: { key: "app" },
-    update: { payload: settings },
-    create: { key: "app", payload: settings },
-  });
+  await fallbackOnMissingModel(
+    () =>
+      prisma.appSetting.upsert({
+        where: { key: "app" },
+        update: { payload: settings },
+        create: { key: "app", payload: settings },
+      }),
+    async () => {
+      const db = readStore();
+      db.settings = settings;
+      writeStore(db);
+      return null;
+    },
+  );
   return settings;
 }
 
@@ -1110,20 +1283,29 @@ export async function createAuditLogEntry(entry) {
     writeStore(db);
     return entry;
   }
-  await prisma.auditLog.create({
-    data: {
-      id: entry.id,
-      actorUserId: entry.actor?.userId || null,
-      actorFullName: entry.actor?.fullName || null,
-      actorRole: entry.actor?.role || null,
-      entityType: entry.entityType,
-      entityId: entry.entityId,
-      action: entry.action,
-      summary: entry.summary || null,
-      meta: entry.meta && typeof entry.meta === "object" ? entry.meta : {},
-      createdAt: toDateOrNull(entry.createdAt) ?? new Date(),
+  await fallbackOnMissingModel(
+    () =>
+      prisma.auditLog.create({
+        data: {
+          id: entry.id,
+          actorUserId: entry.actor?.userId || null,
+          actorFullName: entry.actor?.fullName || null,
+          actorRole: entry.actor?.role || null,
+          entityType: entry.entityType,
+          entityId: entry.entityId,
+          action: entry.action,
+          summary: entry.summary || null,
+          meta: entry.meta && typeof entry.meta === "object" ? entry.meta : {},
+          createdAt: toDateOrNull(entry.createdAt) ?? new Date(),
+        },
+      }),
+    async () => {
+      const db = readStore();
+      db.auditLogs = [entry, ...normalizeArray(db.auditLogs)].slice(0, 5000);
+      writeStore(db);
+      return null;
     },
-  });
+  );
   return entry;
 }
 
@@ -1132,8 +1314,11 @@ export async function getAuditLogState() {
     const db = readStore();
     return normalizeArray(db.auditLogs);
   }
-  const rows = await prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 5000 });
-  return rows.map(buildLegacyAuditLog);
+  const rows = await fallbackOnMissingModel(
+    () => prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 5000 }),
+    async () => normalizeArray(readStore().auditLogs),
+  );
+  return rows.map((row) => (row?.actor ? row : buildLegacyAuditLog(row)));
 }
 
 export async function createChatConversation(conversation) {
@@ -1149,6 +1334,7 @@ export async function createChatConversation(conversation) {
         id: conversation.id,
         type: conversation.type,
         title: conversation.title || null,
+        avatarUrl: conversation.avatarDataUrl || null,
         createdAt: toDateOrNull(conversation.createdAt) ?? new Date(),
         updatedAt: toDateOrNull(conversation.updatedAt) ?? new Date(),
       },
@@ -1163,6 +1349,59 @@ export async function createChatConversation(conversation) {
     });
   });
   return conversation;
+}
+
+export async function updateChatConversation(conversationId, patch) {
+  const safeConversationId = String(conversationId ?? "").trim();
+  if (!safeConversationId) return null;
+  if (!isPostgresMode) {
+    const db = readStore();
+    let updated = null;
+    db.chatConversations = normalizeArray(db.chatConversations).map((row) => {
+      if (String(row?.id ?? "").trim() !== safeConversationId) return row;
+      updated = {
+        ...row,
+        title: String(patch?.title ?? row?.title ?? "").trim(),
+        avatarDataUrl: String(patch?.avatarDataUrl ?? row?.avatarDataUrl ?? "").trim(),
+        participantIds: normalizeArray(patch?.participantIds ?? row?.participantIds).map((item) => String(item ?? "").trim()).filter(Boolean),
+        updatedAt: String(patch?.updatedAt ?? new Date().toISOString()),
+      };
+      return updated;
+    });
+    writeStore(db);
+    return updated;
+  }
+  await prisma.$transaction(async (tx) => {
+    await tx.chatConversation.update({
+      where: { id: safeConversationId },
+      data: {
+        title: String(patch?.title ?? "").trim() || null,
+        avatarUrl: String(patch?.avatarDataUrl ?? "").trim() || null,
+        updatedAt: toDateOrNull(patch?.updatedAt) ?? new Date(),
+      },
+    });
+    if (Array.isArray(patch?.participantIds)) {
+      await tx.chatConversationMember.deleteMany({ where: { conversationId: safeConversationId } });
+      const participantIds = normalizeArray(patch.participantIds).map((item) => String(item ?? "").trim()).filter(Boolean);
+      if (participantIds.length > 0) {
+        await tx.chatConversationMember.createMany({
+          data: participantIds.map((userId) => ({
+            id: crypto.randomUUID(),
+            conversationId: safeConversationId,
+            userId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
+  });
+  return {
+    id: safeConversationId,
+    title: String(patch?.title ?? "").trim(),
+    avatarDataUrl: String(patch?.avatarDataUrl ?? "").trim(),
+    participantIds: normalizeArray(patch?.participantIds).map((item) => String(item ?? "").trim()).filter(Boolean),
+    updatedAt: String(patch?.updatedAt ?? new Date().toISOString()),
+  };
 }
 
 export async function deleteChatConversation(conversationId) {
@@ -1273,4 +1512,317 @@ export async function markConversationRead(conversationId, userId) {
     await updateChatMessage(row);
   }
   return changedRows.map((row) => row.id);
+}
+
+export async function getNotificationPreferenceState(userId) {
+  const safeUserId = String(userId ?? "").trim();
+  const fallback = defaultNotificationPreference(safeUserId);
+  if (!safeUserId) return fallback;
+  if (!isPostgresMode) {
+    const db = readStore();
+    const row = normalizeArray(db.notificationPreferences).find((item) => String(item?.userId ?? "").trim() === safeUserId);
+    return normalizeNotificationPreferenceShape(row, safeUserId);
+  }
+  const row = await fallbackOnMissingModel(
+    () => prisma.notificationPreference.findUnique({ where: { userId: safeUserId } }),
+    async () => null,
+  );
+  if (!row) return fallback;
+  return normalizeNotificationPreferenceShape(
+    {
+      userId: row.userId,
+      channels: row.delivery && typeof row.delivery === "object"
+        ? Object.fromEntries(NOTIFICATION_KINDS.map((kind) => [kind, row.delivery?.[kind]?.center !== false]))
+        : {},
+      delivery: row.delivery && typeof row.delivery === "object" ? row.delivery : {},
+      mutedKinds: normalizeArray(row.mutedKinds),
+      mutedCategories: normalizeArray(row.mutedCategories),
+      updatedAt: row.updatedAt,
+    },
+    safeUserId,
+  );
+}
+
+export async function saveNotificationPreferenceState(preference) {
+  const safe = normalizeNotificationPreferenceShape(preference, preference?.userId);
+  if (!safe.userId) return safe;
+  if (!isPostgresMode) {
+    const db = readStore();
+    const rows = normalizeArray(db.notificationPreferences);
+    const index = rows.findIndex((row) => String(row?.userId ?? "").trim() === safe.userId);
+    const next = { ...safe, updatedAt: new Date().toISOString() };
+    db.notificationPreferences = index === -1 ? [next, ...rows] : rows.map((row, idx) => (idx === index ? next : row));
+    writeStore(db);
+    return next;
+  }
+  const payload = {
+    userId: safe.userId,
+    delivery: safe.delivery,
+    mutedKinds: safe.mutedKinds,
+    mutedCategories: safe.mutedCategories,
+  };
+  const row = await fallbackOnMissingModel(
+    () =>
+      prisma.notificationPreference.upsert({
+        where: { userId: safe.userId },
+        update: payload,
+        create: {
+          id: crypto.randomUUID(),
+          ...payload,
+        },
+      }),
+    async () => null,
+  );
+  return row
+    ? normalizeNotificationPreferenceShape(
+        {
+          userId: row.userId,
+          delivery: row.delivery,
+          mutedKinds: normalizeArray(row.mutedKinds),
+          mutedCategories: normalizeArray(row.mutedCategories),
+          updatedAt: row.updatedAt,
+        },
+        safe.userId,
+      )
+    : safe;
+}
+
+export async function listNotificationsForUser(userId, options = {}) {
+  const safeUserId = String(userId ?? "").trim();
+  const includeDismissed = options?.includeDismissed === true;
+  const kind = String(options?.kind ?? "").trim();
+  const category = String(options?.category ?? "").trim();
+  const unreadOnly = options?.unreadOnly === true;
+  if (!safeUserId) return [];
+  if (!isPostgresMode) {
+    const db = readStore();
+    return normalizeArray(db.notifications)
+      .filter((row) => String(row?.userId ?? "").trim() === safeUserId)
+      .filter((row) => includeDismissed || !String(row?.dismissedAt ?? "").trim())
+      .filter((row) => !kind || normalizeNotificationKind(row?.kind) === normalizeNotificationKind(kind))
+      .filter((row) => !category || String(row?.category ?? "").trim() === category)
+      .filter((row) => !unreadOnly || !String(row?.readAt ?? "").trim())
+      .sort((a, b) => String(b?.createdAt ?? "").localeCompare(String(a?.createdAt ?? "")))
+      .map(buildLegacyNotification);
+  }
+  const rows = await fallbackOnMissingModel(
+    () =>
+      prisma.notification.findMany({
+        where: {
+          userId: safeUserId,
+          ...(includeDismissed ? {} : { dismissedAt: null }),
+          ...(kind ? { kind: normalizeNotificationKind(kind) } : {}),
+          ...(category ? { category } : {}),
+          ...(unreadOnly ? { readAt: null } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        take: 1000,
+      }),
+    async () => [],
+  );
+  return normalizeArray(rows).map(buildLegacyNotification);
+}
+
+export async function createNotificationEntry(notification) {
+  const payload = buildLegacyNotification(notification);
+  if (!payload.userId || !payload.title) return null;
+  if (!isPostgresMode) {
+    const db = readStore();
+    const rows = normalizeArray(db.notifications);
+    if (payload.dedupeKey) {
+      const existing = rows.find(
+        (row) =>
+          String(row?.userId ?? "").trim() === payload.userId &&
+          String(row?.dedupeKey ?? "").trim() === payload.dedupeKey &&
+          !String(row?.dismissedAt ?? "").trim(),
+      );
+      if (existing) return buildLegacyNotification(existing);
+    }
+    db.notifications = [payload, ...rows].slice(0, 12000);
+    writeStore(db);
+    return payload;
+  }
+  const existing = payload.dedupeKey
+    ? await fallbackOnMissingModel(
+        () =>
+          prisma.notification.findFirst({
+            where: {
+              userId: payload.userId,
+              dedupeKey: payload.dedupeKey,
+              dismissedAt: null,
+            },
+          }),
+        async () => null,
+      )
+    : null;
+  if (existing) return buildLegacyNotification(existing);
+  const row = await fallbackOnMissingModel(
+    () =>
+      prisma.notification.create({
+        data: {
+          id: payload.id || crypto.randomUUID(),
+          userId: payload.userId,
+          kind: payload.kind,
+          category: payload.category || null,
+          title: payload.title,
+          description: payload.description || null,
+          seenAt: toDateOrNull(payload.seenAt),
+          readAt: toDateOrNull(payload.readAt),
+          dismissedAt: toDateOrNull(payload.dismissedAt),
+          targetView: payload.targetView || null,
+          entityType: payload.entityType || null,
+          entityId: payload.entityId || null,
+          conversationId: payload.conversationId || null,
+          taskId: payload.taskId || null,
+          projectId: payload.projectId || null,
+          actionLabel: payload.actionLabel || null,
+          dedupeKey: payload.dedupeKey || null,
+          meta: payload.meta && typeof payload.meta === "object" ? payload.meta : {},
+          createdAt: toDateOrNull(payload.createdAt) ?? new Date(),
+        },
+      }),
+    async () => null,
+  );
+  return row ? buildLegacyNotification(row) : payload;
+}
+
+const updateNotificationRowsJson = (userId, updater) => {
+  const db = readStore();
+  const safeUserId = String(userId ?? "").trim();
+  const rows = normalizeArray(db.notifications);
+  let changed = false;
+  db.notifications = rows.map((row) => {
+    if (String(row?.userId ?? "").trim() !== safeUserId) return row;
+    const next = updater(buildLegacyNotification(row));
+    if (!next) return row;
+    changed = true;
+    return next;
+  });
+  if (changed) writeStore(db);
+  return changed;
+};
+
+export async function markAllNotificationsSeen(userId) {
+  const now = new Date().toISOString();
+  const safeUserId = String(userId ?? "").trim();
+  if (!safeUserId) return now;
+  if (!isPostgresMode) {
+    updateNotificationRowsJson(safeUserId, (row) => (!row.dismissedAt && !row.seenAt ? { ...row, seenAt: now } : null));
+    return now;
+  }
+  await fallbackOnMissingModel(
+    () => prisma.notification.updateMany({ where: { userId: safeUserId, seenAt: null, dismissedAt: null }, data: { seenAt: new Date(now) } }),
+    async () => ({ count: 0 }),
+  );
+  return now;
+}
+
+export async function markAllNotificationsRead(userId) {
+  const now = new Date().toISOString();
+  const safeUserId = String(userId ?? "").trim();
+  if (!safeUserId) return now;
+  if (!isPostgresMode) {
+    updateNotificationRowsJson(safeUserId, (row) => (!row.dismissedAt && !row.readAt ? { ...row, seenAt: row.seenAt || now, readAt: now } : null));
+    return now;
+  }
+  await fallbackOnMissingModel(
+    () =>
+      prisma.notification.updateMany({
+        where: { userId: safeUserId, readAt: null, dismissedAt: null },
+        data: { seenAt: new Date(now), readAt: new Date(now) },
+      }),
+    async () => ({ count: 0 }),
+  );
+  return now;
+}
+
+export async function dismissAllNotifications(userId) {
+  const now = new Date().toISOString();
+  const safeUserId = String(userId ?? "").trim();
+  if (!safeUserId) return now;
+  if (!isPostgresMode) {
+    updateNotificationRowsJson(safeUserId, (row) => (!row.dismissedAt ? { ...row, seenAt: row.seenAt || now, readAt: row.readAt || now, dismissedAt: now } : null));
+    return now;
+  }
+  await fallbackOnMissingModel(
+    () =>
+      prisma.notification.updateMany({
+        where: { userId: safeUserId, dismissedAt: null },
+        data: { seenAt: new Date(now), readAt: new Date(now), dismissedAt: new Date(now) },
+      }),
+    async () => ({ count: 0 }),
+  );
+  return now;
+}
+
+const updateSingleNotificationJson = (userId, notificationId, updater) => {
+  const db = readStore();
+  const safeUserId = String(userId ?? "").trim();
+  const safeId = String(notificationId ?? "").trim();
+  let found = false;
+  db.notifications = normalizeArray(db.notifications).map((row) => {
+    if (String(row?.userId ?? "").trim() !== safeUserId || String(row?.id ?? "").trim() !== safeId) return row;
+    found = true;
+    return updater(buildLegacyNotification(row));
+  });
+  if (found) writeStore(db);
+  return found;
+};
+
+export async function markNotificationReadForUser(userId, notificationId) {
+  const now = new Date().toISOString();
+  const safeUserId = String(userId ?? "").trim();
+  const safeId = String(notificationId ?? "").trim();
+  if (!safeUserId || !safeId) return false;
+  if (!isPostgresMode) return updateSingleNotificationJson(safeUserId, safeId, (row) => ({ ...row, seenAt: row.seenAt || now, readAt: now }));
+  const result = await fallbackOnMissingModel(
+    () =>
+      prisma.notification.updateMany({
+        where: { id: safeId, userId: safeUserId },
+        data: { seenAt: new Date(now), readAt: new Date(now) },
+      }),
+    async () => ({ count: 0 }),
+  );
+  return Number(result?.count ?? 0) > 0;
+}
+
+export async function markNotificationUnreadForUser(userId, notificationId) {
+  const safeUserId = String(userId ?? "").trim();
+  const safeId = String(notificationId ?? "").trim();
+  if (!safeUserId || !safeId) return false;
+  if (!isPostgresMode) return updateSingleNotificationJson(safeUserId, safeId, (row) => ({ ...row, readAt: "" }));
+  const result = await fallbackOnMissingModel(
+    () => prisma.notification.updateMany({ where: { id: safeId, userId: safeUserId }, data: { readAt: null } }),
+    async () => ({ count: 0 }),
+  );
+  return Number(result?.count ?? 0) > 0;
+}
+
+export async function dismissNotificationForUser(userId, notificationId) {
+  const now = new Date().toISOString();
+  const safeUserId = String(userId ?? "").trim();
+  const safeId = String(notificationId ?? "").trim();
+  if (!safeUserId || !safeId) return false;
+  if (!isPostgresMode) return updateSingleNotificationJson(safeUserId, safeId, (row) => ({ ...row, seenAt: row.seenAt || now, readAt: row.readAt || now, dismissedAt: now }));
+  const result = await fallbackOnMissingModel(
+    () =>
+      prisma.notification.updateMany({
+        where: { id: safeId, userId: safeUserId },
+        data: { seenAt: new Date(now), readAt: new Date(now), dismissedAt: new Date(now) },
+      }),
+    async () => ({ count: 0 }),
+  );
+  return Number(result?.count ?? 0) > 0;
+}
+
+export async function restoreNotificationForUser(userId, notificationId) {
+  const safeUserId = String(userId ?? "").trim();
+  const safeId = String(notificationId ?? "").trim();
+  if (!safeUserId || !safeId) return false;
+  if (!isPostgresMode) return updateSingleNotificationJson(safeUserId, safeId, (row) => ({ ...row, dismissedAt: "" }));
+  const result = await fallbackOnMissingModel(
+    () => prisma.notification.updateMany({ where: { id: safeId, userId: safeUserId }, data: { dismissedAt: null } }),
+    async () => ({ count: 0 }),
+  );
+  return Number(result?.count ?? 0) > 0;
 }

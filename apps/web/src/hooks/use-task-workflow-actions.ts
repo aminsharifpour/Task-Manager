@@ -6,7 +6,15 @@ type TaskStatus = "todo" | "doing" | "blocked" | "done";
 type Args = {
   apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
   pushToast: (message: string, tone?: "success" | "error") => void;
-  canPerform: (action: any, targetMemberId?: string) => boolean;
+  scheduleUndoableDelete: (options: {
+    message: string;
+    onRemoveLocal: () => void;
+    onRestoreLocal: () => void;
+    onCommit: () => Promise<void>;
+    errorMessage: string;
+    restoredMessage?: string;
+  }) => void;
+  canPerform: (action: any, target?: any) => boolean;
   canTransitionTask: (fromStatus: TaskStatus, toStatus: TaskStatus) => boolean;
   confirmAction: (message: string, options?: any) => Promise<boolean>;
   parseWorkflowStepsText: (text: string) => any[];
@@ -39,6 +47,7 @@ type Args = {
 export const useTaskWorkflowActions = ({
   apiRequest,
   pushToast,
+  scheduleUndoableDelete,
   canPerform,
   canTransitionTask,
   confirmAction,
@@ -94,6 +103,7 @@ export const useTaskWorkflowActions = ({
         assignerId: draft.assignerId,
         assigneePrimaryId: draft.assigneePrimaryId,
         assigneeSecondaryId: draft.assigneeSecondaryId,
+        predecessorTaskIds: Array.isArray(draft.predecessorTaskIds) ? draft.predecessorTaskIds : [],
         assigner: assignerName,
         assigneePrimary: assigneePrimaryName,
         assigneeSecondary: assigneeSecondaryName,
@@ -144,6 +154,7 @@ export const useTaskWorkflowActions = ({
         assignerId: activeTeamMembers[0]?.id ?? teamMembers[0]?.id ?? "",
         assigneePrimaryId: activeTeamMembers[0]?.id ?? teamMembers[0]?.id ?? "",
         assigneeSecondaryId: "",
+        predecessorTaskIds: [],
         projectName: "",
         announceDateIso: todayIso(),
         executionDateIso: todayIso(),
@@ -174,6 +185,7 @@ export const useTaskWorkflowActions = ({
       assignerId,
       assigneePrimaryId,
       assigneeSecondaryId,
+      predecessorTaskIds: Array.isArray(task.predecessorTaskIds) ? task.predecessorTaskIds : [],
       projectName: task.projectName,
       announceDateIso: task.announceDate,
       executionDateIso: task.executionDate,
@@ -187,11 +199,11 @@ export const useTaskWorkflowActions = ({
 
   const updateTask = async () => {
     if (!editingTaskId) return;
-    if (!canPerform("taskUpdate")) {
+    const prevTask = tasks.find((t) => t.id === editingTaskId);
+    if (!canPerform("taskUpdate", { task: prevTask })) {
       pushToast("دسترسی ویرایش تسک را ندارید.", "error");
       return;
     }
-    const prevTask = tasks.find((t) => t.id === editingTaskId);
     const prevStatus = normalizeTaskStatus(prevTask?.status, Boolean(prevTask?.done));
     if (!canTransitionTask(prevStatus, taskEditDraft.status)) {
       pushToast("انتقال وضعیت تسک طبق Workflow مجاز نیست.", "error");
@@ -221,11 +233,11 @@ export const useTaskWorkflowActions = ({
   };
 
   const updateTaskStatus = async (taskId: string, status: TaskStatus, blockedReason = "") => {
-    if (!canPerform("taskChangeStatus")) {
+    const prevTask = tasks.find((t) => t.id === taskId);
+    if (!canPerform("taskChangeStatus", { task: prevTask })) {
       pushToast("دسترسی تغییر وضعیت تسک را ندارید.", "error");
       return;
     }
-    const prevTask = tasks.find((t) => t.id === taskId);
     const prevStatus = normalizeTaskStatus(prevTask?.status, Boolean(prevTask?.done));
     if (!canTransitionTask(prevStatus, status)) {
       pushToast("انتقال وضعیت تسک طبق Workflow مجاز نیست.", "error");
@@ -250,7 +262,8 @@ export const useTaskWorkflowActions = ({
   };
 
   const advanceTaskWorkflow = async (taskId: string) => {
-    if (!canPerform("taskChangeStatus")) {
+    const targetTask = tasks.find((t) => t.id === taskId);
+    if (!canPerform("taskChangeStatus", { task: targetTask })) {
       pushToast("دسترسی اجرای مرحله ورکفلو را ندارید.", "error");
       return;
     }
@@ -269,7 +282,8 @@ export const useTaskWorkflowActions = ({
   };
 
   const decideTaskWorkflow = async (taskId: string, decision: "approve" | "reject") => {
-    if (!canPerform("taskChangeStatus")) {
+    const targetTask = tasks.find((t) => t.id === taskId);
+    if (!canPerform("taskChangeStatus", { task: targetTask })) {
       pushToast("دسترسی تصمیم‌گیری ورکفلو را ندارید.", "error");
       return;
     }
@@ -304,7 +318,8 @@ export const useTaskWorkflowActions = ({
   };
 
   const removeTask = async (taskId: string) => {
-    if (!canPerform("taskDelete")) {
+    const targetTask = tasks.find((x) => x.id === taskId);
+    if (!canPerform("taskDelete", { task: targetTask })) {
       pushToast("دسترسی حذف تسک را ندارید.", "error");
       return;
     }
@@ -318,11 +333,40 @@ export const useTaskWorkflowActions = ({
     )
       return;
     try {
-      await apiRequest<void>(`/api/tasks/${taskId}`, { method: "DELETE" });
-      setTasks((prev) => prev.filter((x) => x.id !== taskId));
-      pushToast("تسک حذف شد.");
+      const previousTasks = tasks;
+      scheduleUndoableDelete({
+        message: "تسک حذف شد.",
+        onRemoveLocal: () => setTasks((prev) => prev.filter((x) => x.id !== taskId)),
+        onRestoreLocal: () => setTasks(previousTasks),
+        onCommit: () => apiRequest<void>(`/api/tasks/${taskId}`, { method: "DELETE" }),
+        errorMessage: "حذف تسک ناموفق بود.",
+      });
     } catch {
       pushToast("حذف تسک ناموفق بود.", "error");
+    }
+  };
+
+  const quickRescheduleTask = async (taskId: string, announceDate: string, executionDate: string) => {
+    const targetTask = tasks.find((x) => x.id === taskId);
+    if (!targetTask) return;
+    if (!canPerform("taskUpdate", { task: targetTask })) {
+      pushToast("دسترسی تغییر زمان‌بندی تسک را ندارید.", "error");
+      return;
+    }
+    if (!announceDate || !executionDate || executionDate < announceDate) {
+      pushToast("بازه زمانی جدید معتبر نیست.", "error");
+      return;
+    }
+    try {
+      const updated = await apiRequest<any>(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ announceDate, executionDate }),
+      });
+      setTasks((prev) => prev.map((task) => (task.id === taskId ? updated : task)));
+      pushToast("زمان‌بندی تسک به‌روزرسانی شد.");
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "به‌روزرسانی زمان‌بندی تسک ناموفق بود.");
+      pushToast(msg || "به‌روزرسانی زمان‌بندی تسک ناموفق بود.", "error");
     }
   };
 
@@ -336,5 +380,6 @@ export const useTaskWorkflowActions = ({
     decideTaskWorkflow,
     addTaskWorkflowComment,
     removeTask,
+    quickRescheduleTask,
   };
 };

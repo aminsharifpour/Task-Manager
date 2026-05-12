@@ -4,7 +4,15 @@ import { normalizeUiMessage } from "@/lib/api-client";
 type Args = {
   apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
   pushToast: (message: string, tone?: "success" | "error") => void;
-  canPerform: (action: any, targetMemberId?: string) => boolean;
+  scheduleUndoableDelete: (options: {
+    message: string;
+    onRemoveLocal: () => void;
+    onRestoreLocal: () => void;
+    onCommit: () => Promise<void>;
+    errorMessage: string;
+    restoredMessage?: string;
+  }) => void;
+  canPerform: (action: any, target?: any) => boolean;
   confirmAction: (message: string, options?: any) => Promise<boolean>;
   settingsDraft: any;
   activeTeams: any[];
@@ -19,6 +27,8 @@ type Args = {
   setTeamDraft: Dispatch<SetStateAction<any>>;
   editingMemberId: string | null;
   setEditingMemberId: (id: string | null) => void;
+  setMemberEditInitialStep: (step: "basic" | "profile" | "advanced") => void;
+  setMemberAccessOpen: (open: boolean) => void;
   setEditingTeamId?: (id: string | null) => void;
   setSelectedMemberId: Dispatch<SetStateAction<string | null>>;
   setMemberErrors: (errors: Record<string, string>) => void;
@@ -33,6 +43,7 @@ type Args = {
 export const useTeamMemberActions = ({
   apiRequest,
   pushToast,
+  scheduleUndoableDelete,
   canPerform,
   confirmAction,
   settingsDraft,
@@ -48,6 +59,8 @@ export const useTeamMemberActions = ({
   setTeamDraft,
   editingMemberId,
   setEditingMemberId,
+  setMemberEditInitialStep,
+  setMemberAccessOpen,
   setSelectedMemberId,
   setMemberErrors,
   setMemberEditErrors,
@@ -57,6 +70,52 @@ export const useTeamMemberActions = ({
   setMemberOpen,
   setMemberEditOpen,
 }: Args) => {
+  const moduleAccessDefaults = (appRole: "admin" | "manager" | "member") => ({
+    tasks: true,
+    projects: true,
+    minutes: true,
+    accounting: true,
+    calendar: true,
+    chat: true,
+    notifications: true,
+    team: appRole !== "member",
+    audit: appRole !== "member",
+    reports: true,
+  });
+  const permissionOverridesDefaults = (appRole: "admin" | "manager" | "member") => ({
+    projectCreate: appRole !== "member",
+    projectUpdate: appRole !== "member",
+    projectDelete: appRole === "admin",
+    taskCreate: appRole !== "member",
+    taskUpdate: appRole !== "member",
+    taskDelete: appRole === "admin",
+    taskChangeStatus: true,
+    teamCreate: appRole === "admin",
+    teamUpdate: appRole !== "member",
+    teamDelete: appRole === "admin",
+  });
+  const policyOverridesDefaults = (appRole: "admin" | "manager" | "member") => {
+    if (appRole === "admin") {
+      return {
+        project: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+        task: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+        teamMember: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+      };
+    }
+    if (appRole === "manager") {
+      return {
+        project: { view: "team", create: "team", update: "owner", delete: "none", approve: "none" },
+        task: { view: "team", create: "team", update: "team", delete: "none", approve: "team" },
+        teamMember: { view: "team", create: "none", update: "team", delete: "none", approve: "none" },
+      };
+    }
+    return {
+      project: { view: "project", create: "none", update: "none", delete: "none", approve: "none" },
+      task: { view: "project", create: "none", update: "assigned", delete: "none", approve: "assigned" },
+      teamMember: { view: "team", create: "none", update: "self", delete: "none", approve: "none" },
+    };
+  };
+
   const addTeamGroup = async () => {
     const name = teamDraft.name.trim();
     if (name.length < 2) {
@@ -90,17 +149,53 @@ export const useTeamMemberActions = ({
     });
     if (!confirmed) return;
     try {
-      await apiRequest<void>(`/api/teams/${teamId}`, { method: "DELETE" });
-      setTeams((prev) => prev.filter((row) => row.id !== teamId));
-      setTeamMembers((prev) => prev.map((member) => ({ ...member, teamIds: (member.teamIds ?? []).filter((id: string) => id !== teamId) })));
-      pushToast("تیم حذف شد.");
+      const previousTeams = teams;
+      const previousTeamMembers = teamMembers;
+      scheduleUndoableDelete({
+        message: "تیم حذف شد.",
+        onRemoveLocal: () => {
+          setTeams((prev) => prev.filter((row) => row.id !== teamId));
+          setTeamMembers((prev) => prev.map((member) => ({ ...member, teamIds: (member.teamIds ?? []).filter((id: string) => id !== teamId) })));
+        },
+        onRestoreLocal: () => {
+          setTeams(previousTeams);
+          setTeamMembers(previousTeamMembers);
+        },
+        onCommit: () => apiRequest<void>(`/api/teams/${teamId}`, { method: "DELETE" }),
+        errorMessage: "حذف تیم ناموفق بود.",
+      });
     } catch (error) {
       const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "حذف تیم ناموفق بود.");
       pushToast(msg || "حذف تیم ناموفق بود.", "error");
     }
   };
 
-  const openEditMember = (member: any) => {
+  const openEditMember = (member: any, step: "basic" | "profile" | "advanced" = "basic") => {
+    setMemberAccessOpen(false);
+    setEditingMemberId(member.id);
+    setMemberEditInitialStep(step);
+    setMemberEditDraft({
+      fullName: member.fullName,
+      role: member.role,
+      email: member.email,
+      phone: member.phone,
+      bio: member.bio,
+      avatarDataUrl: member.avatarDataUrl ?? "",
+      appRole: member.appRole ?? "member",
+      isActive: member.isActive !== false,
+      teamIds: member.teamIds ?? [],
+      moduleAccess: member.moduleAccess ?? moduleAccessDefaults(member.appRole ?? "member"),
+      permissionOverrides: member.permissionOverrides ?? permissionOverridesDefaults(member.appRole ?? "member"),
+      policyOverrides: member.policyOverrides ?? policyOverridesDefaults(member.appRole ?? "member"),
+      password: "",
+    });
+    setMemberEditErrors({});
+    setMemberEditOpen(true);
+  };
+
+  const openAccessEditor = (member: any) => {
+    setMemberEditOpen(false);
+    setSelectedMemberId(member.id);
     setEditingMemberId(member.id);
     setMemberEditDraft({
       fullName: member.fullName,
@@ -112,10 +207,13 @@ export const useTeamMemberActions = ({
       appRole: member.appRole ?? "member",
       isActive: member.isActive !== false,
       teamIds: member.teamIds ?? [],
+      moduleAccess: member.moduleAccess ?? moduleAccessDefaults(member.appRole ?? "member"),
+      permissionOverrides: member.permissionOverrides ?? permissionOverridesDefaults(member.appRole ?? "member"),
+      policyOverrides: member.policyOverrides ?? policyOverridesDefaults(member.appRole ?? "member"),
       password: "",
     });
     setMemberEditErrors({});
-    setMemberEditOpen(true);
+    setMemberAccessOpen(true);
   };
 
   const addMember = async () => {
@@ -145,6 +243,9 @@ export const useTeamMemberActions = ({
           appRole: memberDraft.appRole,
           isActive: memberDraft.isActive,
           teamIds: memberDraft.teamIds,
+          moduleAccess: memberDraft.moduleAccess ?? moduleAccessDefaults(memberDraft.appRole ?? "member"),
+          permissionOverrides: memberDraft.permissionOverrides ?? permissionOverridesDefaults(memberDraft.appRole ?? "member"),
+          policyOverrides: memberDraft.policyOverrides ?? policyOverridesDefaults(memberDraft.appRole ?? "member"),
         }),
       });
       setTeamMembers((prev) => [created, ...prev]);
@@ -158,6 +259,9 @@ export const useTeamMemberActions = ({
         appRole: settingsDraft.team.defaultAppRole,
         isActive: true,
         teamIds: activeTeams[0]?.id ? [activeTeams[0].id] : [],
+        moduleAccess: moduleAccessDefaults(settingsDraft.team.defaultAppRole),
+        permissionOverrides: permissionOverridesDefaults(settingsDraft.team.defaultAppRole),
+        policyOverrides: policyOverridesDefaults(settingsDraft.team.defaultAppRole),
         password: "",
       });
       setMemberErrors({});
@@ -172,7 +276,8 @@ export const useTeamMemberActions = ({
 
   const updateMember = async () => {
     if (!editingMemberId) return;
-    if (!canPerform("teamUpdate", editingMemberId)) {
+    const targetMember = teamMembers.find((member) => member.id === editingMemberId);
+    if (!canPerform("teamUpdate", { memberId: editingMemberId, member: targetMember })) {
       pushToast("دسترسی ویرایش این عضو را ندارید.", "error");
       return;
     }
@@ -201,6 +306,9 @@ export const useTeamMemberActions = ({
           appRole: memberEditDraft.appRole,
           isActive: memberEditDraft.isActive,
           teamIds: memberEditDraft.teamIds,
+          moduleAccess: memberEditDraft.moduleAccess ?? moduleAccessDefaults(memberEditDraft.appRole ?? "member"),
+          permissionOverrides: memberEditDraft.permissionOverrides ?? permissionOverridesDefaults(memberEditDraft.appRole ?? "member"),
+          policyOverrides: memberEditDraft.policyOverrides ?? policyOverridesDefaults(memberEditDraft.appRole ?? "member"),
         }),
       });
       setTeamMembers((prev) => prev.map((member) => (member.id === editingMemberId ? updated : member)));
@@ -223,8 +331,46 @@ export const useTeamMemberActions = ({
     }
   };
 
+  const updateMemberAccess = async () => {
+    if (!editingMemberId) return;
+    const targetMember = teamMembers.find((member) => member.id === editingMemberId);
+    if (!canPerform("teamUpdate", { memberId: editingMemberId, member: targetMember })) {
+      pushToast("دسترسی ویرایش دسترسی این عضو را ندارید.", "error");
+      return;
+    }
+    if (!(await confirmAction("تغییرات دسترسی این عضو ذخیره شود؟"))) return;
+    try {
+      const updated = await apiRequest<any>(`/api/team-members/${editingMemberId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          fullName: memberEditDraft.fullName.trim(),
+          role: memberEditDraft.role.trim(),
+          email: memberEditDraft.email.trim(),
+          phone: memberEditDraft.phone.trim(),
+          bio: memberEditDraft.bio.trim(),
+          avatarDataUrl: memberEditDraft.avatarDataUrl,
+          appRole: memberEditDraft.appRole,
+          isActive: memberEditDraft.isActive,
+          teamIds: memberEditDraft.teamIds,
+          moduleAccess: memberEditDraft.moduleAccess ?? moduleAccessDefaults(memberEditDraft.appRole ?? "member"),
+          permissionOverrides: memberEditDraft.permissionOverrides ?? permissionOverridesDefaults(memberEditDraft.appRole ?? "member"),
+          policyOverrides: memberEditDraft.policyOverrides ?? policyOverridesDefaults(memberEditDraft.appRole ?? "member"),
+        }),
+      });
+      setTeamMembers((prev) => prev.map((member) => (member.id === editingMemberId ? updated : member)));
+      setMemberAccessOpen(false);
+      setMemberEditErrors({});
+      pushToast("دسترسی‌های عضو به‌روزرسانی شد.");
+    } catch (error) {
+      const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "ذخیره دسترسی انجام نشد.");
+      setMemberEditErrors({ fullName: msg || "ذخیره دسترسی انجام نشد." });
+      pushToast(msg || "ذخیره دسترسی ناموفق بود.", "error");
+    }
+  };
+
   const removeMember = async (id: string) => {
-    if (!canPerform("teamDelete")) {
+    const targetMember = teamMembers.find((member) => member.id === id);
+    if (!canPerform("teamDelete", { memberId: id, member: targetMember })) {
       pushToast("دسترسی حذف عضو را ندارید.", "error");
       return;
     }
@@ -236,10 +382,21 @@ export const useTeamMemberActions = ({
     });
     if (!confirmed) return;
     try {
-      await apiRequest<void>(`/api/team-members/${id}`, { method: "DELETE" });
-      setTeamMembers((prev) => prev.filter((member) => member.id !== id));
-      setSelectedMemberId((prev) => (prev === id ? null : prev));
-      pushToast("عضو حذف شد.");
+      const previousMembers = teamMembers;
+      const previousSelectedMemberId = targetMember?.id ?? null;
+      scheduleUndoableDelete({
+        message: "عضو حذف شد.",
+        onRemoveLocal: () => {
+          setTeamMembers((prev) => prev.filter((member) => member.id !== id));
+          setSelectedMemberId((prev) => (prev === id ? null : prev));
+        },
+        onRestoreLocal: () => {
+          setTeamMembers(previousMembers);
+          setSelectedMemberId(previousSelectedMemberId);
+        },
+        onCommit: () => apiRequest<void>(`/api/team-members/${id}`, { method: "DELETE" }),
+        errorMessage: "حذف عضو ناموفق بود.",
+      });
     } catch (error) {
       const msg = normalizeUiMessage(String((error as Error)?.message ?? ""), "حذف عضو ناموفق بود.");
       const linkedToWork = /assigned to one or more projects|assigned to one or more tasks/i.test(msg);
@@ -290,8 +447,10 @@ export const useTeamMemberActions = ({
     addTeamGroup,
     removeTeamGroup,
     openEditMember,
+    openAccessEditor,
     addMember,
     updateMember,
+    updateMemberAccess,
     removeMember,
   };
 };

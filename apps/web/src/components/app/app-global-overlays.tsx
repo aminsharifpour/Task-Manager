@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -23,17 +22,6 @@ export default function AppGlobalOverlays(props: any) {
     saveSettings,
     confirmDialog,
     closeConfirmDialog,
-    onboardingOpen,
-    setOnboardingOpen,
-    LazyOnboardingGuideDialog,
-    ONBOARDING_STEPS,
-    onboardingStep,
-    setOnboardingStep,
-    authUser,
-    ONBOARDING_STORAGE_PREFIX,
-    canAccessView,
-    pushToast,
-    setActiveView,
     contextMenu,
     closeContextMenu,
     toasts,
@@ -143,31 +131,10 @@ export default function AppGlobalOverlays(props: any) {
         </DialogContent>
       </Dialog>
 
-      <Suspense fallback={null}>
-        <LazyOnboardingGuideDialog
-          open={onboardingOpen}
-          onOpenChange={setOnboardingOpen}
-          steps={ONBOARDING_STEPS}
-          stepIndex={onboardingStep}
-          onStepIndexChange={setOnboardingStep}
-          onSkip={() => {
-            if (authUser?.id) localStorage.setItem(`${ONBOARDING_STORAGE_PREFIX}:${authUser.id}`, "1");
-            setOnboardingOpen(false);
-          }}
-          onApplyStep={(step: any) => {
-            const targetView = step.targetView;
-            if (!canAccessView(targetView)) {
-              pushToast("دسترسی این بخش برای نقش فعلی شما محدود است.", "error");
-            } else {
-              setActiveView(targetView);
-            }
-            if (onboardingStep >= ONBOARDING_STEPS.length - 1) {
-              if (authUser?.id) localStorage.setItem(`${ONBOARDING_STORAGE_PREFIX}:${authUser.id}`, "1");
-              setOnboardingOpen(false);
-            }
-          }}
-        />
-      </Suspense>
+      {/*
+        Onboarding guide is temporarily disabled at runtime because its dialog path
+        is part of the current render loop investigation after login.
+      */}
 
       <AppContextMenu
         open={contextMenu.open}

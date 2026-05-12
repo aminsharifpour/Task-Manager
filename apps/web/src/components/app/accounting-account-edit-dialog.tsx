@@ -43,30 +43,38 @@ export default function AccountingAccountEditDialog({
         if (!open) setEditingAccountId(null);
       }}
     >
-      <DialogContent aria-describedby={undefined} className="liquid-glass">
+      <DialogContent aria-describedby={undefined} className="liquid-glass sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>ویرایش حساب بانکی</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
-          <BufferedInput
-            placeholder="نام حساب"
-            value={accountEditDraft.name}
-            onCommit={(next) => setAccountEditDraft((p) => ({ ...p, name: next }))}
-          />
-          {accountEditErrors.name && <p className="text-xs text-destructive">{accountEditErrors.name}</p>}
-          <BufferedInput
-            placeholder="نام بانک"
-            value={accountEditDraft.bankName}
-            onCommit={(next) => setAccountEditDraft((p) => ({ ...p, bankName: next }))}
-          />
-          <Input
-            placeholder="چهار رقم آخر کارت"
-            value={accountEditDraft.cardLast4}
-            maxLength={4}
-            inputMode="numeric"
-            onChange={(e) => setAccountEditDraft((p) => ({ ...p, cardLast4: normalizeCardLast4Input(e.target.value) }))}
-          />
-          {accountEditErrors.cardLast4 && <p className="text-xs text-destructive">{accountEditErrors.cardLast4}</p>}
+        <div className="dialog-form-grid">
+          <div className="dialog-form-main">
+            <div className="dialog-form-stack">
+              <BufferedInput
+                placeholder="نام حساب"
+                value={accountEditDraft.name}
+                onCommit={(next) => setAccountEditDraft((p) => ({ ...p, name: next }))}
+              />
+              {accountEditErrors.name && <p className="text-xs text-destructive">{accountEditErrors.name}</p>}
+              <BufferedInput
+                placeholder="نام بانک"
+                value={accountEditDraft.bankName}
+                onCommit={(next) => setAccountEditDraft((p) => ({ ...p, bankName: next }))}
+              />
+            </div>
+          </div>
+          <div className="dialog-form-side">
+            <div className="dialog-form-stack">
+              <Input
+                placeholder="چهار رقم آخر کارت"
+                value={accountEditDraft.cardLast4}
+                maxLength={4}
+                inputMode="numeric"
+                onChange={(e) => setAccountEditDraft((p) => ({ ...p, cardLast4: normalizeCardLast4Input(e.target.value) }))}
+              />
+              {accountEditErrors.cardLast4 && <p className="text-xs text-destructive">{accountEditErrors.cardLast4}</p>}
+            </div>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="secondary" onClick={() => setAccountEditOpen(false)}>
