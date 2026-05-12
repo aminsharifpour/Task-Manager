@@ -32,6 +32,8 @@ type TeamMemberProfileDialogProps = {
   TASK_STATUS_ITEMS: Array<{ value: string; label: string }>;
   normalizeTaskStatus: (status: any, done: boolean) => string;
   openEditMember: (member: any) => void;
+  openAccessEditor: (member: any) => void;
+  moduleAccessOptions: Array<{ key: string; label: string }>;
 };
 
 export default function TeamMemberProfileDialog({
@@ -55,6 +57,8 @@ export default function TeamMemberProfileDialog({
   TASK_STATUS_ITEMS,
   normalizeTaskStatus,
   openEditMember,
+  openAccessEditor,
+  moduleAccessOptions,
 }: TeamMemberProfileDialogProps) {
   const attendanceLedgerRows = useMemo(
     () =>
@@ -166,6 +170,93 @@ export default function TeamMemberProfileDialog({
               <p className="text-xs text-muted-foreground">بیو</p>
               <p className="text-sm">{selectedMember.bio || "ثبت نشده"}</p>
             </div>
+
+            <section className="rounded-lg border p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold">دسترسی‌ها</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setMemberProfileOpen(false);
+                    openAccessEditor(selectedMember);
+                  }}
+                >
+                  مدیریت دسترسی‌ها
+                </Button>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-3">
+                <div className="rounded-lg bg-muted/30 p-3">
+                  <p className="mb-2 text-xs text-muted-foreground">ماژول‌های فعال</p>
+                  <div className="flex flex-wrap gap-1">
+                    {moduleAccessOptions
+                      .filter((item) => selectedMember.moduleAccess?.[item.key] !== false)
+                      .map((item) => (
+                        <Badge key={`access-on-${item.key}`} variant="secondary">{item.label}</Badge>
+                      ))}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-muted/30 p-3">
+                  <p className="mb-2 text-xs text-muted-foreground">ماژول‌های غیرفعال</p>
+                  <div className="flex flex-wrap gap-1">
+                    {moduleAccessOptions.filter((item) => selectedMember.moduleAccess?.[item.key] === false).length === 0 ? (
+                      <span className="text-xs text-muted-foreground">همه ماژول‌ها فعال هستند</span>
+                    ) : (
+                      moduleAccessOptions
+                        .filter((item) => selectedMember.moduleAccess?.[item.key] === false)
+                        .map((item) => (
+                          <Badge key={`access-off-${item.key}`} variant="outline">{item.label}</Badge>
+                        ))
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-muted/30 p-3">
+                  <p className="mb-2 text-xs text-muted-foreground">وضعیت شخصی‌سازی</p>
+                  <div className="space-y-1 text-xs">
+                    <p>عملیات سفارشی: {selectedMember.permissionOverrides && Object.keys(selectedMember.permissionOverrides).length > 0 ? "فعال" : "ندارد"}</p>
+                    <p>دامنه سفارشی: {selectedMember.policyOverrides && Object.keys(selectedMember.policyOverrides).length > 0 ? "فعال" : "ندارد"}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                <div className="rounded-lg bg-muted/30 p-3">
+                  <p className="mb-2 text-xs text-muted-foreground">دسترسی‌های عملیاتی</p>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedMember.permissionOverrides && Object.entries(selectedMember.permissionOverrides).length > 0 ? (
+                      Object.entries(selectedMember.permissionOverrides).map(([key, value]) => (
+                        <Badge key={`perm-${key}`} variant={value === true ? "secondary" : "outline"}>
+                          {String(key)}: {value === true ? "مجاز" : "مسدود"}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground">تنظیم سفارشی ندارد</span>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-muted/30 p-3">
+                  <p className="mb-2 text-xs text-muted-foreground">دامنه‌های دسترسی</p>
+                  <div className="space-y-2 text-xs">
+                    {selectedMember.policyOverrides && Object.keys(selectedMember.policyOverrides).length > 0 ? (
+                      Object.entries(selectedMember.policyOverrides).map(([entityKey, operations]) => (
+                        <div key={`policy-${entityKey}`} className="rounded-md bg-background/70 p-2">
+                          <p className="mb-1 font-medium">{entityKey}</p>
+                          <div className="flex flex-wrap gap-1">
+                            {Object.entries((operations as Record<string, string>) ?? {}).map(([operationKey, scope]) => (
+                              <Badge key={`policy-${entityKey}-${operationKey}`} variant="outline">
+                                {operationKey}: {scope}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground">تنظیم سفارشی ندارد</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
 
             <section className="rounded-lg border p-3">
               <p className="mb-2 text-sm font-semibold">اطلاعات پرونده منابع انسانی</p>

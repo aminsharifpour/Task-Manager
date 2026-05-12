@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { memo, useEffect, useMemo, useState, type Dispatch, type JSX, type MouseEvent, type RefObject, type SetStateAction, type UIEvent } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,103 +6,428 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BufferedInput, BufferedTextarea } from "@/components/ui/buffered-fields";
+import type { AppContextMenuItem } from "@/components/ui/app-context-menu";
 import TeamHrOverviewCards from "@/components/app/team-hr-overview-cards";
 import TeamHrReportCard from "@/components/app/team-hr-report-card";
 import TeamMemberEditDialog from "@/components/app/team-member-edit-dialog";
+import TeamMemberAccessDialog from "@/components/app/team-member-access-dialog";
 import TeamMemberProfileDialog from "@/components/app/team-member-profile-dialog";
 import TeamMembersCard from "@/components/app/team-members-card";
+import { TablePagination } from "@/components/ui/table-pagination";
 
-export default function TeamHrView(props: any) {
-  const {
-    memberOpen,
-    setMemberOpen,
-    memberDraft,
-    setMemberDraft,
-    memberErrors,
-    memberInitials,
-    pickAvatarForDraft,
-    addMember,
-    teams,
-    teamDraft,
-    setTeamDraft,
-    addTeamGroup,
-    removeTeamGroup,
-    memberSearch,
-    setMemberSearch,
-    teamMembers,
-    filteredTeamMembers,
-    teamMembersVirtual,
-    visibleTeamRows,
-    selectedMemberId,
-    setSelectedMemberId,
-    setMemberProfileOpen,
-    openContextMenu,
-    openEditMember,
-    copyTextToClipboard,
-    removeMember,
-    roleLabel,
-    toFaNum,
-    hrSummary,
-    selectedMember,
-    hrProfileDraft,
-    setHrProfileDraft,
-    hrProfileErrors,
-    DatePickerField,
-    isHrManager,
-    HR_CONTRACT_ITEMS,
-    normalizeAmountInput,
-    saveHrProfile,
-    hrLeaveDraft,
-    setHrLeaveDraft,
-    activeTeamMembers,
-    hrLeaveErrors,
-    HR_LEAVE_TYPE_ITEMS,
-    submitHrLeaveRequest,
-    visibleHrLeaveRequests,
-    teamMemberNameById,
-    HR_LEAVE_STATUS_ITEMS,
-    isoToJalali,
-    reviewHrLeave,
-    hrAttendanceSummary,
-    hrAttendanceMonth,
-    setHrAttendanceMonth,
-    hrAttendanceDraft,
-    setHrAttendanceDraft,
-    hrCheckInInputRef,
-    hrCheckOutInputRef,
-    normalizeTimeInput,
-    commitHrAttendanceTime,
-    calculateWorkHoursFromTime,
-    hrAttendanceErrors,
-    isHrAdmin,
-    saveHrAttendanceRecord,
-    hrAttendanceVirtual,
-    visibleHrAttendanceRecords,
-    visibleHrAttendanceRows,
-    hrAttendanceBadgeClass,
-    HR_ATTENDANCE_STATUS_ITEMS,
-    editHrAttendanceRecord,
-    removeHrAttendanceRecord,
-    exportHrReportCsv,
-    hrReportTotals,
-    hrMemberReportRows,
-    memberProfileOpen,
-    selectedMemberOverview,
-    selectedMemberHrProfile,
-    formatMoney,
-    selectedMemberAttendanceRecords,
-    selectedMemberLeaveRequests,
-    selectedMemberTaskRows,
-    TASK_STATUS_ITEMS,
-    normalizeTaskStatus,
-    memberEditOpen,
-    setMemberEditOpen,
-    setEditingMemberId,
-    memberEditDraft,
-    setMemberEditDraft,
-    memberEditErrors,
-    updateMember,
-  } = props;
+type AppRole = "admin" | "manager" | "member";
+type LeaveStatus = "pending" | "approved" | "rejected" | string;
+type AttendanceStatus = string;
+type AttendanceBadgeStatus = "present" | "remote" | "leave" | "absent";
+
+type OptionItem = {
+  value: string;
+  label: string;
+};
+
+type TeamRow = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
+type TeamMemberRow = {
+  id: string;
+  fullName: string;
+  role?: string;
+  teamIds?: string[];
+  appRole?: AppRole;
+  isActive?: boolean;
+  email?: string;
+  phone?: string;
+  bio?: string;
+  avatarDataUrl?: string;
+};
+
+type MemberFormDraft = {
+  fullName: string;
+  role: string;
+  email: string;
+  phone: string;
+  bio: string;
+  avatarDataUrl: string;
+  appRole: AppRole;
+  isActive: boolean;
+  teamIds: string[];
+  moduleAccess: Record<string, boolean>;
+  permissionOverrides: Record<string, boolean>;
+  policyOverrides: Record<string, Record<string, string>>;
+  password: string;
+};
+
+type HrSummary = {
+  profileCoveragePercent?: number;
+  pendingLeaves?: number;
+  avgWorkHours?: number;
+};
+
+type HrProfileDraft = {
+  employeeCode: string;
+  department: string;
+  managerId: string;
+  hireDate: string;
+  birthDate: string;
+  nationalId: string;
+  contractType: string;
+  salaryBase: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  education: string;
+  skills: string;
+  notes: string;
+};
+
+type HrLeaveDraft = {
+  memberId: string;
+  leaveType: string;
+  fromDate: string;
+  toDate: string;
+  hours: string;
+  reason: string;
+};
+
+type HrLeaveRow = {
+  id: string;
+  memberId: string;
+  leaveType: string;
+  fromDate: string;
+  toDate: string;
+  hours?: number | string;
+  reason: string;
+  status: LeaveStatus;
+};
+
+type HrAttendanceSummary = {
+  total: number;
+  attendanceRate: number;
+  totalHours: number;
+  avgHours: number;
+  absent: number;
+};
+
+type HrAttendanceDraft = {
+  memberId: string;
+  date: string;
+  status: AttendanceStatus;
+  checkIn: string;
+  checkOut: string;
+  workHours: string;
+  note: string;
+};
+
+type HrAttendanceRow = {
+  id: string;
+  memberId: string;
+  date: string;
+  status: AttendanceStatus;
+  checkIn?: string;
+  checkOut?: string;
+  workHours?: number;
+  note?: string;
+};
+
+type HrReportTotals = {
+  avgProductivity: number;
+  totalWorkHours: number;
+  totalApprovedLeaveDays: number;
+  totalPendingLeaves: number;
+};
+
+type HrMemberReportRow = {
+  member: TeamMemberRow;
+  workHours: number;
+  attendanceRate: number;
+  approvedLeaveDays: number;
+  approvedLeaveHours: number;
+  pendingLeaves: number;
+  taskDone: number;
+  taskTotal: number;
+  taskOverdue: number;
+  taskBlocked: number;
+  productivityScore: number;
+  productivityLabel: string;
+};
+
+type MemberOverview = {
+  workHours: number;
+  leaveApproved: number;
+  leavePending: number;
+  taskDone: number;
+  taskTotal: number;
+};
+
+type HrProfileRecord = {
+  employeeCode?: string;
+  department?: string;
+  hireDate?: string;
+  birthDate?: string;
+  contractType?: string;
+  salaryBase?: string | number;
+  education?: string;
+  skills?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  notes?: string;
+};
+
+type AttendanceRecord = {
+  id: string;
+  date: string;
+  status: AttendanceStatus;
+  checkIn?: string;
+  checkOut?: string;
+  workHours?: number;
+  note?: string;
+};
+
+type TaskRow = {
+  id: string;
+  title?: string;
+  status?: string;
+  done?: boolean;
+};
+
+type VirtualWindowState = {
+  paddingTop: number;
+  paddingBottom: number;
+};
+
+type VirtualListHandle = {
+  ref: RefObject<HTMLDivElement | null>;
+  onScroll: (event: UIEvent<HTMLDivElement>) => void;
+  windowState: VirtualWindowState;
+};
+
+type DatePickerFieldProps = {
+  label: string;
+  valueIso: string;
+  onChange: (value: string) => void;
+};
+
+type TeamHrViewProps = {
+  shellSidebarCollapsed?: boolean;
+  memberOpen: boolean;
+  setMemberOpen: (open: boolean) => void;
+  memberDraft: MemberFormDraft;
+  setMemberDraft: Dispatch<SetStateAction<MemberFormDraft>>;
+  memberErrors: Record<string, string>;
+  memberInitials: (fullName: string) => string;
+  pickAvatarForDraft: (file: File | undefined, mode: "add" | "edit") => Promise<void>;
+  addMember: () => void;
+  teams: TeamRow[];
+  teamDraft: {
+    name: string;
+    description: string;
+  };
+  setTeamDraft: Dispatch<SetStateAction<{ name: string; description: string }>>;
+  addTeamGroup: () => void;
+  removeTeamGroup: (id: string) => Promise<void>;
+  memberSearch: string;
+  setMemberSearch: (value: string) => void;
+  teamMembers: TeamMemberRow[];
+  filteredTeamMembers: TeamMemberRow[];
+  teamMembersVirtual: VirtualListHandle;
+  selectedMemberId: string | null;
+  setSelectedMemberId: (id: string) => void;
+  setMemberProfileOpen: (open: boolean) => void;
+  openContextMenu: (event: MouseEvent, title: string, items: AppContextMenuItem[]) => void;
+  openEditMember: (member: TeamMemberRow, step?: "basic" | "profile" | "advanced") => void;
+  openAccessEditor: (member: TeamMemberRow) => void;
+  copyTextToClipboard: (text: string, successMessage: string) => Promise<void>;
+  removeMember: (id: string) => Promise<void>;
+  roleLabel: (role: AppRole | undefined) => string;
+  toFaNum: (value: string) => string;
+  moduleAccessOptions: Array<{ key: string; label: string }>;
+  accessPresets: Array<{
+    id: string;
+    name: string;
+    moduleAccess: Record<string, boolean>;
+    permissionOverrides: Record<string, boolean>;
+    policyOverrides: Record<string, Record<string, string>>;
+  }>;
+  saveMemberAccessPreset: (payload: {
+    name: string;
+    moduleAccess: Record<string, boolean>;
+    permissionOverrides: Record<string, boolean>;
+    policyOverrides: Record<string, Record<string, string>>;
+  }) => Promise<void>;
+  hrSummary: HrSummary | null;
+  selectedMember: TeamMemberRow | null;
+  hrProfileDraft: HrProfileDraft;
+  setHrProfileDraft: Dispatch<SetStateAction<HrProfileDraft>>;
+  hrProfileErrors: Record<string, string>;
+  DatePickerField: (props: DatePickerFieldProps) => JSX.Element;
+  isHrManager: boolean;
+  HR_CONTRACT_ITEMS: OptionItem[];
+  normalizeAmountInput: (value: string) => string;
+  saveHrProfile: () => void;
+  hrLeaveDraft: HrLeaveDraft;
+  setHrLeaveDraft: Dispatch<SetStateAction<HrLeaveDraft>>;
+  activeTeamMembers: TeamMemberRow[];
+  hrLeaveErrors: Record<string, string>;
+  HR_LEAVE_TYPE_ITEMS: OptionItem[];
+  submitHrLeaveRequest: () => void;
+  visibleHrLeaveRequests: HrLeaveRow[];
+  teamMemberNameById: Map<string, string>;
+  HR_LEAVE_STATUS_ITEMS: OptionItem[];
+  isoToJalali: (date: string) => string;
+  reviewHrLeave: (id: string, status: "approved" | "rejected") => Promise<void> | void;
+  hrAttendanceSummary: HrAttendanceSummary;
+  hrAttendanceMonth: string;
+  setHrAttendanceMonth: Dispatch<SetStateAction<string>>;
+  hrAttendanceDraft: HrAttendanceDraft;
+  setHrAttendanceDraft: Dispatch<SetStateAction<HrAttendanceDraft>>;
+  hrCheckInInputRef: RefObject<HTMLInputElement | null>;
+  hrCheckOutInputRef: RefObject<HTMLInputElement | null>;
+  normalizeTimeInput: (value: string) => string;
+  commitHrAttendanceTime: (field: "checkIn" | "checkOut", value: string) => void;
+  calculateWorkHoursFromTime: (checkIn: string, checkOut: string) => number;
+  hrAttendanceErrors: Record<string, string>;
+  isHrAdmin: boolean;
+  saveHrAttendanceRecord: () => void;
+  hrAttendanceVirtual: VirtualListHandle;
+  visibleHrAttendanceRecords: HrAttendanceRow[];
+  hrAttendanceBadgeClass: (status: AttendanceBadgeStatus) => string;
+  HR_ATTENDANCE_STATUS_ITEMS: OptionItem[];
+  editHrAttendanceRecord: (row: HrAttendanceRow) => void;
+  removeHrAttendanceRecord: (row: HrAttendanceRow) => Promise<void>;
+  exportHrReportCsv: () => void;
+  hrReportTotals: HrReportTotals;
+  hrMemberReportRows: HrMemberReportRow[];
+  memberProfileOpen: boolean;
+  selectedMemberOverview: MemberOverview;
+  selectedMemberHrProfile: HrProfileRecord | null;
+  formatMoney: (value: number) => string;
+  selectedMemberAttendanceRecords: AttendanceRecord[];
+  selectedMemberLeaveRequests: HrLeaveRow[];
+  selectedMemberTaskRows: TaskRow[];
+  TASK_STATUS_ITEMS: OptionItem[];
+  normalizeTaskStatus: (status: string | undefined, done: boolean) => string;
+  memberEditOpen: boolean;
+  setMemberEditOpen: (open: boolean) => void;
+  memberAccessOpen: boolean;
+  setMemberAccessOpen: (open: boolean) => void;
+  setEditingMemberId: (value: string | null) => void;
+  memberEditInitialStep: "basic" | "profile" | "advanced";
+  memberEditDraft: MemberFormDraft;
+  setMemberEditDraft: Dispatch<SetStateAction<MemberFormDraft>>;
+  memberEditErrors: Record<string, string>;
+  updateMember: () => void;
+  updateMemberAccess: () => void;
+};
+
+function TeamHrView({
+  memberOpen,
+  setMemberOpen,
+  memberDraft,
+  setMemberDraft,
+  memberErrors,
+  memberInitials,
+  pickAvatarForDraft,
+  addMember,
+  teams,
+  teamDraft,
+  setTeamDraft,
+  addTeamGroup,
+  removeTeamGroup,
+  memberSearch,
+  setMemberSearch,
+  teamMembers,
+  filteredTeamMembers,
+  teamMembersVirtual,
+  selectedMemberId,
+  setSelectedMemberId,
+  setMemberProfileOpen,
+  openContextMenu,
+  openEditMember,
+  openAccessEditor,
+  copyTextToClipboard,
+  removeMember,
+  roleLabel,
+  toFaNum,
+  moduleAccessOptions,
+  accessPresets,
+  saveMemberAccessPreset,
+  hrSummary,
+  selectedMember,
+  hrProfileDraft,
+  setHrProfileDraft,
+  hrProfileErrors,
+  DatePickerField,
+  isHrManager,
+  HR_CONTRACT_ITEMS,
+  normalizeAmountInput,
+  saveHrProfile,
+  hrLeaveDraft,
+  setHrLeaveDraft,
+  activeTeamMembers,
+  hrLeaveErrors,
+  HR_LEAVE_TYPE_ITEMS,
+  submitHrLeaveRequest,
+  visibleHrLeaveRequests,
+  teamMemberNameById,
+  HR_LEAVE_STATUS_ITEMS,
+  isoToJalali,
+  reviewHrLeave,
+  hrAttendanceSummary,
+  hrAttendanceMonth,
+  setHrAttendanceMonth,
+  hrAttendanceDraft,
+  setHrAttendanceDraft,
+  hrCheckInInputRef,
+  hrCheckOutInputRef,
+  normalizeTimeInput,
+  commitHrAttendanceTime,
+  calculateWorkHoursFromTime,
+  hrAttendanceErrors,
+  isHrAdmin,
+  saveHrAttendanceRecord,
+  hrAttendanceVirtual,
+  visibleHrAttendanceRecords,
+  hrAttendanceBadgeClass,
+  HR_ATTENDANCE_STATUS_ITEMS,
+  editHrAttendanceRecord,
+  removeHrAttendanceRecord,
+  exportHrReportCsv,
+  hrReportTotals,
+  hrMemberReportRows,
+  memberProfileOpen,
+  selectedMemberOverview,
+  selectedMemberHrProfile,
+  formatMoney,
+  selectedMemberAttendanceRecords,
+  selectedMemberLeaveRequests,
+  selectedMemberTaskRows,
+  TASK_STATUS_ITEMS,
+  normalizeTaskStatus,
+  memberEditOpen,
+  setMemberEditOpen,
+  memberAccessOpen,
+  setMemberAccessOpen,
+  setEditingMemberId,
+  memberEditInitialStep,
+  memberEditDraft,
+  setMemberEditDraft,
+  memberEditErrors,
+  updateMember,
+  updateMemberAccess,
+}: TeamHrViewProps) {
+  const [attendancePage, setAttendancePage] = useState(1);
+  const [attendancePageSize, setAttendancePageSize] = useState(20);
+  const paginatedAttendanceRows = useMemo(() => {
+    const start = (attendancePage - 1) * attendancePageSize;
+    return visibleHrAttendanceRecords.slice(start, start + attendancePageSize);
+  }, [attendancePage, attendancePageSize, visibleHrAttendanceRecords]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(visibleHrAttendanceRecords.length / attendancePageSize));
+    if (attendancePage > totalPages) setAttendancePage(totalPages);
+  }, [attendancePage, attendancePageSize, visibleHrAttendanceRecords.length]);
 
   return (
     <>
@@ -125,21 +450,25 @@ export default function TeamHrView(props: any) {
         totalTeamMembers={Array.isArray(teamMembers) ? teamMembers.length : 0}
         filteredTeamMembers={filteredTeamMembers}
         teamMembersVirtual={teamMembersVirtual}
-        visibleTeamRows={visibleTeamRows}
         selectedMemberId={selectedMemberId}
         setSelectedMemberId={setSelectedMemberId}
         setMemberProfileOpen={setMemberProfileOpen}
         openContextMenu={openContextMenu}
         openEditMember={openEditMember}
+        openAccessEditor={openAccessEditor}
         copyTextToClipboard={copyTextToClipboard}
         removeMember={removeMember}
         roleLabel={roleLabel}
+        toFaNum={toFaNum}
+        moduleAccessOptions={moduleAccessOptions}
+        accessPresets={accessPresets}
+        saveMemberAccessPreset={saveMemberAccessPreset}
       />
 
       <TeamHrOverviewCards toFaNum={toFaNum} hrSummary={hrSummary} />
 
       <section className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <Card className="liquid-glass lift-on-hover">
+        <Card className="oneui-hr-shell">
           <CardHeader>
             <CardTitle>پرونده پرسنلی</CardTitle>
             <CardDescription>اطلاعات منابع انسانی عضو انتخاب‌شده را ثبت و نگهداری کن.</CardDescription>
@@ -149,7 +478,7 @@ export default function TeamHrView(props: any) {
               <p className="text-sm text-muted-foreground">ابتدا از جدول اعضای تیم یک عضو انتخاب کن.</p>
             ) : (
               <>
-                <div className="rounded-lg border p-3 text-sm">
+                <div className="oneui-hr-panel rounded-xl border border-border/16 p-3 text-sm">
                   <p className="text-xs text-muted-foreground">عضو انتخاب‌شده</p>
                   <p className="font-semibold">{selectedMember.fullName}</p>
                 </div>
@@ -170,17 +499,17 @@ export default function TeamHrView(props: any) {
                   <DatePickerField
                     label="تاریخ استخدام"
                     valueIso={hrProfileDraft.hireDate}
-                    onChange={(v) => setHrProfileDraft((prev) => ({ ...prev, hireDate: v }))}
+                    onChange={(value) => setHrProfileDraft((prev) => ({ ...prev, hireDate: value }))}
                   />
                   <DatePickerField
                     label="تاریخ تولد"
                     valueIso={hrProfileDraft.birthDate}
-                    onChange={(v) => setHrProfileDraft((prev) => ({ ...prev, birthDate: v }))}
+                    onChange={(value) => setHrProfileDraft((prev) => ({ ...prev, birthDate: value }))}
                   />
                 </div>
                 {isHrManager && (
                   <div className="grid gap-3 md:grid-cols-2">
-                    <Select value={hrProfileDraft.contractType} onValueChange={(v) => setHrProfileDraft((prev) => ({ ...prev, contractType: v as any }))}>
+                    <Select value={hrProfileDraft.contractType} onValueChange={(value) => setHrProfileDraft((prev) => ({ ...prev, contractType: value }))}>
                       <SelectTrigger>
                         <SelectValue placeholder="نوع قرارداد" />
                       </SelectTrigger>
@@ -228,37 +557,35 @@ export default function TeamHrView(props: any) {
                   onCommit={(next) => setHrProfileDraft((prev) => ({ ...prev, notes: next }))}
                 />
                 <div className="flex justify-end">
-                  <Button onClick={() => void saveHrProfile()}>
-                    ذخیره پرونده
-                  </Button>
+                  <Button onClick={() => void saveHrProfile()}>ذخیره پرونده</Button>
                 </div>
               </>
             )}
           </CardContent>
         </Card>
 
-        <Card className="liquid-glass lift-on-hover">
+        <Card className="oneui-hr-shell">
           <CardHeader>
             <CardTitle>درخواست مرخصی</CardTitle>
             <CardDescription>ثبت، مشاهده و تایید/رد درخواست‌های مرخصی</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {isHrManager && (
-              <Select value={hrLeaveDraft.memberId} onValueChange={(v) => setHrLeaveDraft((prev) => ({ ...prev, memberId: v }))}>
+              <Select value={hrLeaveDraft.memberId} onValueChange={(value) => setHrLeaveDraft((prev) => ({ ...prev, memberId: value }))}>
                 <SelectTrigger>
                   <SelectValue placeholder="عضو" />
                 </SelectTrigger>
                 <SelectContent>
-                  {activeTeamMembers.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.fullName}
+                  {activeTeamMembers.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.fullName}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             )}
             {hrLeaveErrors.memberId && <p className="text-xs text-destructive">{hrLeaveErrors.memberId}</p>}
-            <Select value={hrLeaveDraft.leaveType} onValueChange={(v) => setHrLeaveDraft((prev) => ({ ...prev, leaveType: v as any }))}>
+            <Select value={hrLeaveDraft.leaveType} onValueChange={(value) => setHrLeaveDraft((prev) => ({ ...prev, leaveType: value }))}>
               <SelectTrigger>
                 <SelectValue placeholder="نوع مرخصی" />
               </SelectTrigger>
@@ -271,8 +598,8 @@ export default function TeamHrView(props: any) {
               </SelectContent>
             </Select>
             <div className="grid gap-3 md:grid-cols-2">
-              <DatePickerField label="از تاریخ" valueIso={hrLeaveDraft.fromDate} onChange={(v) => setHrLeaveDraft((p) => ({ ...p, fromDate: v }))} />
-              <DatePickerField label="تا تاریخ" valueIso={hrLeaveDraft.toDate} onChange={(v) => setHrLeaveDraft((p) => ({ ...p, toDate: v }))} />
+              <DatePickerField label="از تاریخ" valueIso={hrLeaveDraft.fromDate} onChange={(value) => setHrLeaveDraft((prev) => ({ ...prev, fromDate: value }))} />
+              <DatePickerField label="تا تاریخ" valueIso={hrLeaveDraft.toDate} onChange={(value) => setHrLeaveDraft((prev) => ({ ...prev, toDate: value }))} />
             </div>
             {(hrLeaveErrors.fromDate || hrLeaveErrors.toDate) && <p className="text-xs text-destructive">{hrLeaveErrors.fromDate || hrLeaveErrors.toDate}</p>}
             <BufferedInput
@@ -296,15 +623,15 @@ export default function TeamHrView(props: any) {
                 <p className="text-xs text-muted-foreground">درخواستی ثبت نشده است.</p>
               ) : (
                 visibleHrLeaveRequests.map((row) => (
-                  <div key={row.id} className="rounded-lg border p-2 text-xs">
+                  <div key={row.id} className="oneui-hr-panel rounded-lg border border-border/16 p-2 text-xs">
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-semibold">{teamMemberNameById.get(row.memberId) ?? "نامشخص"}</p>
                       <Badge variant={row.status === "pending" ? "secondary" : row.status === "approved" ? "default" : "destructive"}>
-                        {HR_LEAVE_STATUS_ITEMS.find((x) => x.value === row.status)?.label ?? row.status}
+                        {HR_LEAVE_STATUS_ITEMS.find((item) => item.value === row.status)?.label ?? row.status}
                       </Badge>
                     </div>
                     <p className="mt-1 text-muted-foreground">
-                      {HR_LEAVE_TYPE_ITEMS.find((x) => x.value === row.leaveType)?.label ?? row.leaveType} | {isoToJalali(row.fromDate)} تا {isoToJalali(row.toDate)}
+                      {HR_LEAVE_TYPE_ITEMS.find((item) => item.value === row.leaveType)?.label ?? row.leaveType} | {isoToJalali(row.fromDate)} تا {isoToJalali(row.toDate)}
                     </p>
                     <p className="mt-1">{row.reason}</p>
                     {isHrManager && row.status === "pending" && (
@@ -325,62 +652,68 @@ export default function TeamHrView(props: any) {
         </Card>
       </section>
 
-      <Card className="liquid-glass lift-on-hover">
+      <Card className="oneui-hr-shell">
         <CardHeader>
           <CardTitle>حضور و غیاب</CardTitle>
           <CardDescription>ثبت رکورد روزانه، محاسبه خودکار ساعت کار و مشاهده وضعیت ماهانه تیم</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="rounded-lg border p-3">
+            <div className="oneui-task-summary-card rounded-lg border border-border/16 p-3">
               <p className="text-xs text-muted-foreground">تعداد رکورد ماه</p>
               <p className="mt-1 text-xl font-bold">{toFaNum(String(hrAttendanceSummary.total))}</p>
             </div>
-            <div className="rounded-lg border p-3">
+            <div className="oneui-task-summary-card rounded-lg border border-border/16 p-3">
               <p className="text-xs text-muted-foreground">نرخ حضور ماه</p>
               <p className="mt-1 text-xl font-bold">{toFaNum(String(hrAttendanceSummary.attendanceRate))}%</p>
             </div>
-            <div className="rounded-lg border p-3">
+            <div className="oneui-task-summary-card rounded-lg border border-border/16 p-3">
               <p className="text-xs text-muted-foreground">کل ساعت کاری</p>
               <p className="mt-1 text-xl font-bold">{toFaNum(String(hrAttendanceSummary.totalHours))}</p>
             </div>
-            <div className="rounded-lg border p-3">
+            <div className="oneui-task-summary-card rounded-lg border border-border/16 p-3">
               <p className="text-xs text-muted-foreground">میانگین ساعت روزانه</p>
               <p className="mt-1 text-xl font-bold">{toFaNum(String(hrAttendanceSummary.avgHours))}</p>
             </div>
-            <div className="rounded-lg border p-3">
+            <div className="oneui-task-summary-card rounded-lg border border-border/16 p-3">
               <p className="text-xs text-muted-foreground">غیبت ثبت‌شده</p>
               <p className="mt-1 text-xl font-bold text-destructive">{toFaNum(String(hrAttendanceSummary.absent))}</p>
             </div>
           </section>
 
-          <div className="rounded-xl border p-4">
+          <div className="oneui-hr-panel rounded-xl border border-border/16 p-4">
             <p className="mb-3 text-sm font-semibold">ثبت رکورد حضور جدید</p>
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
               <DatePickerField
                 label="ماه گزارش (شمسی)"
                 valueIso={`${hrAttendanceMonth}-01`}
-                onChange={(v) => {
-                  const next = String(v ?? "").slice(0, 7);
-                  if (/^\d{4}-\d{2}$/.test(next)) setHrAttendanceMonth(next);
+                onChange={(value) => {
+                  const next = String(value ?? "").slice(0, 7);
+                  if (/^\\d{4}-\\d{2}$/.test(next)) {
+                    setHrAttendanceMonth(next);
+                  }
                 }}
               />
-              <Select value={hrAttendanceDraft.memberId} onValueChange={(v) => setHrAttendanceDraft((prev) => ({ ...prev, memberId: v }))}>
+              <Select value={hrAttendanceDraft.memberId} onValueChange={(value) => setHrAttendanceDraft((prev) => ({ ...prev, memberId: value }))}>
                 <SelectTrigger className="h-10">
                   <SelectValue placeholder="عضو پرسنل" />
                 </SelectTrigger>
                 <SelectContent>
-                  {activeTeamMembers.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.fullName}
+                  {activeTeamMembers.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.fullName}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <DatePickerField label="تاریخ رکورد" valueIso={hrAttendanceDraft.date} onChange={(v) => setHrAttendanceDraft((prev) => ({ ...prev, date: v }))} />
+              <DatePickerField
+                label="تاریخ رکورد"
+                valueIso={hrAttendanceDraft.date}
+                onChange={(value) => setHrAttendanceDraft((prev) => ({ ...prev, date: value }))}
+              />
             </div>
             <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-5">
-              <Select value={hrAttendanceDraft.status} onValueChange={(v) => setHrAttendanceDraft((prev) => ({ ...prev, status: v as any }))}>
+              <Select value={hrAttendanceDraft.status} onValueChange={(value) => setHrAttendanceDraft((prev) => ({ ...prev, status: value }))}>
                 <SelectTrigger className="h-10">
                   <SelectValue placeholder="وضعیت حضور" />
                 </SelectTrigger>
@@ -402,12 +735,14 @@ export default function TeamHrView(props: any) {
                 placeholder="HH:mm"
                 defaultValue={hrAttendanceDraft.checkIn}
                 disabled={hrAttendanceDraft.status === "leave"}
-                onInput={(e) => {
-                  const node = e.currentTarget;
+                onInput={(event) => {
+                  const node = event.currentTarget;
                   const normalized = normalizeTimeInput(node.value);
-                  if (node.value !== normalized) node.value = normalized;
+                  if (node.value !== normalized) {
+                    node.value = normalized;
+                  }
                 }}
-                onBlur={(e) => commitHrAttendanceTime("checkIn", e.currentTarget.value)}
+                onBlur={(event) => commitHrAttendanceTime("checkIn", event.currentTarget.value)}
               />
               <Input
                 key={`hr-checkout-${hrAttendanceDraft.memberId}-${hrAttendanceDraft.date}-${hrAttendanceDraft.status}-${hrAttendanceDraft.checkOut}`}
@@ -419,17 +754,24 @@ export default function TeamHrView(props: any) {
                 placeholder="HH:mm"
                 defaultValue={hrAttendanceDraft.checkOut}
                 disabled={hrAttendanceDraft.status === "leave"}
-                onInput={(e) => {
-                  const node = e.currentTarget;
+                onInput={(event) => {
+                  const node = event.currentTarget;
                   const normalized = normalizeTimeInput(node.value);
-                  if (node.value !== normalized) node.value = normalized;
+                  if (node.value !== normalized) {
+                    node.value = normalized;
+                  }
                 }}
-                onBlur={(e) => commitHrAttendanceTime("checkOut", e.currentTarget.value)}
+                onBlur={(event) => commitHrAttendanceTime("checkOut", event.currentTarget.value)}
               />
               <div className="flex h-10 items-center rounded-md border bg-emerald-50 px-3 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
                 ساعت کار: {toFaNum(String(hrAttendanceDraft.status === "leave" ? 0 : calculateWorkHoursFromTime(hrAttendanceDraft.checkIn, hrAttendanceDraft.checkOut)))} ساعت
               </div>
-              <BufferedInput className="h-10" placeholder="یادداشت کوتاه" value={hrAttendanceDraft.note} onCommit={(next) => setHrAttendanceDraft((prev) => ({ ...prev, note: next }))} />
+              <BufferedInput
+                className="h-10"
+                placeholder="یادداشت کوتاه"
+                value={hrAttendanceDraft.note}
+                onCommit={(next) => setHrAttendanceDraft((prev) => ({ ...prev, note: next }))}
+              />
             </div>
           </div>
           {hrAttendanceErrors.memberId && <p className="text-xs text-destructive">{hrAttendanceErrors.memberId}</p>}
@@ -439,78 +781,85 @@ export default function TeamHrView(props: any) {
             </Button>
           </div>
 
-          <div ref={hrAttendanceVirtual.ref} onScroll={hrAttendanceVirtual.onScroll} className="max-h-[62vh] overflow-auto rounded-xl border">
-            <table className="min-w-full text-sm">
-              <thead className="bg-muted/40 text-muted-foreground">
-                <tr>
-                  <th className="px-2 py-2 text-right font-medium">عضو</th>
-                  <th className="px-2 py-2 text-right font-medium">تاریخ</th>
-                  <th className="px-2 py-2 text-right font-medium">وضعیت</th>
-                  <th className="px-2 py-2 text-right font-medium">ورود</th>
-                  <th className="px-2 py-2 text-right font-medium">خروج</th>
-                  <th className="px-2 py-2 text-right font-medium">ساعت کار</th>
-                  <th className="px-2 py-2 text-right font-medium">یادداشت</th>
-                  {isHrAdmin && <th className="px-2 py-2 text-right font-medium">عملیات</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {visibleHrAttendanceRecords.length === 0 ? (
+          <>
+            <div ref={hrAttendanceVirtual.ref} onScroll={hrAttendanceVirtual.onScroll} className="app-minimal-table-shell max-h-[62vh]">
+              <div className="app-minimal-table-scroll max-h-[62vh] overflow-auto">
+              <table className="app-minimal-table min-w-full text-sm">
+                <thead className="bg-muted/40 text-muted-foreground">
                   <tr>
-                    <td className="px-3 py-6 text-center text-sm text-muted-foreground" colSpan={isHrAdmin ? 8 : 7}>
-                      رکوردی برای این ماه ثبت نشده است.
-                    </td>
+                    <th className="px-2 py-2 text-right font-medium">عضو</th>
+                    <th className="px-2 py-2 text-right font-medium">تاریخ</th>
+                    <th className="px-2 py-2 text-right font-medium">وضعیت</th>
+                    <th className="px-2 py-2 text-right font-medium">ورود</th>
+                    <th className="px-2 py-2 text-right font-medium">خروج</th>
+                    <th className="px-2 py-2 text-right font-medium">ساعت کار</th>
+                    <th className="px-2 py-2 text-right font-medium">یادداشت</th>
+                    {isHrAdmin && <th className="px-2 py-2 text-right font-medium">عملیات</th>}
                   </tr>
-                ) : (
-                  <>
-                    {hrAttendanceVirtual.windowState.paddingTop > 0 && (
-                      <tr aria-hidden="true">
-                        <td colSpan={isHrAdmin ? 8 : 7} style={{ height: hrAttendanceVirtual.windowState.paddingTop }} />
-                      </tr>
-                    )}
-                    {visibleHrAttendanceRows.map((row) => (
-                      <tr key={row.id} className="border-t hover:bg-muted/30">
-                        <td className="px-2 py-2 font-medium">{teamMemberNameById.get(row.memberId) ?? "نامشخص"}</td>
-                        <td className="px-2 py-2">{isoToJalali(row.date)}</td>
-                        <td className="px-2 py-2">
-                          <Badge variant="outline" className={hrAttendanceBadgeClass(row.status)}>
-                            {HR_ATTENDANCE_STATUS_ITEMS.find((x) => x.value === row.status)?.label ?? row.status}
-                          </Badge>
-                        </td>
-                        <td className="px-2 py-2">{row.checkIn ? toFaNum(row.checkIn) : "—"}</td>
-                        <td className="px-2 py-2">{row.checkOut ? toFaNum(row.checkOut) : "—"}</td>
-                        <td className="px-2 py-2 font-semibold">{toFaNum(String(row.workHours || 0))}</td>
-                        <td className="max-w-[260px] truncate px-2 py-2">{row.note || "—"}</td>
-                        {isHrAdmin && (
+                </thead>
+                <tbody>
+                  {visibleHrAttendanceRecords.length === 0 ? (
+                    <tr>
+                      <td className="px-3 py-6 text-center text-sm text-muted-foreground" colSpan={isHrAdmin ? 8 : 7}>
+                        رکوردی برای این ماه ثبت نشده است.
+                      </td>
+                    </tr>
+                  ) : (
+                    <>
+                      {paginatedAttendanceRows.map((row) => (
+                        <tr key={row.id}>
+                          <td className="px-2 py-2 font-medium">{teamMemberNameById.get(row.memberId) ?? "نامشخص"}</td>
+                          <td className="px-2 py-2">{isoToJalali(row.date)}</td>
                           <td className="px-2 py-2">
-                            <div className="flex items-center gap-1">
-                              <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => editHrAttendanceRecord(row)} title="ویرایش رکورد">
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-destructive"
-                                onClick={() => void removeHrAttendanceRecord(row)}
-                                title="حذف رکورد"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
+                            <Badge variant="outline" className={hrAttendanceBadgeClass(row.status as AttendanceBadgeStatus)}>
+                              {HR_ATTENDANCE_STATUS_ITEMS.find((item) => item.value === row.status)?.label ?? row.status}
+                            </Badge>
                           </td>
-                        )}
-                      </tr>
-                    ))}
-                    {hrAttendanceVirtual.windowState.paddingBottom > 0 && (
-                      <tr aria-hidden="true">
-                        <td colSpan={isHrAdmin ? 8 : 7} style={{ height: hrAttendanceVirtual.windowState.paddingBottom }} />
-                      </tr>
-                    )}
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
+                          <td className="px-2 py-2">{row.checkIn ? toFaNum(row.checkIn) : "—"}</td>
+                          <td className="px-2 py-2">{row.checkOut ? toFaNum(row.checkOut) : "—"}</td>
+                          <td className="px-2 py-2 font-semibold">{toFaNum(String(row.workHours || 0))}</td>
+                          <td className="max-w-[260px] truncate px-2 py-2">{row.note || "—"}</td>
+                          {isHrAdmin && (
+                            <td className="px-2 py-2">
+                              <div className="flex items-center gap-1">
+                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => editHrAttendanceRecord(row)} title="ویرایش رکورد">
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive"
+                                  onClick={() => void removeHrAttendanceRecord(row)}
+                                  title="حذف رکورد"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </>
+                  )}
+                </tbody>
+              </table>
+              </div>
+            </div>
+            {visibleHrAttendanceRecords.length > 0 && (
+              <TablePagination
+                page={attendancePage}
+                pageSize={attendancePageSize}
+                totalItems={visibleHrAttendanceRecords.length}
+                onPageChange={setAttendancePage}
+                onPageSizeChange={(pageSize) => {
+                  setAttendancePageSize(pageSize);
+                  setAttendancePage(1);
+                }}
+                toFaNum={toFaNum}
+              />
+            )}
+          </>
         </CardContent>
       </Card>
 
@@ -544,10 +893,26 @@ export default function TeamHrView(props: any) {
         TASK_STATUS_ITEMS={TASK_STATUS_ITEMS}
         normalizeTaskStatus={normalizeTaskStatus}
         openEditMember={openEditMember}
+        openAccessEditor={openAccessEditor}
+        moduleAccessOptions={moduleAccessOptions}
+      />
+
+      <TeamMemberAccessDialog
+        memberAccessOpen={memberAccessOpen}
+        setMemberAccessOpen={setMemberAccessOpen}
+        selectedMember={selectedMember}
+        memberEditDraft={memberEditDraft}
+        setMemberEditDraft={setMemberEditDraft}
+        memberEditErrors={memberEditErrors}
+        moduleAccessOptions={moduleAccessOptions}
+        accessPresets={accessPresets}
+        saveMemberAccessPreset={saveMemberAccessPreset}
+        updateMemberAccess={updateMemberAccess}
       />
 
       <TeamMemberEditDialog
         memberEditOpen={memberEditOpen}
+        initialStep={memberEditInitialStep}
         setMemberEditOpen={setMemberEditOpen}
         setEditingMemberId={setEditingMemberId}
         memberEditDraft={memberEditDraft}
@@ -557,7 +922,12 @@ export default function TeamHrView(props: any) {
         pickAvatarForDraft={pickAvatarForDraft}
         updateMember={updateMember}
         teams={teams}
+        moduleAccessOptions={moduleAccessOptions}
+        accessPresets={accessPresets}
+        saveMemberAccessPreset={saveMemberAccessPreset}
       />
     </>
   );
 }
+
+export default memo(TeamHrView);

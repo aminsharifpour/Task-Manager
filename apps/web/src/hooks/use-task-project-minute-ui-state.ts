@@ -1,4 +1,9 @@
 import { useState } from "react";
+import { uiPreferenceSerializers, useUiPreference } from "@/stores/ui-preferences";
+
+const TASK_SEARCH_STORAGE_KEY = "task_app_tasks_search_v1";
+const TASK_PROJECT_FILTER_STORAGE_KEY = "task_app_tasks_project_filter_v1";
+const TASK_STATUS_FILTER_STORAGE_KEY = "task_app_tasks_status_filter_v1";
 
 export function useTaskProjectMinuteUiState({ todayIso }: { todayIso: () => string }) {
   const [taskOpen, setTaskOpen] = useState(false);
@@ -15,9 +20,9 @@ export function useTaskProjectMinuteUiState({ todayIso }: { todayIso: () => stri
   const [selectedMinuteId, setSelectedMinuteId] = useState<string | null>(null);
 
   const [projectSearch, setProjectSearch] = useState("");
-  const [taskSearch, setTaskSearch] = useState("");
-  const [taskProjectFilter, setTaskProjectFilter] = useState("all");
-  const [taskStatusFilter, setTaskStatusFilter] = useState<"all" | string>("all");
+  const [taskSearch, setTaskSearch] = useUiPreference(TASK_SEARCH_STORAGE_KEY, "", uiPreferenceSerializers.string);
+  const [taskProjectFilter, setTaskProjectFilter] = useUiPreference(TASK_PROJECT_FILTER_STORAGE_KEY, "all", uiPreferenceSerializers.string);
+  const [taskStatusFilter, setTaskStatusFilter] = useUiPreference<"all" | string>(TASK_STATUS_FILTER_STORAGE_KEY, "all", uiPreferenceSerializers.string);
   const [minuteSearch, setMinuteSearch] = useState("");
   const [minuteFrom, setMinuteFrom] = useState("");
   const [minuteTo, setMinuteTo] = useState("");
@@ -28,6 +33,7 @@ export function useTaskProjectMinuteUiState({ todayIso }: { todayIso: () => stri
     assignerId: "",
     assigneePrimaryId: "",
     assigneeSecondaryId: "",
+    predecessorTaskIds: [] as string[],
     projectName: "",
     announceDateIso: todayIso(),
     executionDateIso: todayIso(),
@@ -59,6 +65,7 @@ export function useTaskProjectMinuteUiState({ todayIso }: { todayIso: () => stri
     assignerId: "",
     assigneePrimaryId: "",
     assigneeSecondaryId: "",
+    predecessorTaskIds: [] as string[],
     projectName: "",
     announceDateIso: todayIso(),
     executionDateIso: todayIso(),

@@ -21,9 +21,6 @@ type UseChatRealtimeArgs = {
   incomingAudioCtxRef: MutableRefObject<AudioContext | null>;
   lastIncomingSoundAtRef: MutableRefObject<number>;
   notificationChannelsRef: MutableRefObject<NotificationChannels>;
-  apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
-  setAuthToken: (value: string) => void;
-  setAuthUser: (value: any) => void;
   setTypingUsers: (value: any[] | ((prev: any[]) => any[])) => void;
   pushToast: (message: string, tone?: "success" | "error") => void;
   handleIncomingMessage: (message: any, helpers: { isActiveConversationVisible: boolean; socket: Socket }) => void;
@@ -36,6 +33,7 @@ type UseChatRealtimeArgs = {
   handleConversationDeleted: (payload: any) => void;
   handleTaskAssigned: (payload: any) => void;
   handlePresenceUpdate: (payload: any) => void;
+  handleNotificationNew: (payload: any) => void;
 };
 
 export const useChatRealtime = ({
@@ -50,9 +48,6 @@ export const useChatRealtime = ({
   incomingAudioCtxRef,
   lastIncomingSoundAtRef,
   notificationChannelsRef,
-  apiRequest,
-  setAuthToken,
-  setAuthUser,
   setTypingUsers,
   pushToast,
   handleIncomingMessage,
@@ -65,6 +60,7 @@ export const useChatRealtime = ({
   handleConversationDeleted,
   handleTaskAssigned,
   handlePresenceUpdate,
+  handleNotificationNew,
 }: UseChatRealtimeArgs) => {
   const handleIncomingMessageRef = useRef(handleIncomingMessage);
   const handleConversationUpdatedRef = useRef(handleConversationUpdated);
@@ -76,6 +72,9 @@ export const useChatRealtime = ({
   const handleConversationDeletedRef = useRef(handleConversationDeleted);
   const handleTaskAssignedRef = useRef(handleTaskAssigned);
   const handlePresenceUpdateRef = useRef(handlePresenceUpdate);
+  const handleNotificationNewRef = useRef(handleNotificationNew);
+  const pushToastRef = useRef(pushToast);
+  const setTypingUsersRef = useRef(setTypingUsers);
 
   useEffect(() => {
     handleIncomingMessageRef.current = handleIncomingMessage;
@@ -88,6 +87,9 @@ export const useChatRealtime = ({
     handleConversationDeletedRef.current = handleConversationDeleted;
     handleTaskAssignedRef.current = handleTaskAssigned;
     handlePresenceUpdateRef.current = handlePresenceUpdate;
+    handleNotificationNewRef.current = handleNotificationNew;
+    pushToastRef.current = pushToast;
+    setTypingUsersRef.current = setTypingUsers;
   }, [
     handleConversationDeleted,
     handleConversationUpdated,
@@ -97,6 +99,9 @@ export const useChatRealtime = ({
     handleMessageReaction,
     handleMessageUpdated,
     handlePresenceUpdate,
+    handleNotificationNew,
+    pushToast,
+    setTypingUsers,
     handleTaskAssigned,
     handleTyping,
   ]);
@@ -109,12 +114,17 @@ export const useChatRealtime = ({
         socketRef.current = null;
       }
       joinedConversationRef.current = "";
-      setTypingUsers([]);
+      setTypingUsersRef.current([]);
       return;
     }
     const socket = io(socketBase || undefined, {
       auth: { token: authToken },
-      transports: ["websocket", "polling"],
+      transports: ["polling"],
+      upgrade: false,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1500,
+      reconnectionDelayMax: 6000,
     });
     socketRef.current = socket;
 
@@ -128,12 +138,10 @@ export const useChatRealtime = ({
     socket.on("connect_error", (error) => {
       const msg = String(error?.message ?? "").trim();
       if (msg.toLowerCase().includes("unauthorized")) {
-        pushToast("نشست شما منقضی شده است. لطفا دوباره وارد شوید.", "error");
-        setAuthToken("");
-        setAuthUser(null);
+        pushToastRef.current("اتصال لحظه‌ای نشست معتبر نگرفت. صفحه را یک‌بار رفرش کن.", "error");
         return;
       }
-      pushToast("اتصال لحظه‌ای چت برقرار نشد.", "error");
+      pushToastRef.current("اتصال لحظه‌ای چت برقرار نشد.", "error");
     });
 
     socket.on("chat:message:new", (message: any) => {
@@ -193,26 +201,20 @@ export const useChatRealtime = ({
     socket.on("chat:conversation:deleted", (payload) => handleConversationDeletedRef.current(payload));
     socket.on("task:assigned", (payload) => handleTaskAssignedRef.current(payload));
     socket.on("presence:update", (payload) => handlePresenceUpdateRef.current(payload));
+    socket.on("notification:new", (payload) => handleNotificationNewRef.current(payload));
 
     return () => {
       socket.disconnect();
       if (socketRef.current === socket) socketRef.current = null;
     };
   }, [
-    activeViewRef,
-    apiRequest,
     authToken,
-    authUserIdRef,
     incomingAudioCtxRef,
     joinedConversationRef,
     lastIncomingSoundAtRef,
     notificationChannelsRef,
-    pushToast,
     seenIncomingMessageIdsRef,
     selectedConversationRef,
-    setAuthToken,
-    setAuthUser,
-    setTypingUsers,
     socketBase,
     socketRef,
   ]);

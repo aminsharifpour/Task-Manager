@@ -10,7 +10,7 @@ export default function TeamHrReportCard({
   setMemberProfileOpen,
 }: any) {
   return (
-    <Card className="liquid-glass lift-on-hover">
+    <Card className="oneui-hr-shell liquid-glass">
       <CardHeader className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -22,26 +22,26 @@ export default function TeamHrReportCard({
           </Button>
         </div>
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-lg border p-3">
+          <div className="oneui-task-summary-card rounded-[1.2rem] border p-3">
             <p className="text-xs text-muted-foreground">میانگین بهره‌وری تیم</p>
             <p className="mt-1 text-2xl font-bold">{toFaNum(String(hrReportTotals.avgProductivity))}%</p>
           </div>
-          <div className="rounded-lg border p-3">
+          <div className="oneui-task-summary-card rounded-[1.2rem] border p-3">
             <p className="text-xs text-muted-foreground">کل ساعت کار ثبت‌شده</p>
             <p className="mt-1 text-2xl font-bold">{toFaNum(String(hrReportTotals.totalWorkHours))}</p>
           </div>
-          <div className="rounded-lg border p-3">
+          <div className="oneui-task-summary-card rounded-[1.2rem] border p-3">
             <p className="text-xs text-muted-foreground">کل مرخصی تاییدشده</p>
             <p className="mt-1 text-2xl font-bold">{toFaNum(String(hrReportTotals.totalApprovedLeaveDays))} روز</p>
           </div>
-          <div className="rounded-lg border p-3">
+          <div className="oneui-task-summary-card rounded-[1.2rem] border p-3">
             <p className="text-xs text-muted-foreground">مرخصی‌های در انتظار</p>
             <p className="mt-1 text-2xl font-bold">{toFaNum(String(hrReportTotals.totalPendingLeaves))}</p>
           </div>
         </section>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto rounded-xl border">
+        <div className="oneui-shared-table-shell overflow-x-auto rounded-[1.5rem] border">
           <table className="min-w-full text-sm">
             <thead className="bg-muted/40 text-muted-foreground">
               <tr>

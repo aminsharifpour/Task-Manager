@@ -31,11 +31,11 @@ export default function LoginScreen({
         <div className="scene-orb scene-orb-c" />
         <div className="scene-grid" />
       </div>
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border bg-card/95 shadow-2xl backdrop-blur-sm lg:grid-cols-[1.15fr_1fr]">
-        <section className="relative hidden min-h-[540px] overflow-hidden border-l p-8 lg:block">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-border/20 bg-card/96 shadow-[0_24px_64px_-32px_hsl(var(--oneui-shadow)/0.28)] lg:grid-cols-[1.15fr_1fr] dark:border-white/6 dark:bg-card/98">
+        <section className="relative hidden min-h-[540px] overflow-hidden border-l border-border/12 p-8 dark:border-white/6 lg:block">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_22%,hsl(var(--hero-2)/0.26),transparent_44%),radial-gradient(circle_at_84%_12%,hsl(var(--hero-3)/0.2),transparent_38%),linear-gradient(145deg,hsl(var(--card)),hsl(var(--secondary)/0.5))]" />
           <div className="relative z-10 flex h-full flex-col">
-            <Badge variant="outline" className="w-fit bg-background/70">Task Hub</Badge>
+            <Badge variant="outline" className="w-fit bg-background/70 dark:bg-background/40">Task Hub</Badge>
             <div className="mt-8 space-y-3">
               <h1 className="text-4xl font-black leading-tight">مدیریت تیم با سرعت بالا</h1>
               <p className="max-w-md text-sm text-muted-foreground">
@@ -43,21 +43,21 @@ export default function LoginScreen({
               </p>
             </div>
             <div className="mt-8 grid gap-3">
-              <div className="rounded-2xl border bg-background/70 p-3">
+              <div className="rounded-2xl border border-border/12 bg-background/70 p-3 dark:border-white/6 dark:bg-background/30">
                 <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
                   <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                   جریان کار روشن
                 </div>
                 <p className="text-xs text-muted-foreground">تسک‌ها با وضعیت مرحله‌ای و گزارش عملکرد تیم.</p>
               </div>
-              <div className="rounded-2xl border bg-background/70 p-3">
+              <div className="rounded-2xl border border-border/12 bg-background/70 p-3 dark:border-white/6 dark:bg-background/30">
                 <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
                   <MessageSquare className="h-4 w-4 text-cyan-700" />
                   گفتگوی تیمی لحظه‌ای
                 </div>
                 <p className="text-xs text-muted-foreground">چت خصوصی/گروهی با اعلان، منشن و فایل.</p>
               </div>
-              <div className="rounded-2xl border bg-background/70 p-3">
+              <div className="rounded-2xl border border-border/12 bg-background/70 p-3 dark:border-white/6 dark:bg-background/30">
                 <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
                   <BarChart3 className="h-4 w-4 text-amber-600" />
                   تصمیم‌گیری داده‌محور
@@ -68,7 +68,7 @@ export default function LoginScreen({
           </div>
         </section>
 
-        <section className="animate-fade-up p-5 sm:p-7 lg:p-9">
+        <section className="animate-fade-up bg-card/70 p-5 dark:bg-card/55 sm:p-7 lg:p-9">
           <div className="mb-6 space-y-2">
             <Badge variant="secondary" className="w-fit">ورود امن</Badge>
             <CardTitle className="text-2xl">ورود به سامانه</CardTitle>

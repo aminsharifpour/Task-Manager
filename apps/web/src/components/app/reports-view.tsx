@@ -1,16 +1,17 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { VirtualWindow } from "@/hooks/use-virtual-rows";
+import { TablePagination } from "@/components/ui/table-pagination";
 
 type ReportEntity = "tasks" | "projects" | "minutes" | "transactions" | "team" | "audit";
 type ReportColumn = { key: string; label: string; getValue: (row: any) => string | number };
 
 type Props = {
+  shellSidebarCollapsed?: boolean;
   reportEntity: ReportEntity;
   reportQuery: string;
   reportColumnDefs: ReportColumn[];
@@ -18,9 +19,8 @@ type Props = {
   reportRowsCount: number;
   reportPreviewRowsLength: number;
   reportRowsLength: number;
+  reportPreviewRows: any[];
   reportEnabledColumns: ReportColumn[];
-  visibleReportPreviewRows: any[];
-  reportPreviewWindow: VirtualWindow;
   reportPreviewRef: React.MutableRefObject<HTMLDivElement | null>;
   onReportPreviewScroll: () => void;
   onReportEntityChange: (v: ReportEntity) => void;
@@ -33,6 +33,7 @@ type Props = {
 };
 
 export default function ReportsView({
+  shellSidebarCollapsed,
   reportEntity,
   reportQuery,
   reportColumnDefs,
@@ -40,9 +41,8 @@ export default function ReportsView({
   reportRowsCount,
   reportPreviewRowsLength,
   reportRowsLength,
+  reportPreviewRows,
   reportEnabledColumns,
-  visibleReportPreviewRows,
-  reportPreviewWindow,
   reportPreviewRef,
   onReportPreviewScroll,
   onReportEntityChange,
@@ -53,6 +53,18 @@ export default function ReportsView({
   fromDateField,
   toDateField,
 }: Props) {
+  const [reportPage, setReportPage] = useState(1);
+  const [reportPageSize, setReportPageSize] = useState(20);
+  const paginatedReportRows = useMemo(() => {
+    const start = (reportPage - 1) * reportPageSize;
+    return reportPreviewRows.slice(start, start + reportPageSize);
+  }, [reportPage, reportPageSize, reportPreviewRows]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(reportPreviewRows.length / reportPageSize));
+    if (reportPage > totalPages) setReportPage(totalPages);
+  }, [reportPage, reportPageSize, reportPreviewRows.length]);
+
   return (
     <>
       <Card className="liquid-glass lift-on-hover">
@@ -61,7 +73,7 @@ export default function ReportsView({
           <CardDescription>منبع داده، ستون‌ها و فیلتر زمانی را انتخاب کن و خروجی بگیر.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          <div className={`grid gap-3 md:grid-cols-2 ${shellSidebarCollapsed ? "xl:grid-cols-4" : "lg:grid-cols-4"}`}>
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">منبع گزارش</p>
               <Select value={reportEntity} onValueChange={(v) => onReportEntityChange(v as ReportEntity)}>
@@ -119,47 +131,50 @@ export default function ReportsView({
           {reportRowsLength === 0 ? (
             <p className="text-sm text-muted-foreground">داده‌ای برای گزارش وجود ندارد.</p>
           ) : (
-            <div
-              ref={reportPreviewRef}
-              onScroll={onReportPreviewScroll}
-              className="max-h-[68vh] overflow-auto rounded-xl border"
-            >
-              <table className="min-w-full text-sm">
-                <thead className="bg-muted/40 text-muted-foreground">
-                  <tr>
-                    {reportEnabledColumns.map((col) => (
-                      <th key={`report-head-${col.key}`} className="px-3 py-2 text-right font-medium">
-                        {col.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportPreviewWindow.paddingTop > 0 && (
-                    <tr aria-hidden="true">
-                      <td colSpan={reportEnabledColumns.length || 1} style={{ height: reportPreviewWindow.paddingTop }} />
+            <>
+              <div
+                ref={reportPreviewRef}
+                onScroll={onReportPreviewScroll}
+                className={`max-h-[68vh] overflow-auto rounded-xl border ${shellSidebarCollapsed ? "2xl:max-h-[72vh]" : ""}`}
+              >
+                <table className="min-w-full text-sm">
+                  <thead className="bg-muted/40 text-muted-foreground">
+                    <tr>
+                      {reportEnabledColumns.map((col) => (
+                        <th key={`report-head-${col.key}`} className="px-3 py-2 text-right font-medium">
+                          {col.label}
+                        </th>
+                      ))}
                     </tr>
-                  )}
-                  {visibleReportPreviewRows.map((row, idx) => {
-                    const absoluteIdx = reportPreviewWindow.start + idx;
-                    return (
-                      <tr key={`report-row-${absoluteIdx}`} className="border-t">
-                        {reportEnabledColumns.map((col) => (
-                          <td key={`report-cell-${absoluteIdx}-${col.key}`} className="px-3 py-2">
-                            {String(col.getValue(row) ?? "")}
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
-                  {reportPreviewWindow.paddingBottom > 0 && (
-                    <tr aria-hidden="true">
-                      <td colSpan={reportEnabledColumns.length || 1} style={{ height: reportPreviewWindow.paddingBottom }} />
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {paginatedReportRows.map((row, idx) => {
+                      const absoluteIdx = (reportPage - 1) * reportPageSize + idx;
+                      return (
+                        <tr key={`report-row-${absoluteIdx}`} className="border-t">
+                          {reportEnabledColumns.map((col) => (
+                            <td key={`report-cell-${absoluteIdx}-${col.key}`} className="px-3 py-2">
+                              {String(col.getValue(row) ?? "")}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <TablePagination
+                page={reportPage}
+                pageSize={reportPageSize}
+                totalItems={reportPreviewRows.length}
+                onPageChange={setReportPage}
+                onPageSizeChange={(pageSize) => {
+                  setReportPageSize(pageSize);
+                  setReportPage(1);
+                }}
+                toFaNum={toFaNum}
+              />
+            </>
           )}
         </CardContent>
       </Card>

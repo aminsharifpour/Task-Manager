@@ -1,4 +1,12 @@
 import * as React from "react"
+import {
+  Card as HeroCard,
+  CardContent as HeroCardContent,
+  CardDescription as HeroCardDescription,
+  CardFooter as HeroCardFooter,
+  CardHeader as HeroCardHeader,
+  CardTitle as HeroCardTitle,
+} from "@heroui/react"
 
 import { cn } from "@/lib/utils"
 
@@ -6,10 +14,10 @@ const Card = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div
+  <HeroCard
     ref={ref}
     className={cn(
-      "rounded-xl border bg-card text-card-foreground shadow",
+      "rounded-lg border border-border/25 bg-card text-card-foreground shadow-[0_1px_2px_hsl(var(--foreground)/0.03),0_8px_24px_-20px_hsl(var(--foreground)/0.1)]",
       className
     )}
     {...props}
@@ -21,9 +29,9 @@ const CardHeader = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div
+  <HeroCardHeader
     ref={ref}
-    className={cn("flex flex-col space-y-1.5 p-6", className)}
+    className={cn("flex flex-col space-y-1.5 p-4 sm:p-5", className)}
     {...props}
   />
 ))
@@ -33,7 +41,7 @@ const CardTitle = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div
+  <HeroCardTitle
     ref={ref}
     className={cn("font-semibold leading-none tracking-tight", className)}
     {...props}
@@ -45,7 +53,7 @@ const CardDescription = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div
+  <HeroCardDescription
     ref={ref}
     className={cn("text-sm text-muted-foreground", className)}
     {...props}
@@ -57,7 +65,7 @@ const CardContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn("p-6 pt-0", className)} {...props} />
+  <HeroCardContent ref={ref} className={cn("p-5 pt-0", className)} {...props} />
 ))
 CardContent.displayName = "CardContent"
 
@@ -65,9 +73,9 @@ const CardFooter = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div
+  <HeroCardFooter
     ref={ref}
-    className={cn("flex items-center p-6 pt-0", className)}
+    className={cn("flex items-center p-5 pt-0", className)}
     {...props}
   />
 ))

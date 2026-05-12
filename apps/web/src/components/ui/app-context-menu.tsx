@@ -82,10 +82,10 @@ export function AppContextMenu({ open, x, y, title, items, onClose }: AppContext
       ref={menuRef}
       role="menu"
       dir="rtl"
-      className="app-context-menu fixed z-[120] w-[248px] origin-top-right rounded-xl border border-border/80 bg-background/95 p-1.5 shadow-2xl backdrop-blur-md animate-in fade-in-0 zoom-in-95"
+      className="app-context-menu fixed z-[120] w-[248px] origin-top-right rounded-2xl border border-border/80 bg-background/95 p-1.5 shadow-2xl backdrop-blur-md animate-in fade-in-0 zoom-in-95"
       style={menuPosition}
     >
-      {title ? <p className="px-2 pb-1 pt-1 text-xs font-semibold text-muted-foreground">{title}</p> : null}
+      {title ? <p className="px-2 pb-1 pt-1 text-[11px] font-semibold text-muted-foreground">{title}</p> : null}
       <div className="space-y-0.5">
         {items.map((item) => {
           const Icon = item.icon;
@@ -96,7 +96,7 @@ export function AppContextMenu({ open, x, y, title, items, onClose }: AppContext
               role="menuitem"
               disabled={item.disabled}
               className={cn(
-                "app-context-menu-item flex w-full items-center gap-2 rounded-lg px-2 py-2 text-right text-sm transition-colors",
+                "app-context-menu-item flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-right text-sm transition-colors",
                 item.disabled ? "cursor-not-allowed opacity-50" : "hover:bg-muted/60",
                 item.tone === "danger" ? "text-destructive" : "text-foreground",
               )}

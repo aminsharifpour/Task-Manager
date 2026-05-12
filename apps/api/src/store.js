@@ -99,6 +99,24 @@ const defaultSettings = {
         teamDelete: false,
       },
     },
+    policyMatrix: {
+      admin: {
+        project: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+        task: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+        teamMember: { view: "all", create: "all", update: "all", delete: "all", approve: "all" },
+      },
+      manager: {
+        project: { view: "team", create: "team", update: "owner", delete: "none", approve: "none" },
+        task: { view: "team", create: "team", update: "team", delete: "none", approve: "team" },
+        teamMember: { view: "team", create: "none", update: "team", delete: "none", approve: "none" },
+      },
+      member: {
+        project: { view: "project", create: "none", update: "none", delete: "none", approve: "none" },
+        task: { view: "project", create: "none", update: "assigned", delete: "none", approve: "assigned" },
+        teamMember: { view: "team", create: "none", update: "self", delete: "none", approve: "none" },
+      },
+    },
+    accessPresets: [],
   },
   workflow: {
     requireBlockedReason: true,
@@ -125,6 +143,8 @@ const defaultData = {
   tasks: [],
   teamMembers: [],
   settings: defaultSettings,
+  notifications: [],
+  notificationPreferences: [],
   meetingMinutes: [],
   accountingTransactions: [],
   accountingBudgets: {},
@@ -252,6 +272,26 @@ const normalizeChatMessagesInStore = (rows) => {
       attachments: normalizeChatAttachmentsInStore(row.attachments),
     }));
 };
+const normalizeChatConversationsInStore = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  return list
+    .filter((row) => row && typeof row === "object")
+    .map((row) => ({
+      ...row,
+      type: row.type === "group" ? "group" : "direct",
+      title: String(row.title ?? "").trim().slice(0, 120),
+      participantIds: Array.from(new Set((Array.isArray(row.participantIds) ? row.participantIds : []).map((item) => String(item ?? "").trim()).filter(Boolean))),
+      avatarDataUrl: normalizeStoredAssetRef(row.avatarDataUrl, {
+        subdir: "avatars",
+        prefix: "chat-group",
+        allowDataUrlPrefix: "data:image/",
+      }),
+      createdById: String(row.createdById ?? "").trim(),
+      createdAt: String(row.createdAt ?? new Date().toISOString()),
+      updatedAt: String(row.updatedAt ?? row.createdAt ?? new Date().toISOString()),
+    }))
+    .filter((row) => row.participantIds.length > 0);
+};
 const normalizeTasks = (rows) => {
   const list = Array.isArray(rows) ? rows : [];
   return list
@@ -294,9 +334,108 @@ const normalizeAuditLogs = (rows) => {
     }))
     .slice(0, 5000);
 };
+const normalizeNotifications = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  return list
+    .filter((row) => row && typeof row === "object")
+    .map((row) => ({
+      id: String(row.id ?? "").trim() || crypto.randomUUID(),
+      userId: String(row.userId ?? "").trim(),
+      kind: ["task", "project", "chat", "mention", "approval", "system"].includes(String(row.kind ?? "").trim()) ? String(row.kind ?? "").trim() : "system",
+      category: String(row.category ?? row.kind ?? "system").trim().slice(0, 60),
+      title: String(row.title ?? "").trim().slice(0, 200),
+      description: String(row.description ?? "").trim().slice(0, 1200),
+      createdAt: String(row.createdAt ?? new Date().toISOString()),
+      seenAt: String(row.seenAt ?? "").trim(),
+      readAt: String(row.readAt ?? "").trim(),
+      dismissedAt: String(row.dismissedAt ?? "").trim(),
+      targetView: String(row.targetView ?? "").trim().slice(0, 40),
+      entityType: String(row.entityType ?? "").trim().slice(0, 60),
+      entityId: String(row.entityId ?? "").trim().slice(0, 120),
+      conversationId: String(row.conversationId ?? "").trim(),
+      taskId: String(row.taskId ?? "").trim(),
+      projectId: String(row.projectId ?? "").trim(),
+      actionLabel: String(row.actionLabel ?? "").trim().slice(0, 80),
+      dedupeKey: String(row.dedupeKey ?? "").trim().slice(0, 200),
+      meta: row.meta && typeof row.meta === "object" ? row.meta : {},
+    }))
+    .filter((row) => row.userId && row.title)
+    .slice(0, 12000);
+};
+const normalizeNotificationPreferences = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  const bool = (value, fallback) => (typeof value === "boolean" ? value : fallback);
+  return list
+    .filter((row) => row && typeof row === "object")
+    .map((row) => ({
+      userId: String(row.userId ?? "").trim(),
+      channels: {
+        task: bool(row.channels?.task, true),
+        project: bool(row.channels?.project, true),
+        chat: bool(row.channels?.chat, true),
+        mention: bool(row.channels?.mention, true),
+        approval: bool(row.channels?.approval, true),
+        system: bool(row.channels?.system, true),
+      },
+      delivery: {
+        task: { center: bool(row.delivery?.task?.center, bool(row.channels?.task, true)), toast: bool(row.delivery?.task?.toast, true), sound: bool(row.delivery?.task?.sound, false) },
+        project: { center: bool(row.delivery?.project?.center, bool(row.channels?.project, true)), toast: bool(row.delivery?.project?.toast, true), sound: bool(row.delivery?.project?.sound, false) },
+        chat: { center: bool(row.delivery?.chat?.center, bool(row.channels?.chat, true)), toast: bool(row.delivery?.chat?.toast, true), sound: bool(row.delivery?.chat?.sound, true) },
+        mention: { center: bool(row.delivery?.mention?.center, bool(row.channels?.mention, true)), toast: bool(row.delivery?.mention?.toast, true), sound: bool(row.delivery?.mention?.sound, true) },
+        approval: { center: bool(row.delivery?.approval?.center, bool(row.channels?.approval, true)), toast: bool(row.delivery?.approval?.toast, true), sound: bool(row.delivery?.approval?.sound, false) },
+        system: { center: bool(row.delivery?.system?.center, bool(row.channels?.system, true)), toast: bool(row.delivery?.system?.toast, true), sound: bool(row.delivery?.system?.sound, false) },
+      },
+      mutedKinds: Array.isArray(row.mutedKinds)
+        ? Array.from(new Set(row.mutedKinds.map((item) => String(item ?? "").trim()).filter(Boolean))).slice(0, 20)
+        : [],
+      mutedCategories: Array.isArray(row.mutedCategories)
+        ? Array.from(new Set(row.mutedCategories.map((item) => String(item ?? "").trim()).filter(Boolean))).slice(0, 40)
+        : [],
+      updatedAt: String(row.updatedAt ?? new Date().toISOString()),
+    }))
+    .filter((row) => row.userId);
+};
 
 const normalizeTeamMembers = (rows) => {
   const list = Array.isArray(rows) ? rows : [];
+  const MEMBER_PERMISSION_ACTIONS = ["projectCreate", "projectUpdate", "projectDelete", "taskCreate", "taskUpdate", "taskDelete", "taskChangeStatus", "teamCreate", "teamUpdate", "teamDelete"];
+  const MEMBER_POLICY_ENTITIES = ["project", "task", "teamMember"];
+  const MEMBER_POLICY_OPERATIONS = ["view", "create", "update", "delete", "approve"];
+  const MEMBER_POLICY_SCOPES = ["none", "self", "owner", "assigned", "project", "team", "all"];
+  const normalizeModuleAccess = (value) => {
+    if (!value || typeof value !== "object") return undefined;
+    const source = value;
+    const keys = ["tasks", "projects", "minutes", "accounting", "calendar", "chat", "notifications", "team", "audit", "reports"];
+    if (!keys.some((key) => typeof source[key] === "boolean")) return undefined;
+    return Object.fromEntries(
+      keys.map((key) => [key, source[key] !== false]),
+    );
+  };
+  const normalizeMemberPermissionOverrides = (value) => {
+    if (!value || typeof value !== "object") return undefined;
+    const source = value;
+    if (!MEMBER_PERMISSION_ACTIONS.some((key) => typeof source[key] === "boolean")) return undefined;
+    return Object.fromEntries(MEMBER_PERMISSION_ACTIONS.map((key) => [key, source[key] === true]));
+  };
+  const normalizeMemberPolicyOverrides = (value) => {
+    if (!value || typeof value !== "object") return undefined;
+    const source = value;
+    const hasExplicitKey = MEMBER_POLICY_ENTITIES.some((entity) =>
+      MEMBER_POLICY_OPERATIONS.some((operation) => MEMBER_POLICY_SCOPES.includes(String(source?.[entity]?.[operation] ?? "").trim())),
+    );
+    if (!hasExplicitKey) return undefined;
+    return Object.fromEntries(
+      MEMBER_POLICY_ENTITIES.map((entity) => [
+        entity,
+        Object.fromEntries(
+          MEMBER_POLICY_OPERATIONS.map((operation) => {
+            const next = String(source?.[entity]?.[operation] ?? "none").trim();
+            return [operation, MEMBER_POLICY_SCOPES.includes(next) ? next : "none"];
+          }),
+        ),
+      ]),
+    );
+  };
   return list.map((m) => ({
     ...m,
     phone: normalizePhone(m.phone),
@@ -308,6 +447,9 @@ const normalizeTeamMembers = (rows) => {
       allowDataUrlPrefix: "data:image/",
     }),
     teamIds: Array.from(new Set((Array.isArray(m.teamIds) ? m.teamIds : []).map((item) => String(item ?? "").trim()).filter(Boolean))),
+    moduleAccess: normalizeModuleAccess(m.moduleAccess),
+    permissionOverrides: normalizeMemberPermissionOverrides(m.permissionOverrides),
+    policyOverrides: normalizeMemberPolicyOverrides(m.policyOverrides),
     passwordHash: (() => {
       const raw = String(m.passwordHash ?? "").trim();
       if (!raw) return hashPassword("123456");
@@ -420,6 +562,22 @@ function normalizeSettings(value) {
     teamUpdate: bool(incomingRole?.teamUpdate, fallbackRole.teamUpdate),
     teamDelete: bool(incomingRole?.teamDelete, fallbackRole.teamDelete),
   });
+  const normalizeAccessScope = (value, fallback = "none") => {
+    const text = String(value ?? fallback).trim();
+    return ["none", "self", "owner", "assigned", "project", "team", "all"].includes(text) ? text : fallback;
+  };
+  const normalizePolicyOps = (incomingOps, fallbackOps) => ({
+    view: normalizeAccessScope(incomingOps?.view, fallbackOps.view),
+    create: normalizeAccessScope(incomingOps?.create, fallbackOps.create),
+    update: normalizeAccessScope(incomingOps?.update, fallbackOps.update),
+    delete: normalizeAccessScope(incomingOps?.delete, fallbackOps.delete),
+    approve: normalizeAccessScope(incomingOps?.approve, fallbackOps.approve),
+  });
+  const normalizePolicyRole = (incomingRole, fallbackRole) => ({
+    project: normalizePolicyOps(incomingRole?.project, fallbackRole.project),
+    task: normalizePolicyOps(incomingRole?.task, fallbackRole.task),
+    teamMember: normalizePolicyOps(incomingRole?.teamMember, fallbackRole.teamMember),
+  });
   const normalizeTransactionCategories = (rows, defaults) => {
     const list = Array.isArray(rows) ? rows : defaults;
     const cleaned = list
@@ -480,6 +638,24 @@ function normalizeSettings(value) {
         manager: normalizePermissionRole(incoming.team?.permissions?.manager, defaultSettings.team.permissions.manager),
         member: normalizePermissionRole(incoming.team?.permissions?.member, defaultSettings.team.permissions.member),
       },
+      policyMatrix: {
+        admin: normalizePolicyRole(incoming.team?.policyMatrix?.admin, defaultSettings.team.policyMatrix.admin),
+        manager: normalizePolicyRole(incoming.team?.policyMatrix?.manager, defaultSettings.team.policyMatrix.manager),
+        member: normalizePolicyRole(incoming.team?.policyMatrix?.member, defaultSettings.team.policyMatrix.member),
+      },
+      accessPresets: Array.isArray(incoming.team?.accessPresets)
+        ? incoming.team.accessPresets
+            .filter((row) => row && typeof row === "object")
+            .map((row) => ({
+              id: String(row.id ?? crypto.randomUUID()),
+              name: String(row.name ?? "").trim(),
+              moduleAccess: row.moduleAccess && typeof row.moduleAccess === "object" ? row.moduleAccess : {},
+              permissionOverrides: row.permissionOverrides && typeof row.permissionOverrides === "object" ? row.permissionOverrides : {},
+              policyOverrides: row.policyOverrides && typeof row.policyOverrides === "object" ? row.policyOverrides : {},
+            }))
+            .filter((row) => row.name)
+            .slice(0, 50)
+        : defaultSettings.team.accessPresets,
     },
     workflow: {
       requireBlockedReason: bool(incoming.workflow?.requireBlockedReason, defaultSettings.workflow.requireBlockedReason),
@@ -537,6 +713,8 @@ export function readStore() {
       tasks: normalizeTasks(parsed.tasks),
       teamMembers: normalizeTeamMembers(parsed.teamMembers),
       settings: normalizeSettings(parsed.settings),
+      notifications: normalizeNotifications(parsed.notifications),
+      notificationPreferences: normalizeNotificationPreferences(parsed.notificationPreferences),
       meetingMinutes: Array.isArray(parsed.meetingMinutes) ? parsed.meetingMinutes : [],
       accountingTransactions: Array.isArray(parsed.accountingTransactions) ? parsed.accountingTransactions : [],
       accountingBudgets:
@@ -548,7 +726,7 @@ export function readStore() {
       hrProfiles: Array.isArray(parsed.hrProfiles) ? parsed.hrProfiles : [],
       hrLeaveRequests: Array.isArray(parsed.hrLeaveRequests) ? parsed.hrLeaveRequests : [],
       hrAttendanceRecords: Array.isArray(parsed.hrAttendanceRecords) ? parsed.hrAttendanceRecords : [],
-      chatConversations: Array.isArray(parsed.chatConversations) ? parsed.chatConversations : [],
+      chatConversations: normalizeChatConversationsInStore(parsed.chatConversations),
       chatMessages: normalizeChatMessagesInStore(parsed.chatMessages),
       auditLogs: normalizeAuditLogs(parsed.auditLogs),
     };
@@ -574,9 +752,12 @@ export function writeStore(next) {
     tasks: normalizeTasks(next?.tasks),
     teamMembers: normalizeTeamMembers(next?.teamMembers),
     settings: normalizeSettings(next?.settings),
+    notifications: normalizeNotifications(next?.notifications),
+    notificationPreferences: normalizeNotificationPreferences(next?.notificationPreferences),
     hrProfiles: Array.isArray(next?.hrProfiles) ? next.hrProfiles : [],
     hrLeaveRequests: Array.isArray(next?.hrLeaveRequests) ? next.hrLeaveRequests : [],
     hrAttendanceRecords: Array.isArray(next?.hrAttendanceRecords) ? next.hrAttendanceRecords : [],
+    chatConversations: normalizeChatConversationsInStore(next?.chatConversations),
     chatMessages: normalizeChatMessagesInStore(next?.chatMessages),
     auditLogs: normalizeAuditLogs(next?.auditLogs),
   };

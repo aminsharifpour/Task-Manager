@@ -1,10 +1,10 @@
-import type { MutableRefObject } from "react";
+import { useEffect, useMemo, useState, type MutableRefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TablePagination } from "@/components/ui/table-pagination";
 import type { TableSortDirection } from "@/hooks/use-dom-table-sort";
-import type { VirtualWindow } from "@/hooks/use-virtual-rows";
 
 type AuditSortKey = "createdAt" | "entityType" | "action" | "summary" | "actor" | "entityId";
 
@@ -28,8 +28,6 @@ type Props = {
   auditBusy: boolean;
   auditSort: { key: AuditSortKey; direction: TableSortDirection };
   sortedAuditLogs: AuditLog[];
-  visibleSortedAuditLogs: AuditLog[];
-  auditVirtualWindow: VirtualWindow;
   auditScrollRef: MutableRefObject<HTMLDivElement | null>;
   onAuditQueryChange: (value: string) => void;
   onAuditEntityFilterChange: (value: string) => void;
@@ -46,8 +44,6 @@ export default function AuditTrailView({
   auditBusy,
   auditSort,
   sortedAuditLogs,
-  visibleSortedAuditLogs,
-  auditVirtualWindow,
   auditScrollRef,
   onAuditQueryChange,
   onAuditEntityFilterChange,
@@ -57,6 +53,18 @@ export default function AuditTrailView({
   isoDateTimeToJalali,
   roleLabel,
 }: Props) {
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPageSize, setAuditPageSize] = useState(20);
+  const paginatedAuditLogs = useMemo(() => {
+    const start = (auditPage - 1) * auditPageSize;
+    return sortedAuditLogs.slice(start, start + auditPageSize);
+  }, [auditPage, auditPageSize, sortedAuditLogs]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(sortedAuditLogs.length / auditPageSize));
+    if (auditPage > totalPages) setAuditPage(totalPages);
+  }, [auditPage, auditPageSize, sortedAuditLogs.length]);
+
   return (
     <Card className="liquid-glass lift-on-hover">
       <CardHeader className="space-y-3">
@@ -98,68 +106,71 @@ export default function AuditTrailView({
             لاگ فعالیتی برای نمایش وجود ندارد.
           </div>
         ) : (
-          <div ref={auditScrollRef} onScroll={onScroll} className="max-h-[65vh] overflow-auto rounded-xl border">
-            <table className="min-w-full text-sm" data-disable-dom-sort="true">
-              <thead className="bg-muted/40 text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-right font-medium">
-                    <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("createdAt")}>
-                      زمان {auditSort.key === "createdAt" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
-                    </button>
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("entityType")}>
-                      موجودیت {auditSort.key === "entityType" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
-                    </button>
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("action")}>
-                      عملیات {auditSort.key === "action" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
-                    </button>
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("summary")}>
-                      خلاصه {auditSort.key === "summary" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
-                    </button>
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("actor")}>
-                      کاربر {auditSort.key === "actor" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
-                    </button>
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("entityId")}>
-                      شناسه {auditSort.key === "entityId" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
-                    </button>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {auditVirtualWindow.paddingTop > 0 && (
-                  <tr aria-hidden="true">
-                    <td colSpan={6} style={{ height: auditVirtualWindow.paddingTop }} />
+          <>
+            <div ref={auditScrollRef} onScroll={onScroll} className="max-h-[65vh] overflow-auto rounded-xl border">
+              <table className="min-w-full text-sm" data-disable-dom-sort="true">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 text-right font-medium">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("createdAt")}>
+                        زمان {auditSort.key === "createdAt" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("entityType")}>
+                        موجودیت {auditSort.key === "entityType" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("action")}>
+                        عملیات {auditSort.key === "action" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("summary")}>
+                        خلاصه {auditSort.key === "summary" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("actor")}>
+                        کاربر {auditSort.key === "actor" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => onToggleSort("entityId")}>
+                        شناسه {auditSort.key === "entityId" ? (auditSort.direction === "asc" ? "↑" : "↓") : ""}
+                      </button>
+                    </th>
                   </tr>
-                )}
-                {visibleSortedAuditLogs.map((row) => (
-                  <tr key={row.id} className="border-t">
-                    <td className="px-3 py-2 text-xs text-muted-foreground">{isoDateTimeToJalali(row.createdAt)}</td>
-                    <td className="px-3 py-2">{row.entityType || "-"}</td>
-                    <td className="px-3 py-2">{row.action || "-"}</td>
-                    <td className="max-w-[340px] truncate px-3 py-2 font-medium">{row.summary || "-"}</td>
-                    <td className="px-3 py-2">
-                      {row.actor?.fullName || "-"} ({roleLabel(row.actor?.role)})
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">{row.entityId || "-"}</td>
-                  </tr>
-                ))}
-                {auditVirtualWindow.paddingBottom > 0 && (
-                  <tr aria-hidden="true">
-                    <td colSpan={6} style={{ height: auditVirtualWindow.paddingBottom }} />
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {paginatedAuditLogs.map((row) => (
+                    <tr key={row.id} className="border-t">
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{isoDateTimeToJalali(row.createdAt)}</td>
+                      <td className="px-3 py-2">{row.entityType || "-"}</td>
+                      <td className="px-3 py-2">{row.action || "-"}</td>
+                      <td className="max-w-[340px] truncate px-3 py-2 font-medium">{row.summary || "-"}</td>
+                      <td className="px-3 py-2">
+                        {row.actor?.fullName || "-"} ({roleLabel(row.actor?.role)})
+                      </td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{row.entityId || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <TablePagination
+              page={auditPage}
+              pageSize={auditPageSize}
+              totalItems={sortedAuditLogs.length}
+              onPageChange={setAuditPage}
+              onPageSizeChange={(pageSize) => {
+                setAuditPageSize(pageSize);
+                setAuditPage(1);
+              }}
+              toFaNum={(value) => value.replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)] ?? d)}
+            />
+          </>
         )}
       </CardContent>
     </Card>

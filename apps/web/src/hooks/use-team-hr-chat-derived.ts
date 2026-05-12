@@ -71,16 +71,23 @@ export const useTeamHrChatDerived = ({
       adminPresenceRows
         .map((row) => {
           const member = teamMembers.find((item) => item.id === row.userId);
-          const memberDoingTasks = tasks
+          const memberOpenTasks = tasks
             .filter((task) => {
               const assigned =
                 String(task.assigneePrimaryId ?? "").trim() === row.userId ||
                 String(task.assigneeSecondaryId ?? "").trim() === row.userId;
-              return assigned && normalizeTaskStatus(task.status, Boolean(task.done)) === "doing";
+              return assigned && taskIsOpen(task);
             })
             .slice()
-            .sort((a, b) => String(b.updatedAt ?? b.lastStatusChangedAt ?? b.createdAt).localeCompare(String(a.updatedAt ?? a.lastStatusChangedAt ?? a.createdAt)));
-          const currentTask = memberDoingTasks[0] ?? null;
+            .sort((a, b) => {
+              const aStatus = normalizeTaskStatus(a.status, Boolean(a.done));
+              const bStatus = normalizeTaskStatus(b.status, Boolean(b.done));
+              if (aStatus === "doing" && bStatus !== "doing") return -1;
+              if (bStatus === "doing" && aStatus !== "doing") return 1;
+              return String(b.updatedAt ?? b.lastStatusChangedAt ?? b.createdAt).localeCompare(String(a.updatedAt ?? a.lastStatusChangedAt ?? a.createdAt));
+            });
+          const memberDoingTasks = memberOpenTasks.filter((task) => normalizeTaskStatus(task.status, Boolean(task.done)) === "doing");
+          const currentTask = memberOpenTasks[0] ?? null;
           return {
             ...row,
             fullName: row.fullName || member?.fullName || "کاربر",
@@ -90,6 +97,7 @@ export const useTeamHrChatDerived = ({
             currentTaskId: currentTask?.id ?? "",
             currentTaskTitle: currentTask?.title ?? "",
             currentTaskProjectName: currentTask?.projectName ?? "",
+            openTasksCount: memberOpenTasks.length,
             doingTasksCount: memberDoingTasks.length,
           };
         })
@@ -100,7 +108,7 @@ export const useTeamHrChatDerived = ({
           if (sa !== sb) return sb - sa;
           return String(a.fullName ?? "").localeCompare(String(b.fullName ?? ""), "fa");
         }),
-    [adminPresenceRows, normalizeTaskStatus, tasks, teamMembers],
+    [adminPresenceRows, normalizeTaskStatus, taskIsOpen, tasks, teamMembers],
   );
 
   const isHrAdmin = currentAppRole === "admin";
