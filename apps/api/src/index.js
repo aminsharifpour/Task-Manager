@@ -1,3 +1,9 @@
+import compression from "compression";
+import {installMetrics} from "./modules/operations/metrics.js";
+import {marketingRouter,operatorLeadsRouter} from "./modules/marketing/router.js";
+import {marketingConfig} from "./modules/marketing/service.js";
+import {publicHtml} from "./modules/marketing/html.js";
+import {installOrganizationRealtime} from "./modules/realtime/server.js";
 import "./load-env.js";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -12,6 +18,14 @@ import { Server as SocketIOServer } from "socket.io";
 import { getDefaultSettings, getDefaultStore, hashPasswordForStore, readStore, verifyPasswordForStore, writeStore } from "./store.js";
 import { connectDatabase, disconnectDatabase, getDatabaseHealth } from "./database.js";
 import { isPostgresMode } from "./db-mode.js";
+import prisma from "./prisma.js";
+import { runtimeConfig } from "./runtime-config.js";
+import { publicAccountsRouter, accountsRouter } from "./modules/accounts/router.js";
+import { publicSignupEnabled,needsSetup } from "./modules/accounts/service.js";
+import { operatorRouter } from "./modules/operations/router.js";
+import { persistentLimiter } from "./modules/shared/rate-limit.js";
+import { organizationRouter } from "./modules/organizations/router.js";
+import { configuredStorage, privateFilesRoot } from "./modules/files/storage.js";
 import {
   createAccountingAccount,
   createAccountingTransaction,
@@ -66,8 +80,11 @@ import {
 } from "./repositories/core-repository.js";
 
 const app = express();
+installMetrics(app);
+if (runtimeConfig.tenantFoundation) {configuredStorage();marketingConfig();}
 const httpServer = createServer(app);
 const PORT = Number(process.env.PORT || 8787);
+const BIND_HOST = String(process.env.BIND_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1"));
 const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const API_ROOT = path.resolve(CURRENT_DIR, "..");
 const PROJECT_ROOT = path.resolve(API_ROOT, "..", "..");
@@ -157,7 +174,7 @@ const shouldLogHttpRequest = (statusCode) => {
 const normalizeTrustProxy = (value) => {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (!normalized || normalized === "0" || normalized === "false" || normalized === "off") return false;
-  if (normalized === "1" || normalized === "true" || normalized === "on") return true;
+  if (normalized === "true" || normalized === "on") return true;
   const numeric = Number(normalized);
   if (Number.isFinite(numeric) && numeric >= 0) return numeric;
   return normalized;
@@ -180,6 +197,7 @@ const validateRuntimeReadiness = () => {
 
   addCheck("jwt_secret", Boolean(JWT_SECRET), JWT_SECRET ? "" : "JWT_SECRET is missing.");
   addCheck("uploads_dir", ensureRuntimeDirectory(UPLOADS_DIR), UPLOADS_DIR);
+  if (runtimeConfig.tenantFoundation && (process.env.FILE_STORAGE_DRIVER||"local")==="local") addCheck("private_files_dir", ensureRuntimeDirectory(privateFilesRoot), privateFilesRoot);
   addCheck(
     "cors_origin",
     process.env.NODE_ENV !== "production" || SERVE_CLIENT || Boolean(CORS_ORIGIN),
@@ -207,7 +225,7 @@ if (!JWT_SECRET) {
   console.warn("[security] JWT_SECRET is not set. Using a development fallback secret.");
 }
 const ACTIVE_JWT_SECRET = JWT_SECRET || "dev-insecure-secret-change-me";
-const JWT_VERIFY_SECRETS = Array.from(new Set([ACTIVE_JWT_SECRET, "dev-insecure-secret-change-me"].filter(Boolean)));
+const JWT_VERIFY_SECRETS = [ACTIVE_JWT_SECRET];
 const chatTypingByConversation = new Map();
 const CHAT_TYPING_TTL_MS = 12_000;
 const CHAT_MESSAGE_MUTATION_WINDOW_MS = 6 * 60 * 60 * 1000;
@@ -236,15 +254,19 @@ app.use((req, res, next) => {
   res.setHeader("x-content-type-options", "nosniff");
   res.setHeader("x-frame-options", "DENY");
   res.setHeader("referrer-policy", "strict-origin-when-cross-origin");
-  res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
+  const canRequestMicrophone=req.path.startsWith("/app/")||["/login","/signup","/setup"].includes(req.path)||!runtimeConfig.tenantFoundation&&req.path==="/";
+  res.setHeader("permissions-policy", `camera=(), microphone=${canRequestMicrophone?"(self)":"()"}, geolocation=()`);
   res.setHeader("cross-origin-opener-policy", "same-origin");
   if (process.env.NODE_ENV === "production") {
     res.setHeader("content-security-policy", "frame-ancestors 'none'; base-uri 'self'");
   }
   next();
 });
-app.use(express.json({ limit: "5mb" }));
-app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "30d", fallthrough: true }));
+app.use(express.json({ limit: runtimeConfig.tenantFoundation ? "128kb" : "5mb" }));
+app.use("/api",(req,res,next)=>{res.set("Cache-Control","no-store");next();});
+app.use("/uploads", (req, res, next) => runtimeConfig.tenantFoundation
+  ? res.status(404).json({ code: "LEGACY_FILE_ACCESS_DISABLED" }) : next(),
+express.static(UPLOADS_DIR, { maxAge: "30d", fallthrough: true }));
 app.use((req, res, next) => {
   const start = Date.now();
   const requestId = crypto.randomUUID();
@@ -755,11 +777,15 @@ const resolveAuthUserFromToken = async (token) => {
     try {
       const decoded = jwt.verify(safeToken, secret);
       const userId = String(decoded?.sub ?? "").trim();
-      const role = normalizeAppRole(decoded?.role);
       if (!userId) return null;
       const user = await findUserById(userId);
       if (!user || user.isActive === false) return null;
-      return { userId, role, user };
+      if (runtimeConfig.tenantFoundation) {
+        if (!decoded.jti) return null;
+        const session = await prisma.authSession.findUnique({ where: { id: decoded.jti } });
+        if (!session || session.userId !== userId || session.revokedAt || session.expiresAt <= new Date()) return null;
+      }
+      return { userId, role: normalizeAppRole(user.appRole), user, sessionId: decoded.jti };
     } catch {
       // try next known secret
     }
@@ -1074,16 +1100,23 @@ const sanitizeMember = (m) => {
     policyOverrides: normalizeMemberPolicyOverrides(safe.policyOverrides),
   };
 };
-const signToken = (user) =>
-  jwt.sign(
+const signToken = async (user) => {
+  const sessionId = runtimeConfig.tenantFoundation ? crypto.randomUUID() : undefined;
+  const token = jwt.sign(
     {
       sub: user.id,
       role: normalizeAppRole(user.appRole),
       phone: user.phone,
     },
     ACTIVE_JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN },
+    { expiresIn: JWT_EXPIRES_IN, ...(sessionId ? { jwtid: sessionId } : {}) },
   );
+  if (sessionId) {
+    const decoded = jwt.decode(token);
+    await prisma.authSession.create({ data: { id: sessionId, userId: user.id, expiresAt: new Date(decoded.exp * 1000) } });
+  }
+  return token;
+};
 const ensureModuleAccess = (req, res, db, viewKey) => {
   if (!MODULE_ACCESS_VIEW_KEYS.includes(String(viewKey ?? "").trim())) return true;
   const safeUserId = String(req?.auth?.userId ?? "").trim();
@@ -1106,7 +1139,7 @@ const requireAuth = async (req, res, next) => {
   if (!auth) {
     return res.status(401).json({ message: "Invalid or expired token." });
   }
-  req.auth = { userId: auth.userId, role: auth.role };
+  req.auth = { userId: auth.userId, role: auth.role, sessionId: auth.sessionId };
   return next();
 };
 const requireRoles = (...roles) => (req, res, next) => {
@@ -1567,7 +1600,11 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-app.get("/api/ready", (_req, res) => {
+app.get("/api/ready", async (_req, res) => {
+  if (isPostgresMode) {
+    try { await prisma.$queryRaw`SELECT 1`; } catch { return res.status(503).json({ ok: false, code: "DATABASE_NOT_READY" }); }
+  }
+  if(runtimeConfig.tenantFoundation)try{await configuredStorage().health();}catch{return res.status(503).json({ok:false,code:"FILE_STORAGE_NOT_READY"});}
   const runtime = validateRuntimeReadiness();
   if (!runtime.ok) {
     return res.status(503).json({
@@ -1585,7 +1622,13 @@ app.get("/api/ready", (_req, res) => {
   });
 });
 
-app.post("/api/auth/login", loginLimiter, async (req, res) => {
+app.use("/api/public",marketingRouter());
+app.get("/robots.txt",(req,res)=>{const config=marketingConfig();res.type("text/plain").send(config.indexEnabled?"User-agent: *\nAllow: /\nDisallow: /app/\nDisallow: /api/\nDisallow: /login\nDisallow: /signup\nDisallow: /setup\nSitemap: "+config.siteUrl+"/sitemap.xml\n":"User-agent: *\nDisallow: /\n");});
+app.get("/sitemap.xml",(req,res)=>{const config=marketingConfig();const base=config.siteUrl?.replace(/[&<>\"]/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[char]))||"";res.type("application/xml").send('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+(config.indexEnabled?["/","/contact","/privacy","/terms"].map(path=>"<url><loc>"+base+path+"</loc></url>").join(""):"")+"</urlset>");});
+app.use("/api/auth",publicAccountsRouter(signToken));
+app.get("/api/product-config", async (req,res)=>{try{res.json({tenantFoundation:runtimeConfig.tenantFoundation,deploymentMode:runtimeConfig.deploymentMode,publicSignupEnabled:publicSignupEnabled(),marketing:marketingConfig(),needsSetup:await needsSetup(),productName:String(process.env.PRODUCT_NAME||"مدیریت پروژه شکف")});}catch{res.status(503).json({code:"CONFIG_UNAVAILABLE"});}});
+
+app.post("/api/auth/login", runtimeConfig.tenantFoundation?persistentLimiter("login-ip",{limit:1000}):loginLimiter, persistentLimiter("login-account",{limit:10,identity:req=>String(req.body?.phone||"").slice(0,32)+":"+req.ip}), async (req, res) => {
   try {
     const phone = normalizePhone(req.body?.phone);
     const password = String(req.body?.password ?? "");
@@ -1603,7 +1646,7 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
     if (!String(user.passwordHash ?? "").startsWith("bcrypt$")) {
       await updateUserPasswordHash(user.id, hashPasswordForStore(password));
     }
-    const token = signToken(user);
+    const token = await signToken(user);
     return res.json({
       token,
       user: {
@@ -1620,12 +1663,13 @@ app.post("/api/auth/login", loginLimiter, async (req, res) => {
     });
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error("[auth/login] internal error:", error);
+    console.error(JSON.stringify({event:"auth.login_failed",code:error.code||"INTERNAL_ERROR",requestId:req.requestId}));
     return res.status(500).json({ message: "Login failed due to server configuration. Check server logs." });
   }
 });
 
 app.post("/api/client-logs", async (req, res) => {
+  if (runtimeConfig.tenantFoundation) return res.status(503).json({ code: "MODULE_MIGRATION_PENDING" });
   try {
     const auth = await resolveAuthUserFromToken(parseBearerToken(req.headers.authorization));
     const payload = req.body && typeof req.body === "object" ? req.body : {};
@@ -1650,6 +1694,20 @@ app.post("/api/client-logs", async (req, res) => {
 app.use("/api", (req, res, next) => {
   if (req.path === "/health" || req.path === "/auth/login" || req.path === "/client-logs") return next();
   return requireAuth(req, res, next);
+});
+
+app.use("/api/operations/leads",operatorLeadsRouter());
+app.use("/api/account",accountsRouter());
+app.use("/api/operations",operatorRouter());
+app.use("/api/organizations", organizationRouter());
+app.post("/api/auth/logout", async (req, res) => {
+  if (!runtimeConfig.tenantFoundation) return res.status(409).json({ code: "SESSION_REVOCATION_REQUIRES_FOUNDATION" });
+  await prisma.authSession.updateMany({ where: { id: req.auth.sessionId, userId: req.auth.userId }, data: { revokedAt: new Date() } });
+  return res.json({ ok: true });
+});
+app.use("/api", (req, res, next) => {
+  if (!runtimeConfig.tenantFoundation || req.path === "/auth/me") return next();
+  return res.status(503).json({ code: "MODULE_MIGRATION_PENDING", message: "این بخش هنوز برای چند سازمان آماده نشده است.", requestId: req.requestId });
 });
 
 app.get("/api/auth/me", async (req, res) => {
@@ -4692,7 +4750,10 @@ app.get("/api/chat/conversations/:id/typing", (req, res) => {
   }
 });
 
+if(runtimeConfig.tenantFoundation)installOrganizationRealtime(io,resolveAuthUserFromToken);
+
 io.use(async (socket, next) => {
+  if (runtimeConfig.tenantFoundation) return next(new Error("Realtime migration pending"));
   const authToken = String(socket.handshake.auth?.token ?? "").trim();
   const headerToken = parseBearerToken(socket.handshake.headers?.authorization);
   const token = authToken || headerToken;
@@ -4866,11 +4927,23 @@ io.on("connection", (socket) => {
   });
 });
 
-if (SERVE_CLIENT) {
-  app.use(express.static(CLIENT_DIST));
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  const status = error.type === "entity.too.large" ? 413 : error instanceof SyntaxError ? 400 : 500;
+  return res.status(status).json({ code: status === 413 ? "PAYLOAD_TOO_LARGE" : status === 400 ? "INVALID_JSON" : "INTERNAL_ERROR", message: "درخواست قابل پردازش نیست.", requestId: req.requestId });
+});
 
-  app.get(/.*/, (_req, res) => {
-    res.sendFile(path.join(CLIENT_DIST, "index.html"));
+if (SERVE_CLIENT) {
+  app.use(compression({filter:(req,res)=>!req.path.startsWith("/api/")&&compression.filter(req,res)}));
+  app.use("/assets",express.static(path.join(CLIENT_DIST,"assets"),{maxAge:"1y",immutable:true}));
+  app.use(express.static(CLIENT_DIST,{index:false}));
+
+  const htmlTemplate=fs.readFileSync(path.join(CLIENT_DIST,"index.html"),"utf8");
+  app.get(/.*/, (req, res) => {
+    const rendered=publicHtml(htmlTemplate,req.path);
+    res.set("Cache-Control","no-cache");
+    if(!rendered.indexable)res.set("X-Robots-Tag","noindex, nofollow");
+    res.type("html").send(rendered.html);
   });
 }
 
@@ -4899,14 +4972,10 @@ connectDatabase()
       logServer("info", "database.ready", dbState);
     }
   })
-  .catch((error) => {
-    logServer("warn", "database.connect.exception", {
-      error: String(error?.message ?? error),
-    });
-  })
-  .finally(() => {
+  .then(() => {
     const runtime = validateRuntimeReadiness();
     if (!runtime.ok) {
+      if (runtimeConfig.production) throw new Error("RUNTIME_NOT_READY");
       logServer("warn", "runtime.readiness.degraded", {
         checks: runtime.checks,
       });
@@ -4915,11 +4984,15 @@ connectDatabase()
         checks: runtime.checks,
       });
     }
-    httpServer.listen(PORT, "0.0.0.0", () => {
+    httpServer.listen(PORT, BIND_HOST, () => {
       logServer("info", "server.started", {
-        url: `http://0.0.0.0:${PORT}`,
+        url: `http://${BIND_HOST}:${PORT}`,
         serveClient: SERVE_CLIENT,
         mode: SERVE_CLIENT ? "fullstack" : "api-only",
       });
     });
+  })
+  .catch(() => {
+    logServer("error", "database.startup.failed", { code: "DATABASE_NOT_READY" });
+    void disconnectDatabase().finally(() => process.exit(1));
   });

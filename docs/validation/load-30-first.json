@@ -1,0 +1,163 @@
+{
+  "schema": "load_3dbf2e8a9a88",
+  "syntheticOnly": true,
+  "hardware": {
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12700KF",
+    "logicalCpus": 20,
+    "totalRamBytes": 34164097024,
+    "freeRamBytes": 7969140736,
+    "os": "win32 10.0.26300",
+    "node": "v22.23.1"
+  },
+  "database": {
+    "engine": "PostgreSQL16 in Docker",
+    "organizations": 10,
+    "membersInLargest": 300,
+    "tasksSeeded": 50000,
+    "fileBytes": 0
+  },
+  "scenario": {
+    "users": 30,
+    "warmupSeconds": 120,
+    "steadySeconds": 900,
+    "thinkTimeMs": "1000..2000",
+    "pageSize": 25,
+    "mix": {
+      "list": 0.5,
+      "dashboard": 0.2,
+      "search": 0.2,
+      "write": 0.1
+    },
+    "websocketClients": 30
+  },
+  "results": {
+    "requests": 13973,
+    "requestsPerSecond": 15.525555555555556,
+    "readP95Ms": 2336.8935000000056,
+    "writeP95Ms": 2965.348100000061,
+    "unexpectedErrors": 0,
+    "unexpectedErrorRate": 0,
+    "statuses": {
+      "200": 12573,
+      "201": 1400
+    },
+    "realtimeReceived": 3378,
+    "connectedAtEnd": 30,
+    "elapsedSeconds": 902.239
+  },
+  "clientMemoryStart": {
+    "rss": 111370240,
+    "heapTotal": 53755904,
+    "heapUsed": 20173176,
+    "external": 5801707,
+    "arrayBuffers": 1975210
+  },
+  "queryPlan": {
+    "QUERY PLAN": [
+      {
+        "Plan": {
+          "Node Type": "Limit",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 2765.37,
+          "Total Cost": 2765.44,
+          "Plan Rows": 25,
+          "Plan Width": 35,
+          "Actual Startup Time": 13.148,
+          "Actual Total Time": 13.151,
+          "Actual Rows": 25,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 1027,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Sort",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 2765.37,
+              "Total Cost": 2872.47,
+              "Plan Rows": 42839,
+              "Plan Width": 35,
+              "Actual Startup Time": 13.147,
+              "Actual Total Time": 13.148,
+              "Actual Rows": 25,
+              "Actual Loops": 1,
+              "Sort Key": [
+                "\"createdAt\" DESC",
+                "id"
+              ],
+              "Sort Method": "top-N heapsort",
+              "Sort Space Used": 27,
+              "Sort Space Type": "Memory",
+              "Shared Hit Blocks": 1027,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Seq Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Relation Name": "Task",
+                  "Alias": "Task",
+                  "Startup Cost": 0,
+                  "Total Cost": 1556.49,
+                  "Plan Rows": 42839,
+                  "Plan Width": 35,
+                  "Actual Startup Time": 0.006,
+                  "Actual Total Time": 6.539,
+                  "Actual Rows": 50000,
+                  "Actual Loops": 1,
+                  "Filter": "(\"organizationId\" = 'org0'::text)",
+                  "Rows Removed by Filter": 0,
+                  "Shared Hit Blocks": 1021,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                }
+              ]
+            }
+          ]
+        },
+        "Planning": {
+          "Shared Hit Blocks": 30,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.194,
+        "Triggers": [],
+        "Execution Time": 13.187
+      }
+    ]
+  },
+  "passed": false
+}

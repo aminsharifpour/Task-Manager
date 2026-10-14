@@ -1,0 +1,47 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import {spawn,spawnSync} from "node:child_process";
+import {PrismaClient} from "@prisma/client";
+import bcrypt from "bcryptjs";
+const url=new URL(process.env.TEST_DATABASE_URL||"");if(!url.pathname.endsWith("_test"))throw Error("Separate _test database required");const schema="core_"+crypto.randomBytes(6).toString("hex");url.searchParams.set("schema",schema);
+const env={...process.env,NODE_ENV:"test",DB_MODE:"postgres",DATABASE_URL:url.toString(),TENANT_FOUNDATION_ENABLED:"true",DEPLOYMENT_MODE:"hosted",PORT:"8904",SERVE_CLIENT:"false",JWT_SECRET:"synthetic-core-private-key",HTTP_ACCESS_LOG:"off",SERVER_LOG_TO_FILE:"false"};
+const db=new PrismaClient({datasources:{db:{url:url.toString()}}});const base="http://127.0.0.1:8904";let server;
+const call=async(route,token,method="GET",body,status=200)=>{const response=await fetch(base+route,{method,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},...(body?{body:JSON.stringify(body)}:{})});const value=await response.json();assert.equal(response.status,status,JSON.stringify(value));return value;};
+try{
+ const deployed=spawnSync(process.execPath,["node_modules/prisma/build/index.js","migrate","deploy","--schema","apps/api/prisma/schema.prisma"],{env,encoding:"utf8"});assert.equal(deployed.status,0,deployed.stdout+deployed.stderr);
+ const passwordHash="bcrypt$"+bcrypt.hashSync("synthetic-core-password",10);await db.user.createMany({data:["owner","peer","guest","bob"].map((id,i)=>({id,fullName:"Synthetic "+id,phone:"0900000300"+i,passwordHash}))});await db.organization.createMany({data:[{id:"a",name:"Core A",activeMemberLimit:10},{id:"b",name:"Core B"}]});await db.organizationMembership.createMany({data:[{organizationId:"a",userId:"owner",role:"owner"},{organizationId:"a",userId:"peer",role:"member"},{organizationId:"a",userId:"guest",role:"guest"},{organizationId:"b",userId:"bob",role:"owner"}]});
+ server=spawn(process.execPath,["apps/api/src/index.js"],{env,stdio:["ignore","pipe","pipe"]});let errors="";server.stderr.on("data",chunk=>errors+=chunk);server.stdout.on("data",()=>{});for(let i=0;i<80;i++){try{if((await fetch(base+"/api/ready")).ok)break;}catch{}if(server.exitCode!==null)throw Error(errors);await new Promise(r=>setTimeout(r,250));}
+ const tokens={};for(const [i,id]of ["owner","peer","guest","bob"].entries())tokens[id]=(await call("/api/auth/login","","POST",{phone:"0900000300"+i,password:"synthetic-core-password"})).token;
+ const a="/api/organizations/a",b="/api/organizations/b",owner=tokens.owner,peer=tokens.peer,guest=tokens.guest,bob=tokens.bob;
+ await call(a+"/tasks?sort=constructor",owner,"GET",null,400);
+ assert.equal((await call(a+"/project-templates",owner)).length,4);
+ const template=await call(a+"/projects",owner,"POST",{name:"Software",templateId:"software"},201);assert.equal(await db.task.count({where:{projectId:template.id}}),3);
+ await call(a+"/projects/"+template.id,owner,"PATCH",{expectedVersion:0,status:"completed"},409);
+ const archived=await call(a+"/projects/"+template.id,owner,"PATCH",{expectedVersion:0,status:"archived"});assert.equal(archived.version,1);await call(a+"/tasks",owner,"POST",{title:"Closed",projectId:template.id},409);await call(a+"/projects/"+template.id,owner,"PATCH",{expectedVersion:0,status:"active"},409);
+ const definitions=[{id:"brief",label:"Brief",type:"text",required:true},{id:"amount",label:"Amount",type:"number",required:false},{id:"day",label:"Day",type:"date",required:false},{id:"channel",label:"Channel",type:"select",required:false,options:["web","print"]}];
+ const project=await call(a+"/projects",owner,"POST",{name:"Custom fields",customFieldDefinitions:definitions,startDate:"2026-10-13",endDate:"2026-10-31"},201);const other=await call(b+"/projects",bob,"POST",{name:"Other"},201);
+ const values={brief:"Synthetic brief",amount:"123456789012.1234",day:"2026-10-14",channel:"web"};const create=async(title,extra={})=>call(a+"/tasks",owner,"POST",{title,projectId:project.id,customFields:values,...extra},201);
+ await call(a+"/tasks",owner,"POST",{title:"No required field",projectId:project.id},400);await call(a+"/tasks",owner,"POST",{title:"Unknown field",projectId:project.id,customFields:{...values,rogue:"value"}},400);await call(a+"/tasks",owner,"POST",{title:"Invalid number",projectId:project.id,customFields:{...values,amount:12.3}},400);
+ const first=await create("Parent",{estimateMinutes:120,startDate:"2026-10-13",executionDate:"2026-10-15"});const prerequisite=await create("Prerequisite"),child=await create("Child",{parentTaskId:first.id});
+ await call(a+"/tasks/"+first.id+"/details",peer,"GET",null,404);await call(b+"/tasks/"+first.id+"/details",bob,"GET",null,404);
+ let current=await call(a+"/tasks/"+first.id+"/checklist",owner,"POST",{text:"Review",expectedVersion:0},201);assert.equal(current.version,1);
+ current=await call(a+"/tasks/"+first.id+"/dependencies/"+prerequisite.id,owner,"POST",{expectedVersion:1},201);
+ await call(a+"/tasks/"+prerequisite.id+"/dependencies/"+first.id,owner,"POST",{expectedVersion:0},409);
+ await call(a+"/tasks/"+first.id,owner,"PATCH",{expectedVersion:2,parentTaskId:child.id},409);
+ await call(a+"/tasks/"+first.id,owner,"PATCH",{expectedVersion:2,status:"done"},409);
+ await call(a+"/tasks/"+prerequisite.id,owner,"PATCH",{expectedVersion:0,status:"done"});await call(a+"/tasks/"+child.id,owner,"PATCH",{expectedVersion:0,status:"done"});
+ const detail=await call(a+"/tasks/"+first.id+"/details",owner);assert.equal(detail.canEdit,true);assert.equal(detail.task.customFields.amount,values.amount);
+ await call(a+"/tasks/"+first.id,owner,"PATCH",{expectedVersion:2,status:"done"},409);
+ current=await call(a+"/tasks/"+first.id+"/checklist/"+detail.checklist[0].id,owner,"PATCH",{expectedVersion:2,isDone:true});await call(a+"/tasks/"+first.id,owner,"PATCH",{expectedVersion:current.version,status:"done"});
+ await call(a+"/tasks/"+prerequisite.id,owner,"PATCH",{expectedVersion:1,status:"todo"},409);
+ await call(a+"/projects/"+project.id,owner,"PATCH",{expectedVersion:0,customFieldDefinitions:[]},409);
+ const assigned=await create("Assigned estimate",{assigneePrimaryId:"peer",estimateMinutes:180,executionDate:"2026-10-15"});
+ const time=await call(a+"/tasks/"+assigned.id+"/time",peer,"POST",{spentMinutes:30,workDate:"2026-10-13",note:"Synthetic work"},201);await call(a+"/tasks/"+assigned.id+"/time/"+time.id,owner,"DELETE",{expectedVersion:0},404);
+ await call(a+"/capacity/peer",owner,"PUT",{weeklyCapacityMinutes:70});const load=await call(a+"/workload?from=2026-10-13&to=2026-10-19",owner);const member=load.members.find(row=>row.userId==="peer");assert.equal(member.remainingMinutes,150);assert.equal(member.capacityMinutes,70);assert.equal(member.overCapacity,true);
+ const dashboard=await call(a+"/dashboard",owner);assert.equal(dashboard.total,await db.task.count({where:{organizationId:"a"}}));assert.equal((await call(b+"/dashboard",bob)).total,0);
+ await call(a+"/workload?from=2026-10-13&to=2026-10-19",peer,"GET",null,403);
+ await call(a+"/projects/"+project.id+"/members",owner,"POST",{userId:"guest"});const guestDetail=await call(a+"/tasks/"+first.id+"/details",guest);assert.equal(guestDetail.canEdit,false);await call(a+"/tasks/"+assigned.id+"/time",guest,"GET",null,403);
+ const foreignTask=await call(b+"/tasks",bob,"POST",{title:"Foreign",projectId:other.id},201);await call(a+"/tasks/"+assigned.id+"/dependencies/"+foreignTask.id,owner,"POST",{expectedVersion:0},404);
+ await assert.rejects(db.task.create({data:{id:"cross-parent",organizationId:"b",projectId:other.id,title:"Invalid parent",assignerId:"bob",assigneePrimaryId:"bob",parentTaskId:first.id}}),error=>error.code==="P2003");
+ console.log("Core PostgreSQL passed: templates/lifecycle, typed fields, parent/dependency cycle and scope, checklist completion, time ownership, capacity/load, scoped dashboard and version conflicts.");
+}finally{if(server&&server.exitCode===null){server.kill();await new Promise(r=>server.once("exit",r));}await db.$executeRawUnsafe('DROP SCHEMA IF EXISTS "'+schema+'" CASCADE');await db.$disconnect();}

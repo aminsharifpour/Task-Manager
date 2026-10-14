@@ -1,58 +1,98 @@
-version: "3.9"
-
+name: shekof
+x-app-env: &app-env
+  NODE_ENV: production
+  PORT: 8787
+  SERVE_CLIENT: "true"
+  DB_MODE: postgres
+  TENANT_FOUNDATION_ENABLED: "true"
+  DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-self_hosted}
+  JWT_SECRET: ${JWT_SECRET:?Set a private signing secret}
+  JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
+  PUBLIC_SIGNUP_ENABLED: ${PUBLIC_SIGNUP_ENABLED:-true}
+  DATABASE_URL: postgresql://shekof:${POSTGRES_PASSWORD:?Set a URL-safe private password}@postgres:5432/shekof?schema=public
+  TRUST_PROXY: "1"
+  TELEMETRY_ENABLED: "false"
+  HTTP_ACCESS_LOG: ${HTTP_ACCESS_LOG:-off}
+  SERVER_LOG_TO_FILE: "false"
+  METRICS_TOKEN: ${METRICS_TOKEN:-}
+  FILE_STORAGE_DRIVER: ${FILE_STORAGE_DRIVER:-local}
+  S3_BUCKET: ${S3_BUCKET:-}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
+  S3_PREFIX: ${S3_PREFIX:-workspace}
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  PRIVATE_FILES_DIR: /app/apps/api/data/private-files
+  PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-https://localhost:8443}
+  MARKETING_INDEX_ENABLED: ${MARKETING_INDEX_ENABLED:-false}
+  PUBLIC_LEADS_ENABLED: ${PUBLIC_LEADS_ENABLED:-false}
+  PRODUCT_LOGO_PATH: ${PRODUCT_LOGO_PATH:-}
+  PRODUCT_NAME: ${PRODUCT_NAME:-مدیریت پروژه شکف}
+  PRODUCT_DESCRIPTION: ${PRODUCT_DESCRIPTION:-}
+  PUBLIC_CONTACT_EMAIL: ${PUBLIC_CONTACT_EMAIL:-}
+  LEGAL_PRIVACY_TEXT: ${LEGAL_PRIVACY_TEXT:-}
+  LEGAL_TERMS_TEXT: ${LEGAL_TERMS_TEXT:-}
+  LEGAL_TEXT_APPROVED: ${LEGAL_TEXT_APPROVED:-false}
+  PLATFORM_OPERATOR_USER_IDS: ${PLATFORM_OPERATOR_USER_IDS:-}
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: taskapp-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-tasks_app}
-      POSTGRES_USER: ${POSTGRES_USER:-taskapp}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-postgres-password}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      POSTGRES_DB: shekof
+      POSTGRES_USER: shekof
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a URL-safe private password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskapp} -d ${POSTGRES_DB:-tasks_app}"]
-      interval: 10s
+      test: [CMD-SHELL, "pg_isready -U shekof -d shekof"]
+      interval: 5s
       timeout: 5s
-      retries: 10
-
-  api:
+      retries: 20
+  migrate:
+    image: ${APP_IMAGE:-shekof-app:0.1.0}
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: taskapp-api
-    restart: unless-stopped
+    restart: "no"
+    environment: *app-env
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      NODE_ENV: production
-      PORT: 8787
-      SERVE_CLIENT: "false"
-      JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-random-secret}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
-      DB_MODE: postgres
-      DATABASE_URL: postgresql://${POSTGRES_USER:-taskapp}:${POSTGRES_PASSWORD:-change-this-postgres-password}@postgres:5432/${POSTGRES_DB:-tasks_app}?schema=public
-      CORS_ORIGIN: ${CORS_ORIGIN:-}
-    ports:
-      - "${API_PORT:-8787}:8787"
-    volumes:
-      - api_uploads:/app/apps/api/data/uploads
-
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile.web
-    container_name: taskapp-web
+    command: [node, node_modules/prisma/build/index.js, migrate, deploy, --schema, apps/api/prisma/schema.prisma]
+    healthcheck:
+      disable: true
+  api:
+    image: ${APP_IMAGE:-shekof-app:0.1.0}
     restart: unless-stopped
+    init: true
+    environment: *app-env
     depends_on:
-      - api
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - private_files:/app/apps/api/data/private-files
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    stop_grace_period: 30s
+  gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    depends_on:
+      api:
+        condition: service_healthy
     ports:
-      - "${WEB_PORT:-8080}:80"
-
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-8080}:80"
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTPS_PORT:-8443}:443"
+    volumes:
+      - ${CADDY_CONFIG:-./deploy/Caddyfile}:/etc/caddy/Caddyfile:ro
+      - tls_data:/data
+      - tls_config:/config
 volumes:
   postgres_data:
-  api_uploads:
+  private_files:
+  tls_data:
+  tls_config:

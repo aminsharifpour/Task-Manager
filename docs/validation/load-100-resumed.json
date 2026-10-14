@@ -1,0 +1,139 @@
+{
+  "schema": "load_9978d7a54c37",
+  "sourceFingerprint": "0539e51e3af60d3a2abc26b6e6a7976011d765c1d19bbed273e4ca7a5ace0d92",
+  "syntheticOnly": true,
+  "dockerRuntime": {
+    "cpus": 20,
+    "memoryBytes": 16670142464,
+    "version": "29.8.2"
+  },
+  "hardware": {
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12700KF",
+    "logicalCpus": 20,
+    "totalRamBytes": 34164097024,
+    "freeRamBytes": 5974155264,
+    "os": "win32 10.0.26300",
+    "node": "v22.23.1"
+  },
+  "database": {
+    "engine": "PostgreSQL16 in Docker",
+    "organizations": 10,
+    "membersInLargest": 300,
+    "tasksSeeded": 50000,
+    "fileBytes": 0
+  },
+  "scenario": {
+    "users": 100,
+    "warmupSeconds": 120,
+    "steadySeconds": 900,
+    "thinkTimeMs": "1000..2000",
+    "pageSize": 25,
+    "mix": {
+      "list": 0.5,
+      "dashboard": 0.2,
+      "search": 0.2,
+      "write": 0.1
+    },
+    "websocketClients": 100
+  },
+  "results": {
+    "requests": 59816,
+    "requestsPerSecond": 66.46222222222222,
+    "readP95Ms": 139.6364000000758,
+    "writeP95Ms": 327.51900000000023,
+    "unexpectedErrors": 0,
+    "unexpectedErrorRate": 0,
+    "statuses": {
+      "200": 53845,
+      "201": 5971
+    },
+    "realtimeReceived": 596799,
+    "realtimeP95Ms": 1136,
+    "connectedAtEnd": 100,
+    "elapsedSeconds": 902.65
+  },
+  "clientMemoryStart": {
+    "rss": 114569216,
+    "heapTotal": 56647680,
+    "heapUsed": 19742680,
+    "external": 4150992,
+    "arrayBuffers": 324495
+  },
+  "queryPlan": {
+    "QUERY PLAN": [
+      {
+        "Plan": {
+          "Node Type": "Limit",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 0.41,
+          "Total Cost": 102.26,
+          "Plan Rows": 25,
+          "Plan Width": 72,
+          "Actual Startup Time": 0.017,
+          "Actual Total Time": 0.022,
+          "Actual Rows": 25,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 5,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Index Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "Task_org_created_id_idx",
+              "Relation Name": "Task",
+              "Alias": "Task",
+              "Startup Cost": 0.41,
+              "Total Cost": 289.65,
+              "Plan Rows": 71,
+              "Plan Width": 72,
+              "Actual Startup Time": 0.016,
+              "Actual Total Time": 0.021,
+              "Actual Rows": 25,
+              "Actual Loops": 1,
+              "Index Cond": "(\"organizationId\" = 'org0'::text)",
+              "Rows Removed by Index Recheck": 0,
+              "Shared Hit Blocks": 5,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            }
+          ]
+        },
+        "Planning": {
+          "Shared Hit Blocks": 76,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.395,
+        "Triggers": [],
+        "Execution Time": 0.034
+      }
+    ]
+  },
+  "passed": true
+}

@@ -28,9 +28,11 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       rollupOptions: {
         output: {
+          // Keep HeroUI/React Aria dependencies out of the React runtime chunk.
+          onlyExplicitManualChunks: true,
           manualChunks(id) {
             if (!id.includes("node_modules")) return;
-            if (id.includes("/react/") || id.includes("/react-dom/") || id.includes("scheduler")) return "react-vendor";
+            if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "react-vendor";
             if (id.includes("socket.io-client")) return "socket-vendor";
             if (id.includes("lucide-react")) return "icons-vendor";
             if (id.includes("@radix-ui")) return "ui-vendor";

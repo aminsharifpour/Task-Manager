@@ -9,14 +9,7 @@ const ENV_PATHS = [
   path.resolve(PROJECT_ROOT, ".env"),
   path.resolve(PROJECT_ROOT, ".env.local"),
 ];
-const RUNTIME_SKIP_KEYS = new Set([
-  "DB_MODE",
-  "DATABASE_URL",
-  "POSTGRES_DB",
-  "POSTGRES_USER",
-  "POSTGRES_PASSWORD",
-  "POSTGRES_PORT",
-]);
+const inheritedEnvironmentKeys = new Set(Object.keys(process.env));
 
 const parseEnvLine = (line) => {
   const trimmed = String(line ?? "").trim();
@@ -43,8 +36,7 @@ for (const envPath of ENV_PATHS) {
     const parsed = parseEnvLine(line);
     if (!parsed) continue;
     const [key, value] = parsed;
-    if (RUNTIME_SKIP_KEYS.has(key)) continue;
-    if (process.env[key] == null || process.env[key] === "") {
+    if (!inheritedEnvironmentKeys.has(key)) {
       process.env[key] = value;
     }
   }

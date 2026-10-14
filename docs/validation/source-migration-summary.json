@@ -1,0 +1,24 @@
+{
+  "dryRunOnly": true,
+  "valid": true,
+  "sourceUnchanged": true,
+  "inputCounts": {
+    "teams": 4,
+    "teamMembers": 13,
+    "projects": 4,
+    "tasks": 1,
+    "meetingMinutes": 2,
+    "hrProfiles": 1,
+    "hrLeaveRequests": 1,
+    "hrAttendanceRecords": 51,
+    "accountingAccounts": 3,
+    "accountingTransactions": 88,
+    "accountingBudgetHistory": 4,
+    "chatConversations": 2,
+    "chatMessages": 38,
+    "notifications": 24,
+    "notificationPreferences": 4,
+    "auditLogs": 356
+  },
+  "issueCounts": {}
+}

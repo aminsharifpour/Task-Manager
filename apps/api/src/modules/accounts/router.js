@@ -1,0 +1,9 @@
+import {runtimeConfig} from "../../runtime-config.js";
+import {Router} from "express";
+import {DomainError} from "../shared/scoped.js";
+import {persistentLimiter} from "../shared/rate-limit.js";
+import * as service from "./service.js";
+const wrap=fn=>async(req,res,next)=>{try{res.json(await fn(req));}catch(error){next(error);}};
+const errors=(error,req,res,next)=>{if(error.code==="P2002"&&Array.isArray(error.meta?.target)&&error.meta.target.includes("phone"))return res.status(409).json({code:"IDENTITY_EXISTS",message:"این هویت قبلاً ثبت شده است؛ وارد حساب موجود شوید.",requestId:req.requestId});if(error instanceof DomainError)return res.status(error.status).json({code:error.code,message:error.message,requestId:req.requestId});console.error(JSON.stringify({event:"account.request_failed",code:error.code||"INTERNAL_ERROR",requestId:req.requestId}));res.status(500).json({code:"INTERNAL_ERROR",message:"درخواست انجام نشد.",requestId:req.requestId});};
+export function publicAccountsRouter(signToken){const r=Router();r.post("/setup",persistentLimiter("setup",{limit:10}),wrap(async req=>{const user=await service.setup(req.body||{});return {token:await signToken(user),user:{id:user.id,fullName:user.fullName}};}));r.post("/signup",persistentLimiter("signup",{limit:20}),wrap(async req=>{const user=await service.signup(req.body||{});return {token:await signToken(user),user:{id:user.id,fullName:user.fullName}};}));r.use(errors);return r;}
+export function accountsRouter(){const r=Router();r.use((req,res,next)=>runtimeConfig.tenantFoundation?next():res.status(404).json({code:"FEATURE_DISABLED"}));r.get("/",wrap(req=>service.account(req.auth.userId)));r.patch("/",persistentLimiter("account-update",{limit:20}),wrap(req=>service.updateAccount(req.auth,req.body||{})));r.get("/sessions",wrap(req=>service.sessions(req.auth)));r.delete("/sessions/:id",wrap(req=>service.revokeSession(req.auth,req.params.id)));r.use(errors);return r;}

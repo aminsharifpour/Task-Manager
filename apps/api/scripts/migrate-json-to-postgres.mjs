@@ -1,5 +1,8 @@
 import crypto from "node:crypto";
-import { readStore } from "../src/store.js";
+import fs from "node:fs";
+import path from "node:path";
+import { Prisma } from "@prisma/client";
+import { planMigration } from "./migration-plan.mjs";
 import prisma from "../src/prisma.js";
 
 const isoOrNull = (value) => {
@@ -12,8 +15,8 @@ const isoOrNull = (value) => {
 const toAmount = (value) => {
   const raw = String(value ?? "").replace(/,/g, "").trim();
   if (!raw) return null;
-  const num = Number(raw);
-  return Number.isFinite(num) ? num.toString() : null;
+  if (!/^-?\d+(\.\d{1,2})?$/.test(raw)) throw new Error("INVALID_DECIMAL_AMOUNT");
+  return raw;
 };
 
 const toJson = (value, fallback = null) => {
@@ -22,39 +25,44 @@ const toJson = (value, fallback = null) => {
 };
 
 const main = async () => {
-  const db = readStore();
+  const args = process.argv.slice(2);
+  const sourcePath = args[args.indexOf("--source") + 1];
+  if (!args.includes("--source") || !sourcePath || sourcePath.startsWith("--")) throw new Error("SOURCE_REQUIRED");
+  const raw = fs.readFileSync(path.resolve(sourcePath), "utf8");
+  const db = JSON.parse(raw);
+  const mapPath = args.includes("--mapping") ? args[args.indexOf("--mapping") + 1] : null;
+  const mapping = mapPath ? JSON.parse(fs.readFileSync(mapPath, "utf8")) : {};
+  const plan = planMigration(db, mapping);
+  console.log(JSON.stringify({ ok: plan.ok, mode: args.includes("--apply") ? "apply" : "dry-run", counts: plan.counts, issues: plan.issues }, null, 2));
+  if (!plan.ok) throw new Error("MIGRATION_VALIDATION_FAILED");
+  if (!args.includes("--apply")) return;
+  const backupDir = args.includes("--backup-dir") ? args[args.indexOf("--backup-dir") + 1] : null;
+  if (!backupDir || !fs.statSync(backupDir).isDirectory()) throw new Error("EXISTING_BACKUP_DIRECTORY_REQUIRED");
+  const sourceBackup = path.join(backupDir, plan.checksum + ".json");
+  if (!fs.existsSync(sourceBackup)) fs.writeFileSync(sourceBackup, raw, { flag: "wx", mode: 0o600 });
+  else if (fs.readFileSync(sourceBackup, "utf8") !== raw) throw new Error("BACKUP_CONTENT_MISMATCH");
   await prisma.$connect();
-
+  if (await prisma.migrationImport.findUnique({ where: { checksum: plan.checksum } })) {
+    console.log(JSON.stringify({ ok: true, alreadyImported: true }));
+    await prisma.$disconnect();
+    return;
+  }
   await prisma.$transaction(async (tx) => {
-    await tx.chatMessageReaction.deleteMany();
-    await tx.chatMessage.deleteMany();
-    await tx.chatConversationMember.deleteMany();
-    await tx.chatConversation.deleteMany();
-    await tx.notification.deleteMany();
-    await tx.accountingTransaction.deleteMany();
-    await tx.accountingAccount.deleteMany();
-    await tx.accountingBudgetHistory.deleteMany();
-    await tx.accountingBudget.deleteMany();
-    await tx.hrAttendanceRecord.deleteMany();
-    await tx.hrLeaveRequest.deleteMany();
-    await tx.hrProfile.deleteMany();
-    await tx.taskWorkflowComment.deleteMany();
-    await tx.task.deleteMany();
-    await tx.projectTeam.deleteMany();
-    await tx.projectMember.deleteMany();
-    await tx.project.deleteMany();
-    await tx.teamMembership.deleteMany();
-    await tx.team.deleteMany();
-    await tx.meetingMinute.deleteMany();
-    await tx.auditLog.deleteMany();
-    await tx.presenceEvent.deleteMany();
-    await tx.user.deleteMany();
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(72411012)`;
+    if (await tx.migrationImport.findUnique({ where: { checksum: plan.checksum } })) return;
+    for (const model of Prisma.dmmf.datamodel.models) {
+      const key = model.name[0].toLowerCase() + model.name.slice(1);
+      if (await tx[key].count()) throw new Error("TARGET_DATABASE_NOT_EMPTY");
+    }
+    const organizationId = "legacy-default";
+    await tx.organization.create({ data: { id: organizationId, name: db.settings?.general?.organizationName || "مدیریت پروژه شکف", activeMemberLimit: Math.max(5, (db.teamMembers || []).length) } });
 
     const teams = Array.isArray(db.teams) ? db.teams : [];
     if (teams.length) {
       await tx.team.createMany({
         data: teams.map((row) => ({
           id: row.id,
+          organizationId,
           name: row.name,
           description: row.description || null,
           createdAt: isoOrNull(row.createdAt) ?? new Date(),
@@ -76,16 +84,23 @@ const main = async () => {
           avatarUrl: row.avatarDataUrl || null,
           appRole: row.appRole || "member",
           isActive: row.isActive !== false,
-          passwordHash: row.passwordHash || `bcrypt$${crypto.randomUUID()}`,
+          passwordHash: row.passwordHash,
           createdAt: isoOrNull(row.createdAt) ?? new Date(),
           updatedAt: isoOrNull(row.updatedAt) ?? new Date(),
         })),
       });
     }
 
+    for (const user of users) {
+      await tx.organizationMembership.create({ data: { organizationId, userId: user.id,
+        role: user.appRole === "admin" ? "owner" : user.appRole === "manager" ? "project_manager" : "member",
+        status: user.isActive === false ? "suspended" : "active" } });
+    }
+
     const teamMemberships = users.flatMap((user) =>
       (Array.isArray(user.teamIds) ? user.teamIds : []).map((teamId) => ({
         id: crypto.randomUUID(),
+        organizationId,
         teamId,
         userId: user.id,
       })),
@@ -97,7 +112,7 @@ const main = async () => {
     const profiles = Array.isArray(db.hrProfiles) ? db.hrProfiles : [];
     for (const row of profiles) {
       await tx.hrProfile.upsert({
-        where: { userId: row.memberId },
+        where: { organizationId_userId: { organizationId, userId: row.memberId } },
         update: {
           employeeCode: row.employeeCode || null,
           department: row.department || null,
@@ -114,6 +129,7 @@ const main = async () => {
           notes: row.notes || null,
         },
         create: {
+          organizationId,
           userId: row.memberId,
           employeeCode: row.employeeCode || null,
           department: row.department || null,
@@ -137,6 +153,7 @@ const main = async () => {
       await tx.project.createMany({
         data: projects.map((row) => ({
           id: row.id,
+          organizationId,
           name: row.name,
           description: row.description || null,
           ownerId: row.ownerId,
@@ -150,6 +167,7 @@ const main = async () => {
     const projectMembers = projects.flatMap((project) =>
       (Array.isArray(project.memberIds) ? project.memberIds : []).map((userId) => ({
         id: crypto.randomUUID(),
+        organizationId,
         projectId: project.id,
         userId,
       })),
@@ -163,19 +181,23 @@ const main = async () => {
       await tx.task.createMany({
         data: tasks.map((row) => ({
           id: row.id,
+          organizationId,
           title: row.title,
           description: row.description || null,
           assignerId: row.assignerId,
           assigneePrimaryId: row.assigneePrimaryId,
           assigneeSecondaryId: row.assigneeSecondaryId || null,
-          projectId: projects.find((p) => p.name === row.projectName)?.id || null,
+          projectId: plan.links[row.id],
           announceDate: isoOrNull(row.announceDate || row.announceDateIso),
           executionDate: isoOrNull(row.executionDate || row.executionDateIso),
           status: row.status || "todo",
           blockedReason: row.blockedReason || null,
           isDone: Boolean(row.done || row.status === "done"),
           workflowSteps: toJson(row.workflowSteps, []),
-          workflowCurrentStep: Number(row.workflowCurrentStep ?? 0) || 0,
+          workflowCurrentStep: Number(row.workflowCurrentStep ?? -1),
+          workflowPendingAssigneeIds: row.workflowPendingAssigneeIds || [],
+          workflowCompletedAt: isoOrNull(row.workflowCompletedAt),
+          lastStatusChangedAt: isoOrNull(row.lastStatusChangedAt),
           createdAt: isoOrNull(row.createdAt) ?? new Date(),
           updatedAt: isoOrNull(row.updatedAt) ?? new Date(),
         })),
@@ -185,6 +207,7 @@ const main = async () => {
     const taskComments = tasks.flatMap((task) =>
       (Array.isArray(task.workflowStepComments) ? task.workflowStepComments : []).map((comment) => ({
         id: comment.id || crypto.randomUUID(),
+        organizationId,
         taskId: task.id,
         stepId: comment.stepId,
         authorId: comment.authorId,
@@ -201,6 +224,7 @@ const main = async () => {
       await tx.meetingMinute.createMany({
         data: minutes.map((row) => ({
           id: row.id,
+          organizationId,
           title: row.title,
           date: isoOrNull(row.date || row.dateIso) ?? new Date(),
           attendees: row.attendees || null,
@@ -218,8 +242,9 @@ const main = async () => {
       await tx.hrLeaveRequest.createMany({
         data: leaves.map((row) => ({
           id: row.id,
+          organizationId,
           userId: row.memberId,
-          reviewerId: row.reviewedBy || null,
+          reviewerId: row.reviewerId || row.reviewedBy || null,
           leaveType: String(row.leaveType || "annual"),
           fromDate: isoOrNull(row.fromDate) ?? new Date(),
           toDate: isoOrNull(row.toDate) ?? new Date(),
@@ -238,6 +263,7 @@ const main = async () => {
       await tx.hrAttendanceRecord.createMany({
         data: attendance.map((row) => ({
           id: row.id,
+          organizationId,
           userId: row.memberId,
           date: isoOrNull(row.date) ?? new Date(),
           checkIn: row.checkIn || null,
@@ -257,7 +283,8 @@ const main = async () => {
       await tx.accountingAccount.createMany({
         data: accounts.map((row) => ({
           id: row.id,
-          userId: row.userId,
+          organizationId,
+          userId: row.ownerId || row.userId,
           name: row.name,
           bankName: row.bankName || null,
           cardLast4: row.cardLast4 || null,
@@ -272,14 +299,16 @@ const main = async () => {
       await tx.accountingTransaction.createMany({
         data: transactions.map((row) => ({
           id: row.id,
-          userId: row.userId,
+          organizationId,
+          userId: row.ownerId || row.userId,
           accountId: row.accountId || null,
           type: row.type || "expense",
+          status: row.status || "approved",
           title: row.title,
           amount: toAmount(row.amount) || "0",
           category: row.category || null,
           date: isoOrNull(row.date || row.dateIso) ?? new Date(),
-          timeHHMM: row.timeHHMM || null,
+          timeHHMM: row.time || row.timeHHMM || null,
           note: row.note || null,
           createdAt: isoOrNull(row.createdAt) ?? new Date(),
           updatedAt: isoOrNull(row.updatedAt) ?? new Date(),
@@ -290,9 +319,10 @@ const main = async () => {
     const budgetEntries = Object.entries(db.accountingBudgets || {});
     for (const [monthKey, amount] of budgetEntries) {
       await tx.accountingBudget.upsert({
-        where: { monthKey },
+        where: { organizationId_monthKey: { organizationId, monthKey } },
         update: { amount: toAmount(amount) || "0" },
-        create: { id: crypto.randomUUID(), monthKey, amount: toAmount(amount) || "0" },
+        create: { id: crypto.randomUUID(),
+        organizationId, monthKey, amount: toAmount(amount) || "0" },
       });
     }
 
@@ -301,7 +331,8 @@ const main = async () => {
       await tx.accountingBudgetHistory.createMany({
         data: budgetHistory.map((row) => ({
           id: row.id || crypto.randomUUID(),
-          monthKey: row.month || row.monthKey,
+          organizationId,
+          monthKey: row.monthKey || (row.ownerId ? `${row.ownerId}:${row.month}` : row.month),
           amount: toAmount(row.amount) || "0",
           createdAt: isoOrNull(row.createdAt) ?? new Date(),
         })),
@@ -313,6 +344,7 @@ const main = async () => {
       await tx.chatConversation.createMany({
         data: conversations.map((row) => ({
           id: row.id,
+          organizationId,
           type: row.type || "direct",
           title: row.title || null,
           createdAt: isoOrNull(row.createdAt) ?? new Date(),
@@ -324,6 +356,7 @@ const main = async () => {
     const conversationMembers = conversations.flatMap((conversation) =>
       (Array.isArray(conversation.participantIds) ? conversation.participantIds : []).map((userId) => ({
         id: crypto.randomUUID(),
+        organizationId,
         conversationId: conversation.id,
         userId,
         unreadCount: Number(conversation.unreadByUserId?.[userId] ?? 0) || 0,
@@ -338,11 +371,12 @@ const main = async () => {
       await tx.chatMessage.createMany({
         data: messages.map((row) => ({
           id: row.id,
+          organizationId,
           conversationId: row.conversationId,
           senderId: row.senderId,
           text: row.text || null,
           attachments: toJson(row.attachments, []),
-          mentions: toJson(row.mentions, []),
+          mentions: toJson(row.mentionMemberIds || row.mentions, []),
           replyToMessageId: row.replyToMessageId || null,
           forwardedFromId: row.forwardedFromMessageId || null,
           isDeleted: Boolean(row.isDeleted),
@@ -356,8 +390,9 @@ const main = async () => {
 
     const reactions = messages.flatMap((message) =>
       (Array.isArray(message.reactions) ? message.reactions : []).flatMap((reaction) =>
-        (Array.isArray(reaction.userIds) ? reaction.userIds : []).map((userId) => ({
+        (Array.isArray(reaction.memberIds || reaction.userIds) ? (reaction.memberIds || reaction.userIds) : []).map((userId) => ({
           id: crypto.randomUUID(),
+        organizationId,
           messageId: message.id,
           userId,
           emoji: reaction.emoji,
@@ -373,17 +408,35 @@ const main = async () => {
       await tx.auditLog.createMany({
         data: auditLogs.map((row) => ({
           id: row.id || crypto.randomUUID(),
-          actorUserId: row.actorId || null,
+          organizationId,
+          actorUserId: row.actor?.userId || row.actorId || null,
           entityType: row.entityType || "unknown",
           entityId: row.entityId || "unknown",
           action: row.action || "unknown",
-          title: row.title || null,
-          details: toJson(row.details, null),
+          summary: row.summary || row.title || null,
+          actorFullName: row.actor?.fullName || null,
+          actorRole: row.actor?.role || null,
+          meta: toJson(row.meta || row.details, {}),
           createdAt: isoOrNull(row.createdAt) ?? new Date(),
         })),
       });
     }
-  });
+    if (db.settings) await tx.appSetting.create({ data: { key: "app", payload: db.settings } });
+    for (const row of db.notifications || []) {
+      await tx.notification.create({ data: { id: row.id,
+          organizationId, userId: row.userId, kind: row.kind || "system",
+        category: row.category, title: row.title, description: row.description,
+        seenAt: isoOrNull(row.seenAt), readAt: isoOrNull(row.readAt), dismissedAt: isoOrNull(row.dismissedAt),
+        targetView: row.targetView, entityType: row.entityType, entityId: row.entityId,
+        conversationId: row.conversationId, taskId: row.taskId, projectId: row.projectId,
+        actionLabel: row.actionLabel, dedupeKey: row.dedupeKey, meta: row.meta || {}, createdAt: isoOrNull(row.createdAt) || new Date() } });
+    }
+    for (const row of db.notificationPreferences || []) {
+      await tx.notificationPreference.create({ data: { id: "preference-" + row.userId, organizationId, userId: row.userId,
+        delivery: row.delivery || {}, mutedKinds: row.mutedKinds || [], mutedCategories: row.mutedCategories || [] } });
+    }
+    await tx.migrationImport.create({ data: { checksum: plan.checksum, counts: plan.counts, sourceSnapshot: db } });
+  }, { timeout: 120000 });
 
   const counts = {
     users: await prisma.user.count(),
@@ -401,7 +454,7 @@ const main = async () => {
 
 main().catch(async (error) => {
   // eslint-disable-next-line no-console
-  console.error(error);
+  console.error(JSON.stringify({ ok: false, code: /^[A-Z_]+$/.test(error.message) ? error.message : (error.code || "MIGRATION_FAILED") }));
   try {
     await prisma.$disconnect();
   } catch {

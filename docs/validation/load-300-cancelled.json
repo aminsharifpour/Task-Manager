@@ -1,0 +1,8 @@
+{
+  "status": "cancelled",
+  "reason": "User requested deferring tests until the final development stage",
+  "cancelledAt": "2026-10-14T06:08:09.694Z",
+  "schema": "load_711b76d009d5",
+  "fixtureRemoved": true,
+  "acceptanceResult": null
+}

@@ -1,0 +1,84 @@
+-- Unscoped legacy data is explicitly assigned to the documented legacy-default organization.
+-- Existing scoped data is preserved. Conflicting links fail rather than being guessed.
+DO $$ BEGIN
+IF EXISTS (SELECT 1 FROM "Team" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "Project" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "Task" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "MeetingMinute" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "HrLeaveRequest" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "HrAttendanceRecord" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "AccountingAccount" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "AccountingTransaction" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "AccountingBudget" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "AccountingBudgetHistory" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "ChatConversation" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "Notification" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "AuditLog" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "PresenceEvent" WHERE "organizationId" IS NULL UNION ALL SELECT 1 FROM "HrProfile" WHERE "organizationId" = 'legacy-default' UNION ALL SELECT 1 FROM "NotificationPreference" WHERE "organizationId" = 'legacy-default') THEN
+ INSERT INTO "Organization" (id,name,"activeMemberLimit","updatedAt") VALUES ('legacy-default','سازمان داده‌های قدیمی',GREATEST(5,(SELECT COUNT(*)::int FROM "User")),NOW()) ON CONFLICT (id) DO NOTHING;
+END IF;
+END $$;
+UPDATE "Team" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "Project" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "MeetingMinute" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "HrLeaveRequest" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "HrAttendanceRecord" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "AccountingAccount" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "AccountingTransaction" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "AccountingBudget" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "AccountingBudgetHistory" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "ChatConversation" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "Notification" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "AuditLog" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "PresenceEvent" SET "organizationId" = 'legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "Task" t SET "organizationId" = p."organizationId" FROM "Project" p WHERE t."projectId"=p.id AND t."organizationId" IS NULL;
+UPDATE "Task" SET "organizationId"='legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "NotificationPreference" SET "organizationId"='legacy-default' WHERE "organizationId" IS NULL;
+UPDATE "TeamMembership" c SET "organizationId"=p."organizationId" FROM "Team" p WHERE c."teamId"=p.id AND c."organizationId" IS NULL;
+UPDATE "ProjectMember" c SET "organizationId"=p."organizationId" FROM "Project" p WHERE c."projectId"=p.id AND c."organizationId" IS NULL;
+UPDATE "ProjectTeam" c SET "organizationId"=p."organizationId" FROM "Project" p WHERE c."projectId"=p.id AND c."organizationId" IS NULL;
+UPDATE "TaskWorkflowComment" c SET "organizationId"=p."organizationId" FROM "Task" p WHERE c."taskId"=p.id AND c."organizationId" IS NULL;
+UPDATE "ChatConversationMember" c SET "organizationId"=p."organizationId" FROM "ChatConversation" p WHERE c."conversationId"=p.id AND c."organizationId" IS NULL;
+UPDATE "ChatMessage" c SET "organizationId"=p."organizationId" FROM "ChatConversation" p WHERE c."conversationId"=p.id AND c."organizationId" IS NULL;
+UPDATE "ChatMessageReaction" c SET "organizationId"=p."organizationId" FROM "ChatMessage" p WHERE c."messageId"=p.id AND c."organizationId" IS NULL;
+INSERT INTO "OrganizationMembership" ("organizationId","userId",role,status,"updatedAt")
+SELECT 'legacy-default',u.id,CASE u."appRole"::text WHEN 'admin' THEN 'owner' WHEN 'manager' THEN 'project_manager' ELSE 'member' END::"OrganizationRole",CASE WHEN u."isActive" THEN 'active' ELSE 'suspended' END::"MembershipStatus",NOW()
+FROM "User" u WHERE u.id IN (SELECT "ownerId" FROM "Project" WHERE "organizationId"='legacy-default' UNION SELECT "assignerId" FROM "Task" WHERE "organizationId"='legacy-default' UNION SELECT "assigneePrimaryId" FROM "Task" WHERE "organizationId"='legacy-default' UNION SELECT "assigneeSecondaryId" FROM "Task" WHERE "organizationId"='legacy-default' UNION SELECT "userId" FROM "TeamMembership" WHERE "organizationId"='legacy-default' UNION SELECT "userId" FROM "ProjectMember" WHERE "organizationId"='legacy-default' UNION SELECT "authorId" FROM "TaskWorkflowComment" WHERE "organizationId"='legacy-default' UNION SELECT "userId" FROM "HrProfile" WHERE "organizationId"='legacy-default' UNION SELECT "userId" FROM "HrLeaveRequest" WHERE "organizationId"='legacy-default' UNION SELECT "userId" FROM "HrAttendanceRecord" WHERE "organizationId"='legacy-default' UNION SELECT "userId" FROM "AccountingAccount" WHERE "organizationId"='legacy-default' UNION SELECT "userId" FROM "AccountingTransaction" WHERE "organizationId"='legacy-default' UNION SELECT "userId" FROM "ChatConversationMember" WHERE "organizationId"='legacy-default' UNION SELECT "senderId" FROM "ChatMessage" WHERE "organizationId"='legacy-default' UNION SELECT "userId" FROM "Notification" WHERE "organizationId"='legacy-default' UNION SELECT "userId" FROM "NotificationPreference" WHERE "organizationId"='legacy-default')
+ON CONFLICT ("organizationId","userId") DO NOTHING;
+ALTER TABLE "Team" ADD CONSTRAINT "Team_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "Project" ADD CONSTRAINT "Project_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "Task" ADD CONSTRAINT "Task_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "MeetingMinute" ADD CONSTRAINT "MeetingMinute_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "HrLeaveRequest" ADD CONSTRAINT "HrLeaveRequest_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "HrAttendanceRecord" ADD CONSTRAINT "HrAttendanceRecord_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "AccountingAccount" ADD CONSTRAINT "AccountingAccount_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "AccountingTransaction" ADD CONSTRAINT "AccountingTransaction_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "AccountingBudget" ADD CONSTRAINT "AccountingBudget_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "AccountingBudgetHistory" ADD CONSTRAINT "AccountingBudgetHistory_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "ChatConversation" ADD CONSTRAINT "ChatConversation_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "Notification" ADD CONSTRAINT "Notification_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "PresenceEvent" ADD CONSTRAINT "PresenceEvent_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "TeamMembership" ADD CONSTRAINT "TeamMembership_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "ProjectMember" ADD CONSTRAINT "ProjectMember_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "ProjectTeam" ADD CONSTRAINT "ProjectTeam_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "TaskWorkflowComment" ADD CONSTRAINT "TaskWorkflowComment_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "ChatConversationMember" ADD CONSTRAINT "ChatConversationMember_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "ChatMessageReaction" ADD CONSTRAINT "ChatMessageReaction_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "HrProfile" ADD CONSTRAINT "HrProfile_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "NotificationPreference" ADD CONSTRAINT "NotificationPreference_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE RESTRICT;
+ALTER TABLE "TeamMembership" ADD CONSTRAINT "TeamMembership_scoped_parent_fk" FOREIGN KEY ("organizationId","teamId") REFERENCES "Team"("organizationId",id) ON DELETE CASCADE;
+ALTER TABLE "ProjectMember" ADD CONSTRAINT "ProjectMember_scoped_parent_fk" FOREIGN KEY ("organizationId","projectId") REFERENCES "Project"("organizationId",id) ON DELETE CASCADE;
+ALTER TABLE "ProjectTeam" ADD CONSTRAINT "ProjectTeam_scoped_parent_fk" FOREIGN KEY ("organizationId","projectId") REFERENCES "Project"("organizationId",id) ON DELETE CASCADE;
+ALTER TABLE "TaskWorkflowComment" ADD CONSTRAINT "TaskWorkflowComment_scoped_parent_fk" FOREIGN KEY ("organizationId","taskId") REFERENCES "Task"("organizationId",id) ON DELETE CASCADE;
+ALTER TABLE "ChatConversationMember" ADD CONSTRAINT "ChatConversationMember_scoped_parent_fk" FOREIGN KEY ("organizationId","conversationId") REFERENCES "ChatConversation"("organizationId",id) ON DELETE CASCADE;
+ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_scoped_parent_fk" FOREIGN KEY ("organizationId","conversationId") REFERENCES "ChatConversation"("organizationId",id) ON DELETE CASCADE;
+ALTER TABLE "ChatMessageReaction" ADD CONSTRAINT "ChatMessageReaction_scoped_parent_fk" FOREIGN KEY ("organizationId","messageId") REFERENCES "ChatMessage"("organizationId",id) ON DELETE CASCADE;
+ALTER TABLE "ProjectTeam" ADD CONSTRAINT "ProjectTeam_scoped_team_fk" FOREIGN KEY ("organizationId","teamId") REFERENCES "Team"("organizationId",id);
+ALTER TABLE "AccountingTransaction" ADD CONSTRAINT "AccountingTransaction_scoped_account_fk" FOREIGN KEY ("organizationId","accountId") REFERENCES "AccountingAccount"("organizationId",id);
+ALTER TABLE "TaskWorkflowEvent" ADD CONSTRAINT "TaskWorkflowEvent_scoped_task_fk" FOREIGN KEY ("organizationId","taskId") REFERENCES "Task"("organizationId",id) ON DELETE CASCADE;
+ALTER TABLE "OrganizationSetting" ADD CONSTRAINT "OrganizationSetting_scope_fk" FOREIGN KEY ("organizationId") REFERENCES "Organization"(id) ON DELETE CASCADE;
+ALTER TABLE "Project" ADD CONSTRAINT "Project_ownerId_membership_fk" FOREIGN KEY ("organizationId","ownerId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "Task" ADD CONSTRAINT "Task_assignerId_membership_fk" FOREIGN KEY ("organizationId","assignerId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "Task" ADD CONSTRAINT "Task_assigneePrimaryId_membership_fk" FOREIGN KEY ("organizationId","assigneePrimaryId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "Task" ADD CONSTRAINT "Task_assigneeSecondaryId_membership_fk" FOREIGN KEY ("organizationId","assigneeSecondaryId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "TeamMembership" ADD CONSTRAINT "TeamMembership_userId_membership_fk" FOREIGN KEY ("organizationId","userId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "ProjectMember" ADD CONSTRAINT "ProjectMember_userId_membership_fk" FOREIGN KEY ("organizationId","userId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "TaskWorkflowComment" ADD CONSTRAINT "TaskWorkflowComment_authorId_membership_fk" FOREIGN KEY ("organizationId","authorId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "HrProfile" ADD CONSTRAINT "HrProfile_userId_membership_fk" FOREIGN KEY ("organizationId","userId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "HrLeaveRequest" ADD CONSTRAINT "HrLeaveRequest_userId_membership_fk" FOREIGN KEY ("organizationId","userId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "HrAttendanceRecord" ADD CONSTRAINT "HrAttendanceRecord_userId_membership_fk" FOREIGN KEY ("organizationId","userId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "AccountingAccount" ADD CONSTRAINT "AccountingAccount_userId_membership_fk" FOREIGN KEY ("organizationId","userId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "AccountingTransaction" ADD CONSTRAINT "AccountingTransaction_userId_membership_fk" FOREIGN KEY ("organizationId","userId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "ChatConversationMember" ADD CONSTRAINT "ChatConversationMember_userId_membership_fk" FOREIGN KEY ("organizationId","userId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_senderId_membership_fk" FOREIGN KEY ("organizationId","senderId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "Notification" ADD CONSTRAINT "Notification_userId_membership_fk" FOREIGN KEY ("organizationId","userId") REFERENCES "OrganizationMembership"("organizationId","userId");
+ALTER TABLE "NotificationPreference" ADD CONSTRAINT "NotificationPreference_userId_membership_fk" FOREIGN KEY ("organizationId","userId") REFERENCES "OrganizationMembership"("organizationId","userId");

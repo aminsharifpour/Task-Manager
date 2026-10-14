@@ -6,5 +6,5 @@ const run = (command, args) => {
 };
 
 run("npm", ["run", "prisma:generate"]);
-run("npm", ["run", "prisma:push"]);
-run("npm", ["run", "db:migrate-json"]);
+run("npm", ["run", "prisma:deploy"]);
+console.log("Schema deployed. Import is a separate step: db:migrate-json -- --source <file> (dry-run by default).");

@@ -30,6 +30,8 @@ async function main() {
     ...process.env,
     PORT: String(port),
     NODE_ENV: "test",
+    DB_MODE: "json",
+    TENANT_FOUNDATION_ENABLED: "false",
     JWT_SECRET: "e2e-jwt-secret",
     TASK_APP_DEFAULT_ADMIN_PHONE: "09120000000",
     TASK_APP_DEFAULT_ADMIN_PASSWORD: "123456",

@@ -14,7 +14,7 @@ const fallbackOnMissingModel = async (runner, fallback) => {
   try {
     return await runner();
   } catch (error) {
-    if (isPrismaMissingModelError(error)) return await fallback();
+    if (isPrismaMissingModelError(error)) throw new Error("DATABASE_SCHEMA_OUTDATED: run prisma:deploy before starting the API.");
     throw error;
   }
 };
@@ -312,7 +312,7 @@ export async function getCoreState() {
     return readStore();
   }
 
-  const legacyStore = readStore();
+  const legacyStore = { settings: getDefaultSettings(), meetingMinutes: [], accountingTransactions: [], accountingAccounts: [], accountingBudgets: {}, accountingBudgetHistory: [] };
   const [
     appSetting,
     teams,
@@ -393,10 +393,10 @@ export async function getCoreState() {
   return {
     ...legacyStore,
     settings: (appSetting?.payload && typeof appSetting.payload === "object" ? appSetting.payload : legacyStore?.settings) ?? getDefaultSettings(),
-    teams: Array.isArray(teams) && teams.length > 0 && teams[0]?.memberships !== undefined ? teams.map(buildLegacyTeam) : normalizeArray(legacyStore.teams),
-    teamMembers: Array.isArray(users) && users.length > 0 && users[0]?.phone !== undefined ? users.map(buildLegacyMember) : normalizeArray(legacyStore.teamMembers),
-    projects: Array.isArray(projects) && projects.length > 0 && projects[0]?.ownerId !== undefined && projects[0]?.members !== undefined ? projects.map(buildLegacyProject) : normalizeArray(legacyStore.projects),
-    tasks: Array.isArray(tasks) && tasks.length > 0 && tasks[0]?.assignerId !== undefined ? tasks.map(buildLegacyTask) : normalizeArray(legacyStore.tasks),
+    teams: teams.map(buildLegacyTeam),
+    teamMembers: users.map(buildLegacyMember),
+    projects: projects.map(buildLegacyProject),
+    tasks: tasks.map(buildLegacyTask),
     hrProfiles: Array.isArray(hrProfiles) && hrProfiles.length > 0 && hrProfiles[0]?.userId !== undefined ? hrProfiles.map(buildLegacyHrProfile) : normalizeArray(legacyStore.hrProfiles),
     hrLeaveRequests: Array.isArray(hrLeaveRequests) && hrLeaveRequests.length > 0 && hrLeaveRequests[0]?.userId !== undefined ? hrLeaveRequests.map(buildLegacyLeave) : normalizeArray(legacyStore.hrLeaveRequests),
     hrAttendanceRecords: Array.isArray(hrAttendanceRecords) && hrAttendanceRecords.length > 0 && hrAttendanceRecords[0]?.userId !== undefined ? hrAttendanceRecords.map(buildLegacyAttendance) : normalizeArray(legacyStore.hrAttendanceRecords),
@@ -1248,8 +1248,7 @@ export async function getSettingsState() {
   }
   const row = await fallbackOnMissingModel(() => prisma.appSetting.findUnique({ where: { key: "app" } }), async () => null);
   if (row?.payload && typeof row.payload === "object") return row.payload;
-  const db = readStore();
-  return db.settings ?? getDefaultSettings();
+  return getDefaultSettings();
 }
 
 export async function saveSettingsState(settings) {

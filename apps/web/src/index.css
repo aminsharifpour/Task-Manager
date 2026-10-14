@@ -2,57 +2,18 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
-@font-face {
-  font-family: "YekanBakh";
-  src: url("/fonts/YekanBakh-Thin.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 100;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "YekanBakh";
-  src: url("/fonts/YekanBakh-Light.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 300;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "YekanBakh";
-  src: url("/fonts/YekanBakh-Regular.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "YekanBakh";
-  src: url("/fonts/YekanBakh-SemiBold.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "YekanBakh";
-  src: url("/fonts/YekanBakh-Bold.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "YekanBakh";
-  src: url("/fonts/YekanBakh-ExtraBold.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 800;
-  font-display: swap;
-}
+@font-face { font-family: "IRANYekan"; src: url("/fonts/iranyekan-rounded/IRANYekanThinRd.woff") format("woff"); font-style: normal; font-weight: 100; font-display: swap; }
+@font-face { font-family: "IRANYekan"; src: url("/fonts/iranyekan-rounded/IRANYekanLightRd.woff") format("woff"); font-style: normal; font-weight: 300; font-display: swap; }
+@font-face { font-family: "IRANYekan"; src: url("/fonts/iranyekan-rounded/IRANYekanRegularRd.woff") format("woff"); font-style: normal; font-weight: 400; font-display: swap; }
+@font-face { font-family: "IRANYekan"; src: url("/fonts/iranyekan-rounded/IRANYekanMediumRd.woff") format("woff"); font-style: normal; font-weight: 500; font-display: swap; }
+@font-face { font-family: "IRANYekan"; src: url("/fonts/iranyekan-rounded/IRANYekanBoldRd.woff") format("woff"); font-style: normal; font-weight: 700; font-display: swap; }
+@font-face { font-family: "IRANYekan"; src: url("/fonts/iranyekan-rounded/IRANYekanExtraBoldRd.woff") format("woff"); font-style: normal; font-weight: 800; font-display: swap; }
+@font-face { font-family: "IRANYekan"; src: url("/fonts/iranyekan-rounded/IRANYekanBlackRd.woff") format("woff"); font-style: normal; font-weight: 900; font-display: swap; }
+@font-face { font-family: "IRANYekan"; src: url("/fonts/iranyekan-rounded/IRANYekanExtraBlackRd.woff") format("woff"); font-style: normal; font-weight: 950; font-display: swap; }
 
 @layer base {
   :root {
-    --app-font: "YekanBakh";
+    --app-font: "IRANYekan", Tahoma, sans-serif;
     --space-1: 0.25rem;
     --space-2: 0.5rem;
     --space-3: 0.75rem;

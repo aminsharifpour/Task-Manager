@@ -4,4 +4,11 @@ dist
 .git
 .gitignore
 *.local
+.env
+.env.*
+.tmp
+apps/api/data
+server/data
+docs/validation
+test-results
 

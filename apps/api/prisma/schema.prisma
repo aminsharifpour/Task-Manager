@@ -69,6 +69,8 @@ enum ConversationType {
 
 model Team {
   id          String           @id
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   name        String
   description String?
   isActive    Boolean          @default(true)
@@ -77,10 +79,13 @@ model Team {
   updatedAt   DateTime         @updatedAt
   memberships TeamMembership[]
   projects    ProjectTeam[]
+  @@unique([organizationId, id])
 }
 
 model User {
   id                     String                    @id
+  organizationMemberships OrganizationMembership[]
+  authSessions AuthSession[]
   fullName               String
   roleTitle              String?
   email                  String?
@@ -92,7 +97,7 @@ model User {
   passwordHash           String
   createdAt              DateTime                  @default(now())
   updatedAt              DateTime                  @updatedAt
-  profile                HrProfile?
+  profile                HrProfile[]
   teams                  TeamMembership[]
   assignedPrimaryTasks   Task[]                    @relation("TaskPrimaryAssignee")
   assignedSecondaryTasks Task[]                    @relation("TaskSecondaryAssignee")
@@ -104,7 +109,7 @@ model User {
   leaveReviewed          HrLeaveRequest[]          @relation("LeaveReviewer")
   attendanceRecords      HrAttendanceRecord[]
   notifications          Notification[]
-  notificationPreference NotificationPreference?
+  notificationPreference NotificationPreference[]
   accounts               AccountingAccount[]
   transactions           AccountingTransaction[]
   conversationLinks      ChatConversationMember[]
@@ -114,6 +119,7 @@ model User {
 }
 
 model TeamMembership {
+  organizationId String
   id        String   @id
   teamId    String
   userId    String
@@ -122,23 +128,36 @@ model TeamMembership {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([teamId, userId])
+  @@index([organizationId])
+  @@unique([organizationId, id])
 }
 
 model Project {
   id                    String                 @id
+  organizationId        String
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   name                  String
   description           String?
   ownerId               String
   workflowTemplateSteps Json?
+  version Int @default(0)
+  status String @default("active")
+  startDate DateTime?
+  endDate DateTime?
+  templateId String?
+  customFieldDefinitions Json?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   owner                 User                   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   members               ProjectMember[]
   teams                 ProjectTeam[]
   tasks                 Task[]
+  @@unique([organizationId, id])
+  @@index([organizationId, createdAt])
 }
 
 model ProjectMember {
+  organizationId String
   id        String   @id
   projectId String
   userId    String
@@ -147,9 +166,12 @@ model ProjectMember {
   user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
+  @@index([organizationId])
+  @@unique([organizationId, id])
 }
 
 model ProjectTeam {
+  organizationId String
   id        String   @id
   projectId String
   teamId    String
@@ -158,12 +180,28 @@ model ProjectTeam {
   team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, teamId])
+  @@index([organizationId])
+  @@unique([organizationId, id])
 }
 
 model Task {
   id                  String                @id
+  organizationId      String
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  version Int @default(0)
   title               String
   description         String?
+  priority String @default("normal")
+  startDate DateTime?
+  estimateMinutes Int?
+  customFields Json?
+  parentTaskId String?
+  parent Task? @relation("TaskHierarchy", fields: [organizationId, parentTaskId], references: [organizationId, id], onDelete: Restrict)
+  children Task[] @relation("TaskHierarchy")
+  checklist TaskChecklistItem[]
+  timeEntries TaskTimeEntry[]
+  dependencies TaskDependency[] @relation("TaskDependencies")
+  dependents TaskDependency[] @relation("TaskDependents")
   assignerId          String
   assigneePrimaryId   String
   assigneeSecondaryId String?
@@ -185,9 +223,118 @@ model Task {
   assigneeSecondary   User?                @relation("TaskSecondaryAssignee", fields: [assigneeSecondaryId], references: [id], onDelete: SetNull)
   project             Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
   workflowComments    TaskWorkflowComment[]
+  workflowEvents      TaskWorkflowEvent[]
+  files               TaskFile[]
+  @@index([organizationId, projectId, status, executionDate])
+  @@unique([organizationId, id])
+  @@index([organizationId,createdAt(sort:Desc),id],map:"Task_org_created_id_idx")
+  @@index([organizationId,status,executionDate],map:"Task_org_status_date_idx")
+}
+
+enum OrganizationRole {
+  owner
+  admin
+  project_manager
+  member
+  guest
+}
+
+enum MembershipStatus {
+  active
+  suspended
+  revoked
+}
+
+model Organization {
+  id String @id @default(uuid())
+  name String
+  timezone String @default("Asia/Tehran")
+  calendar String @default("jalali")
+  logoUrl String?
+  activeMemberLimit Int @default(5)
+  storageByteLimit BigInt @default(1073741824)
+  planCode String @default("manual")
+  entitlementVersion Int @default(0)
+  allowedModules Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  memberships OrganizationMembership[]
+  invitations OrganizationInvitation[]
+  projects Project[]
+  tasks Task[]
+  teams Team[]
+  audit OrganizationAudit[]
+}
+
+model OrganizationMembership {
+  organizationId String
+  userId String
+  role OrganizationRole @default(member)
+  status MembershipStatus @default(active)
+  canManageHr Boolean @default(false)
+  canManageAccounting Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  minuteAttachments MinuteAttachment[]
+  uploadedFiles TaskFile[]
+  uploadedFileVersions TaskFileVersion[]
+  fileFeedback FileVersionFeedback[]
+  fileReviews TaskFileVersionReview[]
+  timeEntries TaskTimeEntry[]
+  weeklyCapacityMinutes Int @default(2400)
+  chatAttachments ChatAttachment[]
+  @@id([organizationId, userId])
+  @@index([userId, status])
+}
+
+model OrganizationInvitation {
+  id String @id @default(uuid())
+  invitedUserId String?
+  createdById String?
+  organizationId String
+  email String
+  role OrganizationRole @default(member)
+  tokenHash String @unique
+  expiresAt DateTime
+  acceptedAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@index([organizationId, email])
+}
+
+model OrganizationAudit {
+  id String @id @default(uuid())
+  organizationId String
+  actorUserId String
+  action String
+  entityId String
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  @@index([organizationId, createdAt])
+}
+
+model MigrationImport {
+  checksum String @id
+  counts Json
+  sourceSnapshot Json?
+  completedAt DateTime @default(now())
+}
+
+model AuthSession {
+  id String @id
+  userId String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, revokedAt])
 }
 
 model TaskWorkflowComment {
+  organizationId String
   id        String   @id
   taskId     String
   stepId     String
@@ -196,9 +343,13 @@ model TaskWorkflowComment {
   createdAt  DateTime @default(now())
   task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  @@index([organizationId])
+  @@unique([organizationId, id])
 }
 
 model MeetingMinute {
+  attachments MinuteAttachment[]
+  organizationId String
   id         String   @id
   title      String
   date       DateTime
@@ -208,10 +359,14 @@ model MeetingMinute {
   followUps  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  @@index([organizationId])
+  @@unique([organizationId, id])
 }
 
 model HrProfile {
-  userId                  String         @id
+  salaryCurrency String?
+  organizationId String
+  userId String
   employeeCode            String?
   department              String?
   managerId               String?
@@ -228,9 +383,12 @@ model HrProfile {
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
   user                    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([organizationId])
+  @@id([organizationId, userId])
 }
 
 model HrLeaveRequest {
+  organizationId String
   id          String        @id
   userId       String
   reviewerId   String?
@@ -245,9 +403,12 @@ model HrLeaveRequest {
   updatedAt    DateTime      @updatedAt
   requester    User          @relation("LeaveRequester", fields: [userId], references: [id], onDelete: Cascade)
   reviewer     User?         @relation("LeaveReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  @@index([organizationId])
+  @@unique([organizationId, id])
 }
 
 model HrAttendanceRecord {
+  organizationId String
   id         String             @id
   userId      String
   date        DateTime
@@ -260,10 +421,13 @@ model HrAttendanceRecord {
   updatedAt   DateTime           @updatedAt
   user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, date])
+  @@unique([organizationId, userId, date])
+  @@index([organizationId])
+  @@unique([organizationId, id])
 }
 
 model AccountingAccount {
+  organizationId String
   id          String                 @id
   userId       String
   name         String
@@ -273,9 +437,13 @@ model AccountingAccount {
   updatedAt    DateTime               @updatedAt
   user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions AccountingTransaction[]
+  @@index([organizationId])
+  @@unique([organizationId, id])
 }
 
 model AccountingTransaction {
+  currency String?
+  organizationId String
   id         String         @id
   userId      String
   accountId   String?
@@ -291,24 +459,35 @@ model AccountingTransaction {
   updatedAt   DateTime      @updatedAt
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   account     AccountingAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  @@index([organizationId])
+  @@unique([organizationId, id])
 }
 
 model AccountingBudget {
+  currency String?
+  organizationId String
   id         String   @id
-  monthKey    String   @unique
+  monthKey String
   amount      Decimal  @db.Decimal(18, 2)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  @@index([organizationId])
+  @@unique([organizationId, monthKey])
 }
 
 model AccountingBudgetHistory {
+  currency String?
+  organizationId String
   id         String   @id
   monthKey    String
   amount      Decimal  @db.Decimal(18, 2)
   createdAt   DateTime @default(now())
+  @@index([organizationId])
 }
 
 model ChatConversation {
+  organizationId String
+  createdById String?
   id             String                   @id
   type           ConversationType
   title          String?
@@ -317,9 +496,13 @@ model ChatConversation {
   updatedAt      DateTime                 @updatedAt
   participants   ChatConversationMember[]
   messages       ChatMessage[]
+  uploadedAttachments ChatAttachment[]
+  @@index([organizationId])
+  @@unique([organizationId, id])
 }
 
 model ChatConversationMember {
+  organizationId String
   id              String           @id
   conversationId  String
   userId          String
@@ -329,9 +512,12 @@ model ChatConversationMember {
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
+  @@index([organizationId])
 }
 
 model ChatMessage {
+  legacyAttachmentsMigratedAt DateTime?
+  organizationId String
   id              String                @id
   conversationId  String
   senderId        String
@@ -348,9 +534,16 @@ model ChatMessage {
   conversation    ChatConversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender          User                  @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
   reactions       ChatMessageReaction[]
+  attachmentLinks ChatMessageAttachment[]
+  clientRequestId String?
+  requestHash String?
+  @@unique([organizationId, senderId, clientRequestId])
+  @@index([organizationId])
+  @@unique([organizationId, id])
 }
 
 model ChatMessageReaction {
+  organizationId String
   id         String   @id
   messageId   String
   userId      String
@@ -360,9 +553,11 @@ model ChatMessageReaction {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([messageId, userId, emoji])
+  @@index([organizationId])
 }
 
 model Notification {
+  organizationId String
   id         String   @id
   userId      String
   kind        String
@@ -384,17 +579,21 @@ model Notification {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([organizationId])
 }
 
 model NotificationPreference {
+  organizationId String
   id              String   @id
-  userId          String   @unique
+  userId String
   delivery        Json
   mutedKinds      Json?
   mutedCategories Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([organizationId])
+  @@unique([organizationId, userId])
 }
 
 model AppSetting {
@@ -405,6 +604,7 @@ model AppSetting {
 }
 
 model AuditLog {
+  organizationId String
   id            String   @id
   actorUserId   String?
   actorFullName String?
@@ -415,13 +615,276 @@ model AuditLog {
   summary       String?
   meta          Json?
   createdAt     DateTime @default(now())
+  @@index([organizationId])
 }
 
 model PresenceEvent {
+  organizationId String
   id         String   @id
   userId      String
   status      String
   taskId      String?
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([organizationId])
+}
+
+model TaskWorkflowEvent {
+  id String @id @default(uuid())
+  organizationId String
+  taskId String
+  actorUserId String
+  idempotencyKey String
+  payloadHash String
+  decision String
+  fromStep Int
+  toStep Int
+  resultSnapshot Json
+  createdAt DateTime @default(now())
+  task Task @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Cascade, map: "TaskWorkflowEvent_scoped_task_fk")
+  @@unique([organizationId, taskId, idempotencyKey])
+  @@index([organizationId, taskId, createdAt])
+}
+
+model OrganizationSetting {
+  organizationId String @id
+  modules Json
+  updatedAt DateTime @updatedAt
+}
+
+model TaskFile {
+  id String @id @default(uuid())
+  organizationId String
+  taskId String
+  createdById String
+  name String
+  currentVersion Int @default(1)
+  archivedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  task Task @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict)
+  createdBy OrganizationMembership @relation(fields: [organizationId, createdById], references: [organizationId, userId], onDelete: Restrict)
+  versions TaskFileVersion[]
+  @@unique([organizationId, id])
+  @@index([organizationId, taskId, archivedAt, createdAt])
+}
+
+model TaskFileVersion {
+  id String @id @default(uuid())
+  organizationId String
+  fileId String
+  version Int
+  originalName String
+  mediaType String
+  byteSize Int
+  checksum String
+  storageKey String @unique
+  uploadKey String
+  requestHash String
+  createdById String
+  createdAt DateTime @default(now())
+  file TaskFile @relation(fields: [organizationId, fileId], references: [organizationId, id], onDelete: Restrict)
+  createdBy OrganizationMembership @relation(fields: [organizationId, createdById], references: [organizationId, userId], onDelete: Restrict)
+  feedback FileVersionFeedback[]
+  reviews TaskFileVersionReview[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, fileId, version])
+  @@unique([organizationId, uploadKey])
+  @@index([organizationId, createdAt])
+}
+
+model FileVersionFeedback {
+  id String @id @default(uuid())
+  organizationId String
+  versionId String
+  authorId String
+  text String
+  createdAt DateTime @default(now())
+  version TaskFileVersion @relation(fields: [organizationId, versionId], references: [organizationId, id], onDelete: Restrict)
+  author OrganizationMembership @relation(fields: [organizationId, authorId], references: [organizationId, userId], onDelete: Restrict)
+  @@index([organizationId, versionId, createdAt])
+}
+
+model ChatAttachment {
+  id String @id @default(uuid())
+  organizationId String
+  conversationId String
+  createdById String
+  originalName String
+  mediaType String
+  byteSize Int
+  checksum String
+  storageKey String @unique
+  uploadKey String
+  requestHash String
+  discardedAt DateTime?
+  createdAt DateTime @default(now())
+  conversation ChatConversation @relation(fields: [organizationId, conversationId], references: [organizationId, id], onDelete: Restrict)
+  createdBy OrganizationMembership @relation(fields: [organizationId, createdById], references: [organizationId, userId], onDelete: Restrict)
+  legacyImports LegacyBlobImport[]
+  messageLinks ChatMessageAttachment[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, uploadKey])
+  @@index([organizationId, conversationId, createdById, createdAt])
+}
+
+model ChatMessageAttachment {
+  organizationId String
+  messageId String
+  attachmentId String
+  message ChatMessage @relation(fields: [organizationId, messageId], references: [organizationId, id], onDelete: Cascade)
+  attachment ChatAttachment @relation(fields: [organizationId, attachmentId], references: [organizationId, id], onDelete: Restrict)
+  @@id([organizationId, messageId, attachmentId])
+  @@index([organizationId, attachmentId])
+}
+
+model TaskChecklistItem {
+ id String @id @default(uuid())
+ organizationId String
+ taskId String
+ text String
+ isDone Boolean @default(false)
+ createdAt DateTime @default(now())
+ task Task @relation(fields:[organizationId,taskId],references:[organizationId,id],onDelete:Cascade)
+ @@index([organizationId,taskId,createdAt])
+}
+model TaskDependency {
+ organizationId String
+ taskId String
+ dependsOnTaskId String
+ task Task @relation("TaskDependencies",fields:[organizationId,taskId],references:[organizationId,id],onDelete:Restrict)
+ dependsOn Task @relation("TaskDependents",fields:[organizationId,dependsOnTaskId],references:[organizationId,id],onDelete:Restrict)
+ @@id([organizationId,taskId,dependsOnTaskId])
+ @@index([organizationId,dependsOnTaskId])
+}
+model TaskTimeEntry {
+ id String @id @default(uuid())
+ organizationId String
+ taskId String
+ userId String
+ workDate DateTime
+ spentMinutes Int
+ note String?
+ version Int @default(0)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ task Task @relation(fields:[organizationId,taskId],references:[organizationId,id],onDelete:Restrict)
+ member OrganizationMembership @relation(fields:[organizationId,userId],references:[organizationId,userId],onDelete:Restrict)
+ @@index([organizationId,taskId,workDate])
+ @@index([organizationId,userId,workDate])
+}
+
+model TaskFileVersionReview {
+ id String @id @default(uuid())
+ organizationId String
+ versionId String
+ reviewerId String
+ kind String
+ decision String
+ comment String?
+ version Int @default(1)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ fileVersion TaskFileVersion @relation(fields:[organizationId,versionId],references:[organizationId,id],onDelete:Restrict)
+ reviewer OrganizationMembership @relation(fields:[organizationId,reviewerId],references:[organizationId,userId],onDelete:Restrict)
+ @@unique([organizationId,versionId,reviewerId])
+ @@index([organizationId,versionId,createdAt])
+}
+
+model RateLimitCounter {
+ id String @id
+ count Int @default(1)
+ expiresAt DateTime
+ @@index([expiresAt])
+}
+model EntitlementChange {
+ id String @id @default(uuid())
+ organizationId String
+ actorUserId String
+ planCode String
+ activeMemberLimit Int
+ storageByteLimit BigInt
+ allowedModules Json
+ createdAt DateTime @default(now())
+ @@index([organizationId,createdAt])
+}
+
+model RealtimeEvent {
+ id String @id @default(uuid())
+ organizationId String
+ kind String
+ entityId String?
+ actorUserId String?
+ recipientUserId String?
+ createdAt DateTime @default(now())
+ expiresAt DateTime
+ receipts RealtimeReceipt[]
+ @@index([organizationId,createdAt])
+ @@index([expiresAt])
+}
+model RealtimeReceipt {
+ instanceId String
+ eventId String
+ event RealtimeEvent @relation(fields:[eventId],references:[id],onDelete:Cascade)
+ @@id([instanceId,eventId])
+}
+
+model LegacyBlobImport {
+ migrationKey String @id
+ sourceChecksum String
+ organizationId String
+ messageId String
+ attachmentIndex Int
+ attachmentId String
+ checksum String
+ createdAt DateTime @default(now())
+ attachment ChatAttachment @relation(fields:[organizationId,attachmentId],references:[organizationId,id],onDelete:Restrict)
+ @@unique([sourceChecksum,messageId,attachmentIndex])
+}
+
+model MinuteAttachment {
+ id String @id @default(uuid())
+ organizationId String
+ minuteId String
+ createdById String
+ originalName String
+ mediaType String
+ byteSize Int
+ checksum String
+ storageKey String @unique
+ uploadKey String
+ requestHash String
+ archivedAt DateTime?
+ createdAt DateTime @default(now())
+ minute MeetingMinute @relation(fields:[organizationId,minuteId],references:[organizationId,id],onDelete:Restrict)
+ member OrganizationMembership @relation(fields:[organizationId,createdById],references:[organizationId,userId],onDelete:Restrict)
+ @@unique([organizationId,uploadKey])
+ @@index([organizationId,minuteId,createdAt])
+}
+
+model PublicLead {
+ id String @id @default(uuid())
+ fullName String
+ contact String
+ organizationName String
+ teamSize Int
+ deploymentMode String
+ message String?
+ consentAt DateTime
+ requestKey String @unique
+ requestHash String
+ status String @default("new")
+ version Int @default(0)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ events PublicLeadEvent[]
+ @@index([status,createdAt])
+}
+model PublicLeadEvent {
+ id String @id @default(uuid())
+ leadId String
+ actorUserId String
+ action String
+ createdAt DateTime @default(now())
+ lead PublicLead @relation(fields:[leadId],references:[id],onDelete:Restrict)
 }

@@ -1,0 +1,20 @@
+import {useEffect,useState} from "react";
+import {Alert,Button,Description,FieldError,Input,Label,ListBox,Select,Text,TextField} from "@heroui/react";
+import {emptyPage,useModule} from "./use-module";
+import type {Request} from "./use-module";
+export function TaskSelect({label,value,onChange,options,disabled=false,required=false}:{label:string;value:string;onChange:(value:string)=>void;options:{id:string;name:string}[];disabled?:boolean;required?:boolean}){
+ return <Select className="task-select" fullWidth aria-label={label} value={value||null} onChange={value=>onChange(String(value||""))} isDisabled={disabled} isRequired={required} placeholder="انتخاب کنید"><Label>{label}</Label><Select.Trigger><Select.Value/><Select.Indicator/></Select.Trigger><Select.Popover className="task-popover" dir="rtl"><ListBox items={options}>{row=><ListBox.Item id={row.id} textValue={row.name}><Label>{row.name}</Label><ListBox.ItemIndicator/></ListBox.Item>}</ListBox></Select.Popover><FieldError/></Select>;
+}
+export function TaskMessage({message,error=false}:{message:string;error?:boolean}){return <Alert status={error?"danger":"success"}><Alert.Indicator/><Alert.Content><Alert.Description>{message}</Alert.Description></Alert.Content></Alert>;}
+type Row={id?:string;userId?:string;name?:string;title?:string;role?:string;status?:string;user?:{fullName:string}};
+export function TaskPicker({api,resource,label,value,onChange,projectId="",required=false,disabled=false,selfId=""}:{api:Request;resource:"projects"|"members"|"tasks";label:string;value:string;onChange:(value:string)=>void;projectId?:string;required?:boolean;disabled?:boolean;selfId?:string}){
+ const [search,setSearch]=useState(""),[query,setQuery]=useState(""),[page,setPage]=useState(1),[chosen,setChosen]=useState<{id:string;name:string}|null>(null);
+ useEffect(()=>{const timer=window.setTimeout(()=>{setQuery(search);setPage(1);},250);return()=>clearTimeout(timer);},[search]);
+ const state=useModule(api,"/"+resource+"?page="+page+"&pageSize=25&search="+encodeURIComponent(query)+(projectId?"&projectId="+encodeURIComponent(projectId):""),emptyPage<Row>());
+ const rows=state.data.items.filter(row=>resource!=="members"||row.role!=="guest").filter(row=>resource!=="tasks"||row.status!=="done").filter(row=>resource!=="projects"||!["completed","archived"].includes(row.status||""));
+ const options=rows.map(row=>({id:row.userId||row.id!,name:row.user?.fullName||row.name||row.title||"بدون عنوان"}));
+ if(selfId&&!options.some(row=>row.id===selfId))options.unshift({id:selfId,name:"خودم"});
+ if(chosen&&chosen.id===value&&!options.some(row=>row.id===chosen.id))options.unshift(chosen);
+ if(!required)options.unshift({id:"none",name:"بدون انتخاب"});
+ return <div className="task-picker"><TextField aria-label={"جستجوی "+label} value={search} onChange={setSearch} isDisabled={disabled} fullWidth><Label>{"جستجوی "+label}</Label><Input type="search" maxLength={200} placeholder="نام را جستجو کنید…"/></TextField><TaskSelect label={label} value={value||(!required?"none":"")} required={required} disabled={disabled||state.loading&&options.length===0} options={options} onChange={id=>{setChosen(options.find(row=>row.id===id)||null);onChange(id==="none"?"":id);}}/>{state.loading&&<Text className="task-help" role="status">در حال دریافت…</Text>}{state.error&&<><TaskMessage error message={state.error}/><Button type="button" variant="ghost" onPress={state.refresh}>دریافت دوباره</Button></>}{!state.loading&&!state.error&&!rows.length&&<Description>گزینه قابل انتخابی در این جستجو نیست.</Description>}{state.data.total>25&&<div className="task-paging"><Button type="button" size="sm" variant="outline" isDisabled={page<=1||state.loading||disabled} onPress={()=>setPage(value=>value-1)}>قبلی</Button><Text>صفحه {new Intl.NumberFormat("fa").format(page)}</Text><Button type="button" size="sm" variant="outline" isDisabled={page*25>=state.data.total||state.loading||disabled} onPress={()=>setPage(value=>value+1)}>بعدی</Button></div>}</div>;
+}

@@ -1,0 +1,15 @@
+{
+  "completedAt": "2026-10-14T05:09:06.761Z",
+  "syntheticOnly": true,
+  "image": "shekof-app:0.1.0",
+  "cleanInstall": true,
+  "httpsInternalCa": true,
+  "containerRestart": true,
+  "backupRestore": true,
+  "restoredFiles": 1,
+  "nonRootApi": true,
+  "privateApiPort": true,
+  "physicalHostReboot": false,
+  "upgradeSchema18To19": true,
+  "previousReleasedBinaryTested": false
+}

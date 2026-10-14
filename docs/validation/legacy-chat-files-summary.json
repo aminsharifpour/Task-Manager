@@ -1,0 +1,16 @@
+{
+  "checkedAt": "2026-10-14T05:19:08.579Z",
+  "dryRun": true,
+  "databaseVerified": false,
+  "sourceUnchanged": true,
+  "summary": {
+    "attachments": 1,
+    "verifiedBlobs": 1,
+    "issues": 1,
+    "duplicateContent": 0
+  },
+  "issueCodes": [
+    "ORGANIZATION_MAPPING_REQUIRED"
+  ],
+  "note": "No destination guessed; original data was not imported."
+}

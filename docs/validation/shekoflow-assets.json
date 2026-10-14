@@ -1,0 +1,46 @@
+{
+  "reference": "https://github.com/aminsharifpour/Shekoflow",
+  "commit": "cf1504d236c804bf57737d4c005fcb77b50fdb7c",
+  "fonts": [
+    {
+      "file": "IRANYekanBlackRd.woff",
+      "bytes": 34500,
+      "gitBlob": "02b473b79ecfd3d75d0dc2dda2a4ed852f80743c"
+    },
+    {
+      "file": "IRANYekanBoldRd.woff",
+      "bytes": 35000,
+      "gitBlob": "0b305c0eddb8631cfe5c786db356958a7448c43a"
+    },
+    {
+      "file": "IRANYekanExtraBlackRd.woff",
+      "bytes": 35608,
+      "gitBlob": "0e6445af07de0ac7010b69d20f758eebf9b26dcb"
+    },
+    {
+      "file": "IRANYekanExtraBoldRd.woff",
+      "bytes": 34224,
+      "gitBlob": "b49794081ea5ce920ef9145ec7d543601230eb07"
+    },
+    {
+      "file": "IRANYekanLightRd.woff",
+      "bytes": 35392,
+      "gitBlob": "d4a89f342f9b844761439fb954daeb761dd79b54"
+    },
+    {
+      "file": "IRANYekanMediumRd.woff",
+      "bytes": 36056,
+      "gitBlob": "c1d38d2a714ec8fbbdc362494d9c726c270bf8a9"
+    },
+    {
+      "file": "IRANYekanRegularRd.woff",
+      "bytes": 35084,
+      "gitBlob": "753dcc4fef31a738bf6014d3a2d531757350a9e1"
+    },
+    {
+      "file": "IRANYekanThinRd.woff",
+      "bytes": 35780,
+      "gitBlob": "cc8383da04f656f10559f4a1b75f417becd6c601"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import "./vendor/animate-ui/animate-ui.css";
 ﻿import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { jalaaliMonthLength, toGregorian, toJalaali } from "jalaali-js";
 import type { Dispatch, SetStateAction } from "react";

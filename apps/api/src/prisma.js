@@ -6,7 +6,9 @@ const globalForPrisma = globalThis;
 export const prisma =
   globalForPrisma.__taskAppPrisma ??
   new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+    // ORM validation errors can contain customer fields or password hashes.
+    // Controllers log only safe error codes and request IDs.
+    log: [],
   });
 
 if (process.env.NODE_ENV !== "production") {

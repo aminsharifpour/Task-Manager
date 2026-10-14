@@ -1,0 +1,12 @@
+{$SITE_ADDRESS} {
+  encode zstd gzip
+  request_body {
+    max_size 28MB
+  }
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy same-origin
+    -Server
+  }
+  reverse_proxy api:8787
+}

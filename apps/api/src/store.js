@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import { fileURLToPath } from "node:url";
+import { isPostgresMode } from "./db-mode.js";
 
 const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const API_ROOT = path.resolve(CURRENT_DIR, "..");
@@ -703,6 +704,7 @@ function ensureStore() {
 }
 
 export function readStore() {
+  if (isPostgresMode) throw new Error("JSON_STORE_DISABLED: PostgreSQL operations must use a repository.");
   ensureStore();
   const raw = fs.readFileSync(DATA_FILE, "utf8");
   try {
@@ -738,13 +740,12 @@ export function readStore() {
     }
     return withTeams;
   } catch {
-    const fallback = ensureTeamAssignments(ensureAdminAccount({ ...defaultData, teamMembers: [] }));
-    fs.writeFileSync(DATA_FILE, JSON.stringify(fallback, null, 2), "utf8");
-    return fallback;
+    throw new Error("INVALID_JSON_STORE: source was preserved; restore a validated backup.");
   }
 }
 
 export function writeStore(next) {
+  if (isPostgresMode) throw new Error("JSON_STORE_DISABLED: PostgreSQL operations must use a repository.");
   ensureStore();
   const normalized = {
     ...next,

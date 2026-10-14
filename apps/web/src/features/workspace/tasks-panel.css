@@ -1,0 +1,68 @@
+
+.tasks-page {display:grid;gap:20px;min-width:0;}
+.task-page-toolbar,.task-toolbar-actions,.task-view-switch,.task-row-actions,.task-paging {display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.task-page-toolbar {justify-content:space-between;}
+.task-section-label {display:block;font-size:15px;font-weight:700;color:var(--workspace-ink);margin-bottom:4px;}
+.tasks-page .description {font-size:12px;}
+.tasks-list-card {padding:0;gap:0;border:1px solid var(--workspace-border);background:#fff;border-radius:16px;box-shadow:0 2px 3px #24473b04;overflow:hidden;}
+.task-list-header {flex-direction:row;align-items:center;justify-content:space-between;gap:16px;padding:20px 24px;border-bottom:1px solid #edf1ee;}
+.task-list-header .card__title {font-size:15px;}
+.task-list-header .card__description {font-size:12px;margin-top:4px;}
+.task-list-content {padding:0;gap:0;}
+.task-filter-grid {display:grid;grid-template-columns:minmax(0,1.6fr) repeat(2,minmax(0,1fr));gap:18px;padding:18px 24px;align-items:end;}
+.tasks-page .input,.tasks-page .select__trigger,.task-modal .input,.task-modal .textarea,.task-modal .select__trigger {font-family:"IRANYekan",Tahoma,sans-serif;font-size:13px;box-shadow:none;border:1px solid #dce9df;background:#fff;border-radius:9px;min-height:40px;}
+.tasks-page .label,.task-modal .label {font-family:"IRANYekan",Tahoma,sans-serif;font-size:12px;}
+.task-select {width:100%;}
+.tasks-page .select__value,.task-modal .select__value {text-align:start;}
+.task-popover {font-family:"IRANYekan",Tahoma,sans-serif;}
+.task-popover .label {font-family:inherit;font-size:13px;}
+.task-filter-extras {display:flex;justify-content:space-between;align-items:center;padding:0 18px 12px;gap:12px;}
+.task-filter-extras .button {font-size:11px;}
+.tasks-table {border:0;border-radius:0;box-shadow:none;}
+.tasks-table .table__content {min-width:1120px;width:100%;}
+.tasks-table .task-title-button {margin:0;padding:0;display:flex;align-items:center;gap:10px;justify-content:flex-start;text-align:start;max-width:260px;}
+.task-title-button>svg {color:var(--workspace-primary);background:var(--workspace-mint);padding:8px;box-sizing:content-box;border-radius:9px;flex-shrink:0;}
+.task-title-button>span {min-width:0;}
+.task-title-button strong {display:block;font-size:13px;font-weight:600;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.task-description {display:block;max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--workspace-muted);margin-top:3px;}
+.task-row-actions {gap:4px;max-width:220px;}
+.task-row-actions .button {margin:0;font-size:11px;}
+.task-stage {font-size:11px;color:var(--workspace-muted);}
+.task-table-footer {display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px 24px;border-top:1px solid #edf1ee;background:#fff;font-size:12px;color:var(--workspace-muted);width:100%;}
+.tasks-table .table__footer {padding:0;}
+.task-loading {display:flex;justify-content:center;align-items:center;gap:10px;padding:12px;font-size:12px;color:var(--workspace-muted);}
+.task-empty {display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:44px 20px;text-align:center;}
+.task-empty>svg {color:var(--workspace-primary);}
+.task-empty>.text {font-size:14px;font-weight:600;}
+.task-empty .button {margin-top:8px;}
+.task-alternate-view {padding:20px 24px;}
+.task-alternate-view>.description {display:block;margin-bottom:14px;}
+.task-board {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;}
+.task-board-column {background:#f4f8f5;border:1px solid #dce9df;border-radius:12px;padding:12px;}
+.task-board-column>.card__header {flex-direction:row;justify-content:space-between;align-items:center;}
+.task-board-column>.card__header .card__title {font-size:13px;}
+.task-board-column>.card__content {gap:12px;}
+.task-board-card {background:#fff;border:1px solid #dce9df;border-radius:10px;padding:14px;box-shadow:0 2px 3px #24473b04;}
+.task-board-card .card__title {font-size:13px;}
+.task-board-card .card__content>.text {font-size:12px;overflow-wrap:anywhere;}
+.task-board-card .card__footer {flex-wrap:wrap;gap:6px;}
+.task-modal {font-family:"IRANYekan",Tahoma,sans-serif;color:#24473b;--accent:#205a49;--accent-foreground:#fff;--focus:#397d60;--font-sans:"IRANYekan",Tahoma,sans-serif;width:calc(100vw - 32px);max-width:720px;}
+.task-status-modal {max-width:440px;}
+.task-modal .modal__header {padding-bottom:18px;border-bottom:1px solid #edf1ee;}
+.task-modal .modal__heading {font-family:inherit;font-size:21px;font-weight:700;}
+.task-modal .modal__icon {background:#edf6ef;color:#205a49;}
+.task-modal .modal__close-trigger {right:auto;left:14px;inset-inline-start:auto;inset-inline-end:14px;}
+.task-create-form {display:flex;flex-direction:column;gap:0;min-height:0;}
+.task-modal .modal__body {display:flex;flex-direction:column;gap:18px;padding-top:22px;}
+.task-modal .modal__footer {border-top:1px solid #edf1ee;padding-top:18px;gap:10px;}
+.task-modal .button {font-family:inherit;font-size:13px;border-radius:9px;gap:8px;}
+.task-modal .button--primary {background:#205a49;color:#fff;border:1px solid #205a49;}
+.task-modal .button--outline {border-color:#dce9df;background:#fff;color:#24473b;}
+.task-modal .description,.task-modal .field-error,.task-help {font-size:11px;}
+.task-modal .textarea {min-height:90px;resize:vertical;}
+.task-form-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start;}
+.task-picker {display:grid;gap:8px;min-width:0;}
+.task-modal .textfield {width:100%;}
+.task-form-heading {font-size:13px;font-weight:600;padding-top:12px;border-top:1px solid #edf1ee;}
+@media(max-width:1100px){.task-list-header{flex-wrap:wrap;}.task-board{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:650px){.task-filter-grid{grid-template-columns:1fr;gap:14px;padding:18px;}.task-list-header{padding:18px;}.task-table-footer{padding:14px 18px;}.task-form-grid{grid-template-columns:1fr;gap:16px;}.task-toolbar-actions .button{min-height:40px;}.task-modal .modal__heading{font-size:19px;}.task-alternate-view{padding:18px;}.task-board{grid-template-columns:1fr;}}

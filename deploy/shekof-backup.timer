@@ -1,0 +1,10 @@
+[Unit]
+Description=Shekof backup schedule (adjust OnCalendar to the chosen maintenance window)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+Unit=shekof-backup.service
+
+[Install]
+WantedBy=timers.target

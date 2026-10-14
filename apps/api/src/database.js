@@ -12,13 +12,15 @@ export async function connectDatabase() {
   }
   try {
     await prisma.$connect();
+    await prisma.user.count();
+    if (process.env.TENANT_FOUNDATION_ENABLED === "true") await prisma.organization.count();
     dbConnected = true;
     lastDbError = "";
     return { mode: DB_MODE, connected: true, provider: "postgresql" };
   } catch (error) {
     dbConnected = false;
-    lastDbError = String(error?.message ?? error ?? "unknown");
-    return { mode: DB_MODE, connected: false, provider: "postgresql", error: lastDbError };
+    lastDbError = "DATABASE_NOT_READY";
+    throw new Error("PostgreSQL connection failed. Check database configuration without logging credentials.");
   }
 }
 

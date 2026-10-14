@@ -1,0 +1,10 @@
+[Unit]
+Description=Consistent Shekof database and file backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/shekof
+ExecStart=/usr/bin/node scripts/backup-scheduled.mjs --project shekof --env-file /etc/shekof/release.env --backup-root /var/backups/shekof
+UMask=0077
