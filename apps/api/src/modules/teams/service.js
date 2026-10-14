@@ -46,7 +46,7 @@ export async function updateMember(c,userId,body){
     await audit(tx,current,"membership.updated",userId);return result;
   });
 }
-export async function listTeams(c,query){requireInternal(c);return pageRows("team",{organizationId:c.organizationId,...(query.includeArchived==="true"?{}:{isActive:true})},query,{include:{memberships:{select:{userId:true,user:{select:{fullName:true}}}}}});}
+export async function listTeams(c,query){requireInternal(c);return pageRows("team",{organizationId:c.organizationId,...(query.includeArchived==="true"?{}:{isActive:true}),...(query.search?{name:{contains:text(query.search,"جستجو",200),mode:"insensitive"}}:{})},query,{include:{memberships:{select:{userId:true,user:{select:{fullName:true,avatarUrl:true}}}}}});}
 export async function saveTeam(c,id,body){
   requireAdmin(c);const name=text(body.name,"نام تیم");const description=optionalText(body.description,"توضیح");
   return mutate(c,"teams",async(tx,current)=>{requireAdmin(current);if(id&&!await tx.team.findFirst({where:{id,organizationId:current.organizationId}}))deny();
@@ -64,3 +64,4 @@ export async function archiveTeam(c,id){requireAdmin(c);return mutate(c,"teams",
 
 export async function reactivateMember(c,userId,b){return mutate(c,"teams",async(tx,current)=>{requireAdmin(current);const target=await tx.organizationMembership.findUnique({where:{organizationId_userId:{organizationId:current.organizationId,userId}},include:{user:{select:{isActive:true}}}});if(!target||!target.user.isActive)deny();if(target.role==="owner"||target.role==="admin"&&current.role!=="owner")throw new DomainError(403,"PROTECTED_MEMBERSHIP","تغییر این عضویت مجاز نیست.");if(target.status==="active")return {ok:true};const org=await tx.organization.findUnique({where:{id:current.organizationId}});if(await tx.organizationMembership.count({where:{organizationId:current.organizationId,status:"active"}})>=org.activeMemberLimit)throw new DomainError(409,"MEMBER_LIMIT","ظرفیت اعضای فعال تکمیل است.");await tx.organizationMembership.update({where:{organizationId_userId:{organizationId:current.organizationId,userId}},data:{status:"active",canManageHr:false,canManageAccounting:false}});await audit(tx,current,"membership.reactivated",userId);return {ok:true};});}
 export async function restoreTeam(c,id){return mutate(c,"teams",async(tx,current)=>{requireAdmin(current);if(!await tx.team.findFirst({where:{id,organizationId:current.organizationId}}))deny();await tx.team.update({where:{id},data:{isActive:true}});await audit(tx,current,"team.restored",id);return {ok:true};});}
+

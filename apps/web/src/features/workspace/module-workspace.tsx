@@ -8,9 +8,8 @@ const Tasks = lazy(() => import("./tasks-panel"));
 const Teams = lazy(() => import("./teams-panel"));
 const Chat = lazy(() => import("./chat-panel"));
 const Minutes = lazy(() => import("./minutes-panel"));
-const Notifications = lazy(() => import("./basic-panels").then(m => ({ default: m.NotificationsPanel })));
-const Hr = lazy(() => import("./sensitive-panels").then(m => ({ default: m.HrPanel })));
-const Accounting = lazy(() => import("./sensitive-panels").then(m => ({ default: m.AccountingPanel })));
+const Notifications = lazy(() => import("./notifications-panel"));
+const Hr = lazy(() => import("./hr-panel"));
 type Config = { modules: Record<string, boolean>; permissions: Permissions };
 export default function ModuleWorkspace({ organizationId, request, section, resourceId="" }: { organizationId: string; request: Request; section: string;resourceId?:string }) {
   const api = useMemo<Request>(() => <T,>(path: string, options?: RequestInit) => request<T>("/api/organizations/" + encodeURIComponent(organizationId) + path, options), [organizationId, request]);
@@ -21,7 +20,7 @@ export default function ModuleWorkspace({ organizationId, request, section, reso
   const props = { api, permissions: config.data.permissions };
   return <Suspense fallback={<p role="status">در حال بارگذاری بخش…</p>}>
     {section==="search"?<Search api={api} organizationId={organizationId}/>:section === "settings" ? <Settings {...props} /> : section === "dashboard" ? <Dashboard {...props} organizationId={organizationId} /> : section === "tasks" ? <Tasks {...props} initialTaskId={resourceId}/> : section === "teams" ? <Teams {...props} /> : section === "minutes" ? <Minutes {...props} initialMinuteId={resourceId}/> :
-      section === "chat" ? <Chat {...props} initialRoomId={resourceId}/> : section === "notifications" ? <Notifications api={api} /> : section === "hr" ? <Hr {...props} /> :
-      section === "accounting" ? <Accounting {...props} /> : null}
+      section === "chat" ? <Chat {...props} initialRoomId={resourceId}/> : section === "notifications" ? <Notifications api={api} organizationId={organizationId} /> : section === "hr" ? <Hr {...props} /> :
+      null}
   </Suspense>;
 }

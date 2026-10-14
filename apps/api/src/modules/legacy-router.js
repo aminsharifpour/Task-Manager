@@ -1,3 +1,4 @@
+import {avatarMembersRouter} from "./accounts/avatar-router.js";
 import {minuteAttachmentsRouter} from "./minutes/attachments-router.js";
 import { Router } from "express";
 import * as teams from "./teams/service.js";
@@ -20,14 +21,15 @@ import { taskCoreRouter } from "./tasks/core-router.js";
 
 export function legacyModulesRouter(){
   const r=Router();
+  r.use(avatarMembersRouter());
   r.use(filesRouter());
   r.use(minuteAttachmentsRouter());
   r.use(chatAttachmentsRouter());
   r.use(taskCoreRouter());
   r.use(organizationOperationsRouter());
   const wrap=(fn,status=200)=>async(req,res,next)=>{try{if(req.body!==undefined&&(!req.body||typeof req.body!=="object"||Array.isArray(req.body)))throw new DomainError(400,"INVALID_INPUT","درخواست معتبر نیست.");res.status(status).json(await fn(req.organization,req));}catch(e){next(e);}};
-  r.get("/module-settings",wrap(async(c)=>{const configured={...defaultModules,...(await prisma.organizationSetting.findUnique({where:{organizationId:c.organizationId}}))?.modules},org=await prisma.organization.findUnique({where:{id:c.organizationId},select:{allowedModules:true,calendar:true,timezone:true}});return {modules:Object.fromEntries(Object.entries(configured).map(([key,value])=>[key,value&&org.allowedModules?.[key]!==false])),configuredModules:configured,calendar:org.calendar,timezone:org.timezone,permissions:{userId:c.userId,role:c.role,canManageHr:c.canManageHr,canManageAccounting:c.canManageAccounting}};}));
-  r.put("/module-settings",wrap(async(c,req)=>{requireAdmin(c);if(c.role!=="owner")throw new DomainError(403,"PERMISSION_DENIED","تنظیم بخش‌ها با مالک است.");const modules={...defaultModules};for(const [key,value]of Object.entries(req.body.modules||{})){if(!Object.hasOwn(modules,key)||typeof value!=="boolean")throw new DomainError(400,"INVALID_MODULE_SETTING","تنظیم بخش معتبر نیست.");modules[key]=value;}return mutate(c,null,async(tx,current)=>{requireAdmin(current);if(current.role!=="owner")throw new DomainError(403,"PERMISSION_DENIED","مجوز کافی نیست.");const row=await tx.organizationSetting.upsert({where:{organizationId:current.organizationId},create:{organizationId:current.organizationId,modules},update:{modules}});await audit(tx,current,"organization.modules_updated",current.organizationId);return row;});}));
+  r.get("/module-settings",wrap(async(c)=>{const configured={...defaultModules,...(await prisma.organizationSetting.findUnique({where:{organizationId:c.organizationId}}))?.modules},org=await prisma.organization.findUnique({where:{id:c.organizationId},select:{allowedModules:true,calendar:true,timezone:true}});configured.accounting=false;return {modules:Object.fromEntries(Object.entries(configured).map(([key,value])=>[key,value&&org.allowedModules?.[key]!==false])),configuredModules:configured,calendar:org.calendar,timezone:org.timezone,permissions:{userId:c.userId,role:c.role,canManageHr:c.canManageHr,canManageAccounting:c.canManageAccounting}};}));
+  r.put("/module-settings",wrap(async(c,req)=>{requireAdmin(c);if(c.role!=="owner")throw new DomainError(403,"PERMISSION_DENIED","تنظیم بخش‌ها با مالک است.");const modules={...defaultModules};for(const [key,value]of Object.entries(req.body.modules||{})){if(!Object.hasOwn(modules,key)||typeof value!=="boolean")throw new DomainError(400,"INVALID_MODULE_SETTING","تنظیم بخش معتبر نیست.");modules[key]=value;}modules.accounting=false;return mutate(c,null,async(tx,current)=>{requireAdmin(current);if(current.role!=="owner")throw new DomainError(403,"PERMISSION_DENIED","مجوز کافی نیست.");const row=await tx.organizationSetting.upsert({where:{organizationId:current.organizationId},create:{organizationId:current.organizationId,modules},update:{modules}});await audit(tx,current,"organization.modules_updated",current.organizationId);return row;});}));
   // The tenant context is already resolved by the organizations router. No legacy global route is reopened.
   for(const prefix of ["members","teams","tasks","minutes","hr","accounting","chat","notifications","notification-preferences"]){
     const module=prefix==="members"?"teams":prefix==="notification-preferences"?"notifications":prefix;
@@ -82,6 +84,9 @@ export function legacyModulesRouter(){
   r.put("/accounting/budgets/:month",wrap((c,q)=>accounting.setBudget(c,q.params.month,q.body)));
   r.get("/accounting/budget-history",wrap((c,q)=>accounting.budgetHistory(c,q.query)));
   r.get("/chat/conversations",wrap((c,q)=>chat.list(c,q.query)));
+  r.get("/chat/inbox-summary",wrap((c)=>chat.inboxSummary(c)));
+  r.get("/chat/conversations/:id",wrap((c,q)=>chat.detail(c,q.params.id)));
+  r.patch("/chat/conversations/:id/inbox",wrap((c,q)=>chat.saveInbox(c,q.params.id,q.body)));
   r.post("/chat/conversations",wrap((c,q)=>chat.create(c,q.body),201));
   r.patch("/chat/conversations/:id",wrap((c,q)=>chat.update(c,q.params.id,q.body)));
   r.delete("/chat/conversations/:id",wrap((c,q)=>chat.remove(c,q.params.id)));
@@ -92,6 +97,7 @@ export function legacyModulesRouter(){
   r.delete("/chat/messages/:id",wrap((c,q)=>chat.editMessage(c,q.params.id,{},true)));
   r.post("/chat/messages/:id/reactions",wrap((c,q)=>chat.react(c,q.params.id,q.body)));
   r.get("/notifications",wrap((c,q)=>notifications.list(c,q.query)));
+  r.get("/notifications/summary",wrap((c)=>notifications.summary(c)));
   r.post("/notifications/bulk/:operation",wrap((c,q)=>notifications.bulk(c,q.params.operation)));
   r.post("/notifications/:id/:operation",wrap((c,q)=>notifications.change(c,q.params.id,q.params.operation)));
   r.get("/notification-preferences",wrap((c)=>notifications.preference(c)));
@@ -99,4 +105,5 @@ export function legacyModulesRouter(){
   r.get("/dashboard",wrap(async(c)=>{await ensureModule(c,"tasks");requireInternal(c);const statuses=await prisma.task.groupBy({by:["status"],where:tasks.visibleTasks(c),_count:{_all:true}});return {statuses,overdue:await prisma.task.count({where:{...tasks.visibleTasks(c),isDone:false,executionDate:{lt:new Date()}}}),myTasks:await prisma.task.count({where:{...tasks.visibleTasks(c),assigneePrimaryId:c.userId,isDone:false}})};}));
   return r;
 }
+
 

@@ -21,7 +21,7 @@ export async function signup(body){
  });
 }
 export const isOperator=userId=>(process.env.PLATFORM_OPERATOR_USER_IDS||"").split(",").map(id=>id.trim()).filter(Boolean).includes(userId);
-export async function account(userId){const user=await prisma.user.findUnique({where:{id:userId},select:{id:true,fullName:true,phone:true,email:true,isActive:true}});return {...user,isOperator:isOperator(userId),emailVerified:false};}
+export async function account(userId){const user=await prisma.user.findUnique({where:{id:userId},select:{id:true,fullName:true,phone:true,email:true,avatarUrl:true,isActive:true}});return {...user,isOperator:isOperator(userId),emailVerified:false};}
 export async function updateAccount(auth,body){
  const data={};if(body.fullName!==undefined)data.fullName=text(body.fullName,"نام");
  if(body.password!==undefined){const current=await prisma.user.findUnique({where:{id:auth.userId}});if(!verifyPasswordForStore(String(body.currentPassword||""),current.passwordHash))throw new DomainError(403,"CURRENT_PASSWORD_REQUIRED","رمز فعلی درست نیست.");const password=typeof body.password==="string"?body.password:"";if(password.trim().length<12||password.length>200||Buffer.byteLength(password,"utf8")>72)throw new DomainError(400,"WEAK_PASSWORD","رمز باید دست‌کم ۱۲ کاراکتر باشد.");data.passwordHash="bcrypt$"+await bcrypt.hash(password,12);}
@@ -39,3 +39,4 @@ export async function setup(body){
  return prisma.$transaction(async tx=>{await tx.$executeRaw`SELECT pg_advisory_xact_lock(72411012)`;if(await tx.user.count()||await tx.organization.count())throw new DomainError(409,"SETUP_CLOSED","راه‌اندازی اولیه قبلاً انجام شده است.");const user=await tx.user.create({data:{id:uuid(),fullName,phone,email:email?.toLowerCase(),passwordHash,appRole:"member"}});const org=await tx.organization.create({data:{name,memberships:{create:{userId:user.id,role:"owner",canManageHr:true,canManageAccounting:true}}}});await tx.organizationAudit.create({data:{organizationId:org.id,actorUserId:user.id,action:"organization.setup",entityId:org.id}});return user;});
 }
 export async function needsSetup(){return runtimeConfig.tenantFoundation&&runtimeConfig.deploymentMode==="self_hosted"&&(await prisma.user.count())===0&&(await prisma.organization.count())===0;}
+

@@ -92,6 +92,7 @@ model User {
   phone                  String                    @unique
   bio                    String?
   avatarUrl              String?
+  avatar                 UserAvatar?
   appRole                AppRole                   @default(member)
   isActive               Boolean                   @default(true)
   passwordHash           String
@@ -507,6 +508,10 @@ model ChatConversationMember {
   conversationId  String
   userId          String
   unreadCount     Int              @default(0)
+  isStarred       Boolean          @default(false)
+  inboxFolder     String           @default("inbox")
+  inboxLabel      String?
+  draftText       String           @default("")
   joinedAt        DateTime         @default(now())
   conversation    ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -887,4 +892,11 @@ model PublicLeadEvent {
  action String
  createdAt DateTime @default(now())
  lead PublicLead @relation(fields:[leadId],references:[id],onDelete:Restrict)
+}
+
+model UserAvatar {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bytes Bytes
+  updatedAt DateTime @updatedAt
 }

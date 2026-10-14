@@ -5,7 +5,7 @@ import { DomainError, deny, pagination, text } from "../organizations/policy.js"
 
 export { prisma, DomainError, deny, pagination, text };
 export const manager = (c) => ["owner", "admin", "project_manager"].includes(c.role);
-export const defaultModules = Object.freeze({ teams: true, tasks: true, files: true, minutes: true, chat: true, notifications: true, hr: true, accounting: true });
+export const defaultModules = Object.freeze({ teams: true, tasks: true, files: true, minutes: true, chat: true, notifications: true, hr: true, accounting: false });
 export const optionalText = (v, label, max = 5000) => v == null || v === "" ? null : text(v, label, max);
 export function date(v, nullable = false) {
   if (nullable && (v == null || v === "")) return null;
@@ -30,6 +30,7 @@ export const idArray = (value) => {
   return [...new Set(value)];
 };
 export async function ensureModule(context, module, tx = prisma) {
+  if(module==="accounting")throw new DomainError(403,"MODULE_DISABLED","امور مالی در این محصول ارائه نمی‌شود.");
   const org=await tx.organization.findUnique({where:{id:context.organizationId},select:{allowedModules:true}});
   if(org?.allowedModules?.[module]===false)throw new DomainError(403,"PLAN_FEATURE_DISABLED","این قابلیت در طرح سازمان فعال نیست.");
   const config = await tx.organizationSetting.findUnique({ where: { organizationId: context.organizationId } });

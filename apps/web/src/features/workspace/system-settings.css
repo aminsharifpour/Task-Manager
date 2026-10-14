@@ -1,0 +1,5 @@
+.system-settings-tabs{min-width:0;gap:20px}
+.system-settings-tabs>.tabs__list-container{margin-bottom:20px}
+.system-settings-tabs>.tabs__list-container .tabs__tab{font-family:inherit;gap:8px;font-size:13px;white-space:nowrap}
+.system-settings-tabs>.tabs__panel{padding:0;min-width:0}
+@media(max-width:600px){.system-settings-tabs>.tabs__list-container .tabs__tab{font-size:12px}.system-settings-tabs>.tabs__list-container{margin-bottom:16px}}

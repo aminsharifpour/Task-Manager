@@ -62,3 +62,18 @@
 .member-modal .task-select {width:100%;}
 .member-modal .select__value {text-align:start;}
 .team-item .card__content>.text {overflow-wrap:anywhere;}
+
+.members-teams-tabs {width:100%;min-width:0;}
+.members-teams-tabs>.tabs__list-container {margin-bottom:24px;}
+.members-teams-tabs .tabs__list {justify-content:flex-start;gap:18px;}
+.members-teams-tabs .tabs__tab {font-family:"IRANYekan",Tahoma,sans-serif;font-size:14px;gap:8px;padding:12px 18px;}
+.members-teams-tabs .tabs__tab[aria-selected="true"] {color:#205a49;font-weight:700;}
+.members-teams-tabs .tabs__indicator {background:#205a49;}
+.members-tab-panel {padding:0;min-width:0;}
+.members-tab-panel[hidden] {display:none;}
+.teams-table .table__content {min-width:850px;}
+.team-table-identity {display:flex;align-items:center;gap:10px;}
+.team-table-identity>svg {padding:8px;box-sizing:content-box;border-radius:9px;background:#edf6ef;color:#205a49;flex-shrink:0;}
+.team-table-description {display:block;max-width:260px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:12px;color:#617b70;}
+
+.members-teams-tabs .members-tab-hidden {display:none;}
