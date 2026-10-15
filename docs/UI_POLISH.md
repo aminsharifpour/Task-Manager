@@ -77,3 +77,58 @@ Build/TypeScript و syntax API موفق؛ مشاهده محدود پنج تب و
 - Redesigned the HeroUI search dialog: 640px desktop surface, dedicated icon/title/subtitle header, close control opposite the RTL title, clear search field/action, category hints and access-scope footer. Mobile uses a stacked full-width form.
 - Redesigned the profile dropdown with avatar/name summary, aligned icon containers, separate title/description lines, arrows and visually separated logout. Scoped portal tokens and explicit Menu item layout fix the overlapping text shown in the user's screenshot.
 - Build passed. Narrow read-only visual check: no title/description overlap, 640px search dialog, no mobile horizontal overflow and no browser errors. Search/account actions remain connected to existing behavior; broad acceptance tests remain deferred.
+
+### 2026-10-15 — Persian task Gantt
+- Replaced the per-row percentage bars with a horizontally scrollable RTL timeline: daily Jalali month, weekly three-month range, and monthly Jalali year; previous/next, today and earliest-date controls.
+- Added a fixed task/project column with exact Persian start/end dates, status colors, date-only markers, unscheduled rows, today line and explicit 100-row pagination. Unknown dates are never inferred from unrelated fields.
+- Added scoped GET /tasks/timeline with interval-overlap filtering, inherited search/status/priority/due filters, bounds and permission-filtered prerequisite metadata. The Gantt no longer depends on the table's current 25 rows. Fresh organization membership/module checks remain; inaccessible prerequisites expose no identity or title.
+- Dependency arrows run from prerequisite finish to dependent start. Red marks indicate a planned start earlier than prerequisite finish. The schedule dialog lists authorized prerequisites outside the visible range/page too, and links to task details. Only authorized tasks expose versioned schedule editing.
+- Added shared Jalali date conversion/input handling with Persian digits and leap-day validation. Task creation/details, due filters, work-date entry, custom date fields and task calendar use Persian dates; API/storage remain ISO dates.
+- Production TypeScript/build and API syntax checks passed. Real read-only timeline response returned 200. Narrow UI checks used browser-only fixtures (no task writes) for three scales, two dependency arrows, versioned editor prefill ۱۴۰۵/۰۷/۰۱ and 390px no document overflow; no browser errors. Date conversion checked Nowruz and valid/invalid Esfand leap days. Broad acceptance/permission/load suites remain deferred by user instruction.
+
+### 2026-10-15 — HR modal redesign
+- Rebuilt shared HeroUI HR dialogs with icon/title/subtitle headers, scoped portal colors, internal body scrolling and persistent footer actions. Responsive widths differentiate personnel profiles, detail views and destructive confirmation.
+- Grouped personnel fields into owner, personal details, employment/manager, base compensation, emergency contact, and skills/notes sections. All previous fields and authorization/load/save behavior remain.
+- Redesigned leave creation/review with applicant summary, separate date cards, request reason and review result sections. Rejection action uses its existing destructive color.
+- Redesigned attendance creation/editing, locked identity/date when editing, entry/exit hours preview, and notes. Delete confirmation now identifies the exact person/date/status. Detail dialogs use structured readable cards and explicit close actions.
+- HR dates and filters use shared Jalali inputs/display, including min/max validation; backend payloads remain ISO. No schema/API change or HR record migration.
+- Production build passed. Narrow read-only visual checks covered creation/editing/detail, leave review and attendance deletion confirmations using browser-only fixtures. Desktop/mobile dialogs and footer actions remained in the viewport, body scrolling worked, 390px had no horizontal page overflow, and no browser errors occurred. No HR records were created, changed or deleted; broad acceptance testing remains deferred.
+
+### 2026-10-15 — Dashboard redesign
+- Rebuilt the dashboard with HeroUI cards, table, meters, forms and scoped dialogs. The hierarchy is now scope controls, four primary counters, status/progress distribution, follow-up items, personal tasks and project summaries, followed by optional workload management.
+- Replaced the overlapping-category chart with mutually exclusive todo/doing/blocked/done counts. Extended the existing fresh-scoped dashboard response with status counts and up to five recently updated projects that pass project visibility, with task progress calculated only from visible tasks.
+- Added an accessible project-scope dialog with server-paged search, a personal-task status filter, linked task/project actions, Persian date labels, clear empty/loading/error states, and responsive layouts.
+- Preserved manager workload and owner-only capacity editing. Workload loads on expansion, uses Persian date fields, explains its organization-wide scope and estimate basis, and shows a structured member table. Capacity editing now starts with the actual persisted weekly capacity returned by the endpoint.
+- Production build/API syntax checks passed. Real dashboard returned 200 and status counts summed to total; capacity dialog prefilled 2400 from real data. Read-only layout checks covered scope/capacity dialogs and mobile no page overflow; browser-only fixtures exercised populated visual states, with no task/project/capacity writes or browser errors. Actual desktop viewport layout was verified separately because Chrome's RTL full-page capture shifts rendering during capture. Broad acceptance tests remain deferred.
+
+### 2026-10-15 — Authentication redesign
+- Added a dedicated HeroUI authentication layout with shared brand header, a calm two-column desktop story/form composition and a compact single-column mobile view. Preserved green brand accents and IRANYekan with complementary blue, violet and cyan details.
+- Rebuilt login fields, accessible password visibility toggle, pending submission and server error presentation. Phone input normalizes Persian/Arabic digits. Existing login endpoint/session behavior remains.
+- Matched signup and initial setup to the same layout while preserving invitation handling, required fields and password rules. Unauthenticated views no longer render the workspace header/footer.
+- Production build passed. Narrow browser checks verified desktop/mobile rendering, signup rendering, password toggle, phone normalization and mocked login error display; no browser errors or 390px page overflow. No accounts or business records were created or changed. Comprehensive authentication acceptance tests remain deferred.
+
+### 2026-10-15 — Minimal workspace motion
+- Added a scoped CSS motion layer without dependencies: finite module fades, section-heading reveals on navigation, lightly staggered dashboard counters, authentication entry and feedback messages.
+- Added subtle pointer hover/press feedback, navigation icon movement, field focus and table-cell background transitions. No animated table geometry, perpetual decoration or business-state remounts were introduced; only the heading is keyed by section/organization.
+- Refined HeroUI modal entrance/exit through existing data-entering/data-exiting lifecycle attributes, and shortened menu entrance scale. Portal focus and dismissal remain owned by HeroUI.
+- Respects prefers-reduced-motion across the foundation shell and portalled overlays. Production build passed. Narrow checks confirmed counter delays, login/heading animation styles, reduced-motion styles in both shell and search modal, Escape dismissal, no 390px overflow or browser errors. Broad testing remains deferred; no business records changed.
+
+### 2026-10-15 — Consistent Jalali dates
+- Made shared date display and the header clock always use the Persian calendar, including organizations previously configured for Gregorian presentation. Kept instant display in the organization timezone and date-only display stable in UTC.
+- Converted project creation, project settings, workflow stage/approval deadlines, minute create/edit and minute date filters to the shared HeroUI Jalali date field. Existing task, Gantt, HR, account, notification, chat and activity views share or already use Jalali presentation. Legacy application calendar already uses the Persian DayPicker.
+- Settings now show the fixed Jalali display policy and retain editable timezone. Removed the calendar's unused Gregorian branch; task work-date defaults now follow workspace timezone rather than UTC.
+- Dates remain ISO at API/storage/export boundaries; no record migration or data rewrite. Retired finance code stays disabled and unchanged.
+- Production build passed. Narrow browser checks confirmed Persian input normalization and ISO conversion (1405/07/23 -> 2026-10-15), Persian minute prefill, rejection of invalid 1404/12/30, no native Gregorian date inputs in inspected views, no 390px overflow or browser errors. Browser-only POST interception prevented record mutations. Full acceptance testing remains deferred.
+
+### 2026-10-15 — HeroUI Persian DatePicker
+- Replaced the shared Jalali text field with HeroUI v3 DatePicker + segmented DateField and Calendar. All existing shared-field consumers now offer a calendar popup, Persian month/year/day labels, Saturday-first grid, month navigation and year selection.
+- Added workspace-timezone Today action, optional-date clearing, disabled/required state, native form validation and min/max bounds. Controlled values convert explicitly between Persian CalendarDate and Gregorian ISO without changing endpoint/storage contracts.
+- Scoped popover styles preserve IRANYekan/brand colors and stay within mobile viewport, including when portalled from a modal. Supplied both React Aria locale contexts because HeroUI 3.0.2's year picker uses the separate @react-aria/i18n formatter.
+- Declared existing resolved @internationalized/date, react-aria-components and @react-aria/i18n packages as direct dependencies at their installed versions. Production build passed (existing bundle-size advisory only).
+- Browser-only fixtures checked Persian month navigation/year choice, day selection -> 2026-10-07 ISO, disabled days before minimum, optional clearing, Escape popup dismissal and 390px popup bounds. No browser errors or business record writes; broad acceptance testing remains deferred.
+
+### 2026-10-15 — Illustration-led public landing
+Rebuilt the public home with a warm cream/forest-green Shekof family design, two original transparent illustrations, HeroUI sample product tabs, workflow steps, capabilities, deployment choices and FAQ. Preserved existing contact/lead and legal paths plus authentication destination rules. Read-only Shekoflow reference repository remained clean. Build and narrow desktop/mobile interaction/rendering checks passed, with no protected API requests or business writes. Local preview available at http://127.0.0.1:8896/; details in docs/LANDING_DESIGN.md.
+
+### 2026-10-15 — Centered landing header
+Redesigned primary navigation as a subtle centered capsule using equal side grid columns, with branding on the right and account/start actions on the left. Preserved collapsible mobile navigation. Build passed; narrow layout inspection confirmed zero center offset and no side overlap at 1440, 1024 and 901px, and working mobile menu at 390px. Local preview refreshed.

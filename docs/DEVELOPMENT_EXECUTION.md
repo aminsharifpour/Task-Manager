@@ -73,3 +73,27 @@ Implemented desktop expanded/icon-only navigation with local preference persiste
 
 ### 2026-10-14 — Header and avatars
 Implemented header search dialog, organization-aware live date/time and HeroUI account menu. Added authenticated profile-photo endpoints and UI for own account/authorized member management; additive UserAvatar migration 021 applied only to the local review database. Images are validated and normalized with production Sharp, stored in PostgreSQL and served privately to authorized colleagues. Build and narrow UI/API checks passed; temporary synthetic own-photo restored to its initial absent state. Broad acceptance testing remains pending by user instruction.
+
+### 2026-10-15 — Task timeline and Jalali dates
+Implemented a fresh-scoped interval timeline endpoint and a dedicated day/week/month Jalali Gantt with project metadata, prerequisite arrows, scheduling conflict cues, missing-date handling and bounded pagination. Added optimistic versioned date editing with shared Persian date validation; task date forms and task calendar now use Jalali presentation. No schema change or record migration was needed. Production build, real read-only endpoint check and browser-fixture layout checks passed; no task records changed. Broader acceptance tests remain pending per user instruction. Local review is running on 127.0.0.1:8896.
+
+### 2026-10-15 — HR dialogs
+Completed consistent HeroUI modal layout for personnel create/edit/details, leave create/review/details, attendance create/edit/details and delete confirmation. Preserved every existing profile field, permission gate and endpoint; added Jalali date presentation, sections and fixed footer actions. Build and browser-only fixture rendering checks passed without HR mutations. Comprehensive functional and permission testing remains deferred by user instruction.
+
+### 2026-10-15 — Workspace dashboard
+Completed HeroUI dashboard redesign with clearer metrics/status distribution, project progress summaries, personal tasks and preserved workload/capacity management. Added status-group and visibility-filtered project summaries to the existing fresh-scoped endpoint; no migration required. Production build, actual read-only summary checks and narrow responsive UI checks passed. No business records changed; comprehensive acceptance/permission testing remains pending per user instruction.
+
+### 2026-10-15 — Authentication screens
+Completed HeroUI login redesign plus matching signup/setup forms, responsive branding layout, password visibility and normalized phone input. Authentication endpoints, invitation logic and session handling were retained. Production build and narrow rendering/interaction checks passed using a mocked error response without account mutations. Local preview refreshed at http://127.0.0.1:8896/login; broad acceptance testing remains deferred.
+
+### 2026-10-15 — Minimal UI animations
+Added dependency-free scoped CSS animations to foundation navigation/content, dashboard cards, authentication and interaction feedback. HeroUI overlays retain their lifecycle/focus behavior with subtler entrance motion. Reduced-motion support includes portal content. Build and narrow browser style/dismissal/responsive checks passed; no business mutations. Local preview refreshed on port 8896.
+
+### 2026-10-15 — Application-wide Jalali display
+Unified active foundation date presentation under the Persian calendar regardless of old organization calendar preferences. Converted remaining project/workflow/minute date editors and filters to shared Jalali inputs and aligned work-date defaults with organization timezone. Existing ISO API/data/export contracts remain unchanged; no migration. Production build and narrow non-mutating conversion/validation/responsive checks passed. Refreshed local runtime on port 8896; comprehensive acceptance testing remains deferred.
+
+### 2026-10-15 — Calendar date selection
+Implemented shared HeroUI Persian DatePicker across active forms/filters that use JalaliDateField. Includes month/year navigation, segmented keyboard entry, Today/optional clear actions and retained date bounds/required validation. Build and narrow browser-fixture popup/conversion/mobile checks passed without business writes. Local runtime refreshed on port 8896.
+
+### 2026-10-15 — Illustration-led public landing
+Rebuilt the public home with a warm cream/forest-green Shekof family design, two original transparent illustrations, HeroUI sample product tabs, workflow steps, capabilities, deployment choices and FAQ. Preserved existing contact/lead and legal paths plus authentication destination rules. Read-only Shekoflow reference repository remained clean. Build and narrow desktop/mobile interaction/rendering checks passed, with no protected API requests or business writes. Local preview available at http://127.0.0.1:8896/; details in docs/LANDING_DESIGN.md.

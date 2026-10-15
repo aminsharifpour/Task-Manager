@@ -1,9 +1,11 @@
+import {timeline} from "./timeline.js";
 import {Router} from "express";
 import {addComment,getTask} from "./service.js";
 import {mutate,pageRows} from "../shared/scoped.js";
 import * as service from "./advanced.js";
 import {ensureModule} from "../shared/scoped.js";
 export function taskCoreRouter(){const r=Router();const wrap=(fn,status=200)=>async(req,res,next)=>{try{await ensureModule(req.organization,"tasks");res.status(status).json(await fn(req.organization,req));}catch(error){next(error);}};
+ r.get("/tasks/timeline",wrap((c,r)=>timeline(c,r.query)));
  r.get("/tasks/:id/comments",wrap((c,r)=>mutate(c,"tasks",async(tx,current)=>{await getTask(current,r.params.id,tx);return pageRows("taskWorkflowComment",{organizationId:current.organizationId,taskId:r.params.id},r.query,{},tx);})));r.post("/tasks/:id/comments",wrap((c,r)=>addComment(c,r.params.id,r.body),201));
  r.get("/tasks/:id/details",wrap((c,r)=>service.detail(c,r.params.id)));
  r.post("/tasks/:id/checklist",wrap((c,r)=>service.checklist(c,r.params.id,null,r.body),201));r.patch("/tasks/:id/checklist/:itemId",wrap((c,r)=>service.checklist(c,r.params.id,r.params.itemId,r.body)));r.delete("/tasks/:id/checklist/:itemId",wrap((c,r)=>service.checklist(c,r.params.id,r.params.itemId,r.body,true)));

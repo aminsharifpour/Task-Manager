@@ -1,0 +1,20 @@
+.workspace-date-picker{width:100%;min-width:0;gap:6px;font-family:inherit}
+.workspace-date-picker>.label{font-size:12px;font-weight:500;line-height:1.8;color:#435269}
+.workspace-date-picker>.date-input-group{width:100%;min-height:40px;height:auto;border:1px solid #dfe5ed;border-radius:10px;background:#fff;box-shadow:0 1px 2px #29364b04}
+.workspace-date-picker .date-input-group__input{min-width:0;font-size:12px;font-family:inherit;justify-content:flex-start;min-height:38px}
+.workspace-date-picker .date-input-group__segment{font-family:inherit;font-size:12px}
+.workspace-date-picker .date-picker__trigger{color:#718096;min-width:30px;min-height:30px;justify-content:center;border-radius:7px}
+.workspace-date-picker .date-picker__trigger:hover{background:#edf6ef;color:#205a49}
+.workspace-date-picker>.description,.workspace-date-picker>.field-error{font-size:10px;line-height:1.8}
+.workspace-date-popover{direction:rtl;font-family:IRANYekan,Tahoma,sans-serif;width:294px;min-width:274px;max-width:calc(100vw - 24px);padding:16px;background:#fff;border:1px solid #e2e7ee;border-radius:15px;box-shadow:0 12px 36px #29364b1a;color:#29364b;z-index:70;--accent:#205a49;--accent-foreground:#fff;--foreground:#29364b;--muted:#718096;--default:#f2f4f8;--default-foreground:#435269}
+.workspace-date-popover .calendar{width:100%;font-family:inherit}
+.workspace-date-popover .calendar__header{gap:7px;padding-bottom:14px}
+.workspace-date-popover .calendar-year-picker__trigger{margin-inline-end:auto;font-family:inherit;color:#29364b;font-size:12px}
+.workspace-date-popover .calendar__nav-button{width:28px;height:28px;flex-shrink:0;border-radius:8px}
+.workspace-date-popover .calendar__header-cell{font-size:10px;color:#718096}
+.workspace-date-popover .calendar__cell{font-size:12px;border-radius:9px}
+.workspace-date-popover .calendar__cell[data-selected=true]{background:#205a49;color:#fff}
+.workspace-date-popover .calendar__cell[data-disabled=true]{opacity:.35}
+.workspace-date-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid #e9edf3;margin-top:12px;padding-top:10px}
+.workspace-date-actions .button{font-family:inherit;font-size:11px;min-height:30px;border-radius:7px}
+@media(max-width:420px){.workspace-date-popover{width:280px;padding:13px;min-width:260px}}

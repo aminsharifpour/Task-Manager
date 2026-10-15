@@ -1,0 +1,14 @@
+import {visibleTasks,assertEditable} from "./service.js";
+import {readScoped,date,text,DomainError,pagination} from "../shared/scoped.js";
+const brief={id:true,title:true,status:true,startDate:true,executionDate:true,projectId:true,project:{select:{id:true,name:true}}};
+export async function timeline(c,q){return readScoped(c,"tasks",async(tx,current)=>{
+ const from=date(q.from),to=date(q.to),end=new Date(to.getTime()+86400000);if(to<from||to-from>366*4*86400000)throw new DomainError(400,"INVALID_RANGE","بازه زمانی معتبر نیست.");
+ const {skip,take,page,pageSize}=pagination({...q,pageSize:q.pageSize||100}),filters=[visibleTasks(current)];
+ if(q.search)filters.push({title:{contains:text(q.search,"جستجو",200),mode:"insensitive"}});
+ if(q.status&&q.status!=="all"){if(!["todo","doing","blocked","done"].includes(q.status))throw new DomainError(400,"INVALID_STATUS","وضعیت معتبر نیست.");filters.push({status:q.status});}
+ if(q.priority&&q.priority!=="all"){if(!["low","normal","high","urgent"].includes(q.priority))throw new DomainError(400,"INVALID_PRIORITY","اولویت معتبر نیست.");filters.push({priority:q.priority});}
+ if(q.dueFrom||q.dueTo)filters.push({executionDate:{...(q.dueFrom?{gte:date(q.dueFrom)}:{}),...(q.dueTo?{lt:new Date(date(q.dueTo).getTime()+86400000)}:{})}});
+ const base={AND:filters},where={AND:[base,{OR:[{startDate:{lt:end},executionDate:{gte:from}},{startDate:null,executionDate:{gte:from,lt:end}},{executionDate:null,startDate:{gte:from,lt:end}},{startDate:null,executionDate:null}]}]};
+ const [rows,total,bounds]=await Promise.all([tx.task.findMany({where,skip,take,orderBy:[{projectId:"asc"},{startDate:{sort:"asc",nulls:"last"}},{id:"asc"}],select:{...brief,version:true,priority:true,assignerId:true,assigneePrimaryId:true,assigneeSecondaryId:true,project:{select:{id:true,name:true,ownerId:true,members:{where:{userId:current.userId},select:{userId:true}}}},dependencies:{where:{dependsOn:{is:visibleTasks(current)}},select:{dependsOn:{select:brief}},take:100},_count:{select:{dependencies:true}}}}),tx.task.count({where}),tx.task.aggregate({where:base,_min:{startDate:true,executionDate:true},_max:{startDate:true,executionDate:true}})]);
+ return {items:rows.map(row=>{let canEdit=false;if(current.role!=="guest"){try{assertEditable(current,row);canEdit=true;}catch(error){if(error.code!=="PERMISSION_DENIED")throw error;}}return {...row,project:row.project?{id:row.project.id,name:row.project.name}:null,dependencies:row.dependencies.map(dependency=>dependency.dependsOn),unavailableDependencies:Math.max(0,row._count.dependencies-row.dependencies.length),_count:undefined,assignerId:undefined,assigneePrimaryId:undefined,assigneeSecondaryId:undefined,canEdit};}),total,page,pageSize,bounds:{from:[bounds._min.startDate,bounds._min.executionDate].filter(Boolean).sort((a,b)=>a-b)[0]||null,to:[bounds._max.startDate,bounds._max.executionDate].filter(Boolean).sort((a,b)=>b-a)[0]||null}};
+ });}

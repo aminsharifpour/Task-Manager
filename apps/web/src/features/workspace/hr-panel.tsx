@@ -6,9 +6,9 @@ import {emptyPage,useModule} from "./use-module";
 import {TaskSelect} from "./hero-task-fields";
 import TableAction from "./table-action";
 import {AttendanceEditor,DeleteAttendance,LeaveEditor,LeaveReview,ProfileEditor} from "./hr-editors";
-import {HrCard,HrDetail,HrEmpty,HrIdentity,HrPaging,attendanceNames,attendanceTone,contracts,currencies,leaveNames,leaveStatuses,leaveTone,number,options} from "./hr-ui";
+import {HrField,HrCard,HrDetail,HrEmpty,HrIdentity,HrPaging,attendanceNames,attendanceTone,contracts,currencies,leaveNames,leaveStatuses,leaveTone,number,options} from "./hr-ui";
 import type {Attendance,Leave,Profile} from "./hr-ui";
-import {displayDate} from "./dates";
+import {jalaliDate as displayDate} from "./jalali-timeline";
 import "./hr-panel.css";
 export default function HrPanel({api,permissions}:{api:Request;permissions:Permissions}){
  if(permissions.role==="guest")return <Card><Card.Header><Card.Title>منابع انسانی</Card.Title><Card.Description>برای این بخش به عضویت داخلی سازمان نیاز دارید.</Card.Description></Card.Header></Card>;
@@ -18,7 +18,7 @@ function HrWorkspace({api,permissions}:{api:Request;permissions:Permissions}){co
 function useFilters(){const [page,setPage]=useState(1),[search,setSearch]=useState(""),[query,setQuery]=useState("");useEffect(()=>{const timer=setTimeout(()=>{setQuery(search);setPage(1);},250);return()=>clearTimeout(timer);},[search]);return {page,setPage,search,setSearch,query};}
 function usePageClamp(page:number,total:number,loading:boolean,onChange:(page:number)=>void){useEffect(()=>{const last=Math.max(1,Math.ceil(total/25));if(!loading&&page>last)onChange(last);},[page,total,loading,onChange]);}
 function Search({value,onChange}:{value:string;onChange:(v:string)=>void}){return <TextField fullWidth type="search" value={value} onChange={onChange}><Label>جستجو</Label><Input maxLength={200} placeholder="نام همکار یا اطلاعات رکورد…"/></TextField>;}
-function DateFilters({from,to,setFrom,setTo}:{from:string;to:string;setFrom:(v:string)=>void;setTo:(v:string)=>void}){return <><TextField fullWidth value={from} onChange={setFrom}><Label>از تاریخ (میلادی)</Label><Input type="date" max={to||undefined}/></TextField><TextField fullWidth value={to} onChange={setTo}><Label>تا تاریخ (میلادی)</Label><Input type="date" min={from||undefined}/></TextField></>;}
+function DateFilters({from,to,setFrom,setTo}:{from:string;to:string;setFrom:(v:string)=>void;setTo:(v:string)=>void}){return <><HrField label="از تاریخ (شمسی)" type="date" value={from} onChange={setFrom} max={to||undefined}/><HrField label="تا تاریخ (شمسی)" type="date" value={to} onChange={setTo} min={from||undefined}/></>;}
 function Profiles({api,permissions}:{api:Request;permissions:Permissions}){
  const filters=useFilters(),[contract,setContract]=useState("all"),[editor,setEditor]=useState<Profile|null|undefined>(),[detail,setDetail]=useState<Profile>(),[notice,setNotice]=useState("");
  const state=useModule(api,`/hr/profiles?page=${filters.page}&search=${encodeURIComponent(filters.query)}&contractType=${contract}`,emptyPage<Profile>());
