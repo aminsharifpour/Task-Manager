@@ -1,25 +1,411 @@
 import JalaliDateField from "./jalali-date-field";
-import {useEffect,useRef,useState} from "react";
-import {Button,Description,FieldError,Form,Input,Label,Modal,Text,TextArea,TextField} from "@heroui/react";
-import {CheckCheck,Plus} from "lucide-react";
-import {TaskMessage,TaskPicker,TaskSelect} from "./hero-task-fields";
-import type {Permissions,Request} from "./use-module";
-import type {FieldDefinition} from "./task-details-panel";
-type Project={id:string;status:string;customFieldDefinitions:FieldDefinition[]};
-export default function CreateTaskModal({api,permissions,onClose,onCreated}:{api:Request;permissions:Permissions;onClose:()=>void;onCreated:(title:string)=>void}){
- const [form,setForm]=useState({title:"",description:"",projectId:"",assigneePrimaryId:permissions.userId,assigneeSecondaryId:"",priority:"normal",startDate:"",executionDate:"",estimateMinutes:"",parentTaskId:"",workflow:"template"});
- const [fields,setFields]=useState<Record<string,string>>({}),[project,setProject]=useState<Project>(),[projectError,setProjectError]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false);
- const mounted=useRef(true),submitting=useRef(false);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
- useEffect(()=>{const controller=new AbortController();setProject(undefined);setProjectError("");if(form.projectId)api<Project>("/projects/"+encodeURIComponent(form.projectId),{signal:controller.signal}).then(row=>{if(!controller.signal.aborted)setProject(row);}).catch(error=>{if(!controller.signal.aborted)setProjectError(error.message);});return()=>controller.abort();},[api,form.projectId]);
- const change=(key:keyof typeof form,value:string)=>setForm(row=>({...row,[key]:value}));
- const invalidDates=Boolean(form.startDate&&form.executionDate&&form.executionDate<form.startDate);
- const closed=project&&["completed","archived"].includes(project.status);
- return <Modal.Backdrop isOpen isDismissable={!busy} isKeyboardDismissDisabled={busy} onOpenChange={open=>{if(!open&&!submitting.current)onClose();}}><Modal.Container size="lg" scroll="inside"><Modal.Dialog dir="rtl" className="task-modal"><Modal.CloseTrigger aria-label="بستن ساخت تسک" isDisabled={busy}/><Modal.Header><Modal.Icon><CheckCheck size={23}/></Modal.Icon><Modal.Heading>تسک جدید</Modal.Heading><Description>عنوان، پروژه و مسئول را مشخص کنید و جزئیات کار را تکمیل کنید.</Description></Modal.Header><Form className="task-create-form" onSubmit={event=>{event.preventDefault();if(submitting.current||!project)return;if(invalidDates||closed){setError(invalidDates?"موعد تسک نباید پیش از شروع باشد.":"پروژه بسته یا بایگانی شده است.");return;}if(!form.title.trim()){setError("عنوان تسک را وارد کنید.");return;}if((project.customFieldDefinitions||[]).some(field=>field.required&&!fields[field.id]?.trim())){setError("فیلدهای سفارشی اجباری را تکمیل کنید.");return;}submitting.current=true;setBusy(true);setError("");void api<{title:string}>("/tasks",{method:"POST",body:JSON.stringify({...form,title:form.title.trim(),description:form.description.trim(),assigneeSecondaryId:form.assigneeSecondaryId||null,startDate:form.startDate||null,executionDate:form.executionDate||null,estimateMinutes:form.estimateMinutes?Number(form.estimateMinutes):null,parentTaskId:form.parentTaskId||null,customFields:fields,workflow:undefined,...(form.workflow==="none"?{workflowSteps:[]}:form.workflow==="approval"?{workflowSteps:[{id:"execute",title:"اجرا",assigneeType:"task_assignee_primary"},{id:"approve",title:"تأیید تحویل",requiresApproval:true,approvalAssigneeType:"task_assigner",onApprove:"done",onReject:"previous"}]}:{})})}).then(row=>{if(mounted.current)onCreated(row.title);}).catch(error=>{if(mounted.current)setError(error instanceof Error?error.message:"ساخت تسک انجام نشد.");}).finally(()=>{submitting.current=false;if(mounted.current)setBusy(false);});}}><Modal.Body>
- {error&&<TaskMessage error message={error}/>}<TextField fullWidth name="title" value={form.title} onChange={value=>change("title",value)} isRequired isDisabled={busy} autoFocus><Label>عنوان تسک</Label><Input maxLength={200} placeholder="مثلاً آماده‌سازی نسخه اولیه طرح"/><FieldError/></TextField><TextField fullWidth value={form.description} onChange={value=>change("description",value)} isDisabled={busy}><Label>توضیح تسک</Label><TextArea rows={3} maxLength={5000} placeholder="محدوده کار و نتیجه مورد انتظار…"/></TextField>
- <TaskPicker api={api} resource="projects" label="پروژه" value={form.projectId} onChange={value=>{change("projectId",value);change("parentTaskId","");setFields({});}} required disabled={busy}/>{projectError&&<TaskMessage error message={projectError}/>} {closed&&<TaskMessage error message="برای ساخت تسک، یک پروژه فعال یا متوقف انتخاب کنید."/>}
- <div className="task-form-grid"><TaskPicker api={api} resource="members" label="مسئول اصلی" required value={form.assigneePrimaryId} selfId={permissions.userId} onChange={value=>change("assigneePrimaryId",value)} disabled={busy}/><TaskPicker api={api} resource="members" label="مسئول دوم (اختیاری)" value={form.assigneeSecondaryId} onChange={value=>change("assigneeSecondaryId",value)} disabled={busy}/></div>
- <div className="task-form-grid"><TaskSelect label="اولویت" value={form.priority} disabled={busy} onChange={value=>change("priority",value)} options={Object.entries({low:"کم",normal:"عادی",high:"زیاد",urgent:"فوری"}).map(([id,name])=>({id,name}))}/><TextField fullWidth value={form.estimateMinutes} onChange={value=>change("estimateMinutes",value)} isDisabled={busy}><Label>تخمین زمان (دقیقه)</Label><Input type="number" min={1} max={1008000} step={1} placeholder="مثلاً ۶۰"/><Description>اختیاری؛ عدد صحیح مثبت.</Description></TextField><JalaliDateField label="شروع (شمسی)" value={form.startDate} onChange={value=>change("startDate",value)} disabled={busy}/><JalaliDateField label="موعد (شمسی)" value={form.executionDate} onChange={value=>change("executionDate",value)} disabled={busy} min={form.startDate||undefined}/></div>
- <TaskSelect label="گردش‌کار" value={form.workflow} disabled={busy} onChange={value=>change("workflow",value)} options={[{id:"template",name:"استفاده از قالب گردش‌کار پروژه"},{id:"approval",name:"اجرا و تأیید تحویل"},{id:"none",name:"بدون گردش‌کار"}]}/>
- {form.projectId&&<TaskPicker key={form.projectId} api={api} resource="tasks" projectId={form.projectId} label="تسک والد (اختیاری)" value={form.parentTaskId} onChange={value=>change("parentTaskId",value)} disabled={busy}/>} {(project?.customFieldDefinitions||[]).length>0&&<Text className="task-form-heading">فیلدهای سفارشی پروژه</Text>}{(project?.customFieldDefinitions||[]).map(field=>field.type==="select"?<TaskSelect key={field.id} label={field.label} value={fields[field.id]||""} required={field.required} disabled={busy} options={(field.options||[]).map(value=>({id:value,name:value}))} onChange={value=>setFields(rows=>({...rows,[field.id]:value}))}/>:<TextField fullWidth key={field.id} isRequired={field.required} isDisabled={busy} value={fields[field.id]||""} onChange={value=>setFields(rows=>({...rows,[field.id]:value}))}><Label>{field.label}</Label><Input type={field.type==="date"?"date":"text"} inputMode={field.type==="number"?"decimal":undefined} maxLength={2000}/><FieldError/></TextField>)}<Description>تسک جدید با وضعیت «انجام‌نشده» ساخته می‌شود؛ چک‌لیست، وابستگی، فایل و زمان کار از جزئیات تسک قابل مدیریت هستند.</Description>
- </Modal.Body><Modal.Footer><Button type="button" variant="outline" isDisabled={busy} onPress={onClose}>انصراف</Button><Button type="submit" isDisabled={busy||!project||Boolean(closed)||invalidDates||!form.title.trim()||!form.assigneePrimaryId} isPending={busy}><Plus size={16}/>{busy?"در حال ساخت…":"ساخت تسک"}</Button></Modal.Footer></Form></Modal.Dialog></Modal.Container></Modal.Backdrop>;
+import { useEffect, useRef, useState } from "react";
+import {
+  Button,
+  Description,
+  FieldError,
+  Form,
+  Input,
+  Label,
+  Modal,
+  Text,
+  TextArea,
+  TextField,
+} from "@heroui/react";
+import { CheckCheck, Plus } from "lucide-react";
+import { TaskMessage, TaskPicker, TaskSelect } from "./hero-task-fields";
+import type { Permissions, Request } from "./use-module";
+import type { FieldDefinition } from "./task-details-panel";
+type Project = {
+  id: string;
+  status: string;
+  customFieldDefinitions: FieldDefinition[];
+  workflowTemplateSteps?: { id: string; title: string; requiresApproval: boolean }[] | null;
+};
+export default function CreateTaskModal({
+  api,
+  permissions,
+  onClose,
+  onCreated,
+}: {
+  api: Request;
+  permissions: Permissions;
+  onClose: () => void;
+  onCreated: (title: string) => void;
+}) {
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    projectId: "",
+    assigneePrimaryId: permissions.userId,
+    assigneeSecondaryId: "",
+    priority: "normal",
+    startDate: "",
+    executionDate: "",
+    estimateMinutes: "",
+    parentTaskId: "",
+    workflow: "template",
+  });
+  const [fields, setFields] = useState<Record<string, string>>({}),
+    [project, setProject] = useState<Project>(),
+    [projectError, setProjectError] = useState(""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  const mounted = useRef(true),
+    submitting = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    setProject(undefined);
+    setProjectError("");
+    if (form.projectId)
+      api<Project>("/projects/" + encodeURIComponent(form.projectId), {
+        signal: controller.signal,
+      })
+        .then((row) => {
+          if (!controller.signal.aborted) setProject(row);
+        })
+        .catch((error) => {
+          if (!controller.signal.aborted) setProjectError(error.message);
+        });
+    return () => controller.abort();
+  }, [api, form.projectId]);
+  const change = (key: keyof typeof form, value: string) =>
+    setForm((row) => ({ ...row, [key]: value }));
+  const invalidDates = Boolean(
+    form.startDate && form.executionDate && form.executionDate < form.startDate,
+  );
+  const closed = project && ["completed", "archived"].includes(project.status);
+  return (
+    <Modal.Backdrop
+      isOpen
+      isDismissable={!busy}
+      isKeyboardDismissDisabled={busy}
+      onOpenChange={(open) => {
+        if (!open && !submitting.current) onClose();
+      }}
+    >
+      <Modal.Container size="lg" scroll="inside">
+        <Modal.Dialog dir="rtl" className="task-modal">
+          <Modal.CloseTrigger aria-label="بستن ساخت تسک" isDisabled={busy} />
+          <Modal.Header>
+            <Modal.Icon>
+              <CheckCheck size={23} />
+            </Modal.Icon>
+            <Modal.Heading>تسک جدید</Modal.Heading>
+            <Description>کار، مسئول و مسیر انجام آن را مشخص کنید.</Description>
+          </Modal.Header>
+          <Form
+            className="task-create-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (submitting.current || !project) return;
+              if (invalidDates || closed) {
+                setError(
+                  invalidDates
+                    ? "موعد تسک نباید پیش از شروع باشد."
+                    : "پروژه بسته یا بایگانی شده است.",
+                );
+                return;
+              }
+              if (!form.title.trim()) {
+                setError("عنوان تسک را وارد کنید.");
+                return;
+              }
+              if (
+                (project.customFieldDefinitions || []).some(
+                  (field) => field.required && !fields[field.id]?.trim(),
+                )
+              ) {
+                setError("فیلدهای سفارشی اجباری را تکمیل کنید.");
+                return;
+              }
+              submitting.current = true;
+              setBusy(true);
+              setError("");
+              void api<{ title: string }>("/tasks", {
+                method: "POST",
+                body: JSON.stringify({
+                  ...form,
+                  title: form.title.trim(),
+                  description: form.description.trim(),
+                  assigneeSecondaryId: form.assigneeSecondaryId || null,
+                  startDate: form.startDate || null,
+                  executionDate: form.executionDate || null,
+                  estimateMinutes: form.estimateMinutes
+                    ? Number(form.estimateMinutes)
+                    : null,
+                  parentTaskId: form.parentTaskId || null,
+                  customFields: fields,
+                  workflow: undefined,
+                  ...(form.workflow === "none"
+                    ? { workflowSteps: [] }
+                    : form.workflow === "approval"
+                      ? {
+                          workflowSteps: [
+                            {
+                              id: "execute",
+                              title: "اجرا",
+                              assigneeType: "task_assignee_primary",
+                            },
+                            {
+                              id: "approve",
+                              title: "تأیید تحویل",
+                              requiresApproval: true,
+                              approvalAssigneeType: "task_assigner",
+                              onApprove: "done",
+                              onReject: "previous",
+                            },
+                          ],
+                        }
+                      : {}),
+                }),
+              })
+                .then((row) => {
+                  if (mounted.current) onCreated(row.title);
+                })
+                .catch((error) => {
+                  if (mounted.current)
+                    setError(
+                      error instanceof Error
+                        ? error.message
+                        : "ساخت تسک انجام نشد.",
+                    );
+                })
+                .finally(() => {
+                  submitting.current = false;
+                  if (mounted.current) setBusy(false);
+                });
+            }}
+          >
+            <Modal.Body>
+              {error && <TaskMessage error message={error} />}
+              <div className="task-create-section-title"><span>۱</span><div><strong>کار و پروژه</strong><small>چه کاری باید انجام شود و به کدام پروژه تعلق دارد؟</small></div></div>
+              <TextField
+                fullWidth
+                name="title"
+                value={form.title}
+                onChange={(value) => change("title", value)}
+                isRequired
+                isDisabled={busy}
+                autoFocus
+              >
+                <Label>عنوان تسک</Label>
+                <Input
+                  maxLength={200}
+                  placeholder="مثلاً آماده‌سازی نسخه اولیه طرح"
+                />
+                <FieldError />
+              </TextField>
+              <TextField
+                fullWidth
+                value={form.description}
+                onChange={(value) => change("description", value)}
+                isDisabled={busy}
+              >
+                <Label>توضیح تسک</Label>
+                <TextArea
+                  rows={3}
+                  maxLength={5000}
+                  placeholder="محدوده کار و نتیجه مورد انتظار…"
+                />
+              </TextField>
+              <TaskPicker
+                api={api}
+                resource="projects"
+                label="پروژه"
+                value={form.projectId}
+                onChange={(value) => {
+                  change("projectId", value);
+                  change("parentTaskId", "");
+                  setFields({});
+                }}
+                required
+                disabled={busy}
+              />
+              {projectError && <TaskMessage error message={projectError} />}{" "}
+              {closed && (
+                <TaskMessage
+                  error
+                  message="برای ساخت تسک، یک پروژه فعال یا متوقف انتخاب کنید."
+                />
+              )}
+              <div className="task-create-section-title"><span>۲</span><div><strong>مسئول و برنامه زمانی</strong><small>مشخص کنید چه کسی و تا چه زمانی اقدام می‌کند.</small></div></div>
+              <div className="task-form-grid">
+                <TaskPicker
+                  api={api}
+                  resource="members"
+                  label="مسئول اصلی"
+                  required
+                  value={form.assigneePrimaryId}
+                  selfId={permissions.userId}
+                  onChange={(value) => change("assigneePrimaryId", value)}
+                  disabled={busy}
+                />
+                <TaskPicker
+                  api={api}
+                  resource="members"
+                  label="مسئول دوم (اختیاری)"
+                  value={form.assigneeSecondaryId}
+                  onChange={(value) => change("assigneeSecondaryId", value)}
+                  disabled={busy}
+                />
+              </div>
+              <div className="task-form-grid">
+                <TaskSelect
+                  label="اولویت"
+                  value={form.priority}
+                  disabled={busy}
+                  onChange={(value) => change("priority", value)}
+                  options={Object.entries({
+                    low: "کم",
+                    normal: "عادی",
+                    high: "زیاد",
+                    urgent: "فوری",
+                  }).map(([id, name]) => ({ id, name }))}
+                />
+                <TextField
+                  fullWidth
+                  value={form.estimateMinutes}
+                  onChange={(value) => change("estimateMinutes", value)}
+                  isDisabled={busy}
+                >
+                  <Label>تخمین زمان (دقیقه)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={1008000}
+                    step={1}
+                    placeholder="مثلاً ۶۰"
+                  />
+                  <Description>اختیاری؛ عدد صحیح مثبت.</Description>
+                </TextField>
+                <JalaliDateField
+                  label="شروع (شمسی)"
+                  value={form.startDate}
+                  onChange={(value) => change("startDate", value)}
+                  disabled={busy}
+                />
+                <JalaliDateField
+                  label="موعد (شمسی)"
+                  value={form.executionDate}
+                  onChange={(value) => change("executionDate", value)}
+                  disabled={busy}
+                  min={form.startDate || undefined}
+                />
+              </div>
+              <div className="task-create-section-title"><span>۳</span><div><strong>مسیر انجام کار</strong><small>تسک از چه مراحلی عبور می‌کند؟</small></div></div>
+              <TaskSelect
+                label="گردش‌کار"
+                value={form.workflow}
+                disabled={busy}
+                onChange={(value) => change("workflow", value)}
+                options={[
+                  { id: "template", name: "استفاده از قالب گردش‌کار پروژه" },
+                  { id: "approval", name: "اجرا و تأیید تحویل" },
+                  { id: "none", name: "بدون گردش‌کار" },
+                ]}
+              />
+              <div className="task-workflow-explainer" role="status">
+                <strong>{form.workflow === "template" ? "قالب پروژه" : form.workflow === "approval" ? "اجرا و تأیید" : "بدون مراحل"}</strong>
+                {form.workflow === "template" ? project?.workflowTemplateSteps?.length
+                  ? <><p>این تسک با مراحل تنظیم‌شده در پروژه ساخته می‌شود:</p><ol>{project.workflowTemplateSteps.map((step, index) => <li key={step.id}><span>{new Intl.NumberFormat("fa").format(index + 1)}</span>{step.title}{step.requiresApproval && <small>تأیید</small>}</li>)}</ol></>
+                  : <p>این پروژه هنوز قالب مرحله‌ای ندارد. اگر می‌خواهید هر تسک مسیر مشخصی داشته باشد، ابتدا آن را در مدیریت پروژه تعریف کنید یا گزینهٔ «اجرا و تأیید تحویل» را انتخاب کنید.</p>
+                  : form.workflow === "approval" ? <p>مسئول اصلی کار را انجام می‌دهد؛ ایجادکنندهٔ تسک تحویل را تأیید می‌کند. اگر رد شود، تسک به مرحلهٔ اجرا برمی‌گردد.</p>
+                  : <p>تسک بدون مرحلهٔ گردش‌کار ساخته می‌شود و با وضعیت آن پیگیری خواهد شد.</p>}
+              </div>
+              {form.projectId && (
+                <TaskPicker
+                  key={form.projectId}
+                  api={api}
+                  resource="tasks"
+                  projectId={form.projectId}
+                  label="تسک والد (اختیاری)"
+                  value={form.parentTaskId}
+                  onChange={(value) => change("parentTaskId", value)}
+                  disabled={busy}
+                />
+              )}{" "}
+              {(project?.customFieldDefinitions || []).length > 0 && (
+                <Text className="task-form-heading">اطلاعات تکمیلی پروژه</Text>
+              )}
+              {(project?.customFieldDefinitions || []).map((field) =>
+                field.type === "select" ? (
+                  <TaskSelect
+                    key={field.id}
+                    label={field.label}
+                    value={fields[field.id] || ""}
+                    required={field.required}
+                    disabled={busy}
+                    options={(field.options || []).map((value) => ({
+                      id: value,
+                      name: value,
+                    }))}
+                    onChange={(value) =>
+                      setFields((rows) => ({ ...rows, [field.id]: value }))
+                    }
+                  />
+                ) : (
+                  <TextField
+                    fullWidth
+                    key={field.id}
+                    isRequired={field.required}
+                    isDisabled={busy}
+                    value={fields[field.id] || ""}
+                    onChange={(value) =>
+                      setFields((rows) => ({ ...rows, [field.id]: value }))
+                    }
+                  >
+                    <Label>{field.label}</Label>
+                    <Input
+                      type={field.type === "date" ? "date" : "text"}
+                      inputMode={
+                        field.type === "number" ? "decimal" : undefined
+                      }
+                      maxLength={2000}
+                    />
+                    <FieldError />
+                  </TextField>
+                ),
+              )}
+              <Description>
+                تسک جدید با وضعیت «انجام‌نشده» ساخته می‌شود؛ چک‌لیست، وابستگی،
+                فایل و زمان کار از جزئیات تسک قابل مدیریت هستند.
+              </Description>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                type="button"
+                variant="outline"
+                isDisabled={busy}
+                onPress={onClose}
+              >
+                انصراف
+              </Button>
+              <Button
+                type="submit"
+                isDisabled={
+                  busy ||
+                  !project ||
+                  Boolean(closed) ||
+                  invalidDates ||
+                  !form.title.trim() ||
+                  !form.assigneePrimaryId
+                }
+                isPending={busy}
+              >
+                <Plus size={16} />
+                {busy ? "در حال ساخت…" : "ساخت تسک"}
+              </Button>
+            </Modal.Footer>
+          </Form>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
+  );
 }

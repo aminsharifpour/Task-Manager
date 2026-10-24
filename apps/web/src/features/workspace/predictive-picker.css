@@ -1,0 +1,20 @@
+/* A single-field picker, kept inside the modal to preserve focus and scrolling. */
+.predictive-picker { position:relative; min-width:0; width:100%; text-align:start; font-family:inherit; }
+.predictive-picker > label { display:block; margin-bottom:6px; font-size:13px; font-weight:500; }
+.predictive-picker-control { display:flex; align-items:center; gap:3px; min-height:44px; padding-inline:10px 4px; border:1px solid var(--workspace-border,#dce9df); border-radius:10px; background:var(--workspace-surface,#fff); }
+.predictive-picker-control:focus-within { outline:2px solid var(--workspace-primary,#205a49); outline-offset:2px; }
+.predictive-picker .predictive-picker-control input { flex:1; min-width:0; width:0; border:0; background:transparent; box-shadow:none; outline:none; padding:9px 2px; font:inherit; font-size:13px; color:inherit; }
+.predictive-picker-control > button { flex:none; border:0; background:transparent; color:var(--workspace-muted,#617b70); width:32px; height:32px; padding:0; cursor:pointer; border-radius:8px; font:inherit; font-size:22px; }
+.predictive-picker-control > button:hover { background:var(--workspace-mint,#edf6ef); }
+.predictive-picker-popup { margin-top:6px; border:1px solid var(--workspace-border,#dce9df); border-radius:10px; background:var(--workspace-surface,#fff); box-shadow:0 6px 18px #153a2410; padding:4px; overflow:hidden; }
+.predictive-picker-list { max-height:220px; overflow-y:auto; overscroll-behavior:contain; }
+.predictive-picker-list > button { display:block; width:100%; text-align:start; white-space:normal; overflow-wrap:anywhere; border:0; border-radius:7px; padding:9px 10px; background:transparent; color:inherit; font:inherit; font-size:13px; cursor:pointer; min-height:40px; }
+.predictive-picker-list > button[data-active], .predictive-picker-list > button:hover { background:var(--workspace-mint,#edf6ef); }
+.predictive-picker-list > button[aria-selected="true"] { font-weight:700; color:var(--workspace-primary,#205a49); }
+.predictive-picker-status,.predictive-picker-help { display:block; color:var(--workspace-muted,#617b70); font-size:11px; padding:5px 2px; }
+.predictive-picker-more,.predictive-picker-error button { width:100%; background:transparent; color:var(--workspace-primary,#205a49); border:0; border-top:1px solid var(--workspace-border,#dce9df); padding:8px; font:inherit; font-size:12px; cursor:pointer; }
+.predictive-picker-error { display:block; color:#9a2631; font-size:12px; padding:5px; }
+.predictive-picker button:disabled,.predictive-picker[data-disabled] { opacity:.6; cursor:default; }
+.predictive-picker input[aria-invalid="true"] { outline:0; }
+.predictive-picker-control:has(input[aria-invalid="true"]) { border-color:#b33543; }
+@media(max-width:600px) { .predictive-picker-list { max-height:180px; }.predictive-picker .predictive-picker-control input { font-size:16px; } }
