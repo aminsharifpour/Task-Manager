@@ -1,0 +1,60 @@
+{
+  "patch": "table-dialogs-001",
+  "created_on": "2026-10-24",
+  "repository": "aminsharifpour/Task-Manager",
+  "base_commit": "5d54e6c39cdf2298ae2a69051bbad10754f701d7",
+  "target_runtime": "PostgreSQL / Tenant Foundation",
+  "modified_files": [
+    {
+      "path": "apps/web/src/features/workspace/task-details-panel.tsx",
+      "base_git_blob_sha1": "c4ae4876cecf2e4a25eef5a1507dd4cc48faca97",
+      "base_sha256": "968f01171b4f4a43c75b2f3f6dbcd3a534c0ec4b5997ac3535523fb4bd93fc1f",
+      "patched_sha256": "181887ffb1c9e82a28095658b62f4a287fe974cf5cef52ead31c4f3c6cca26b9"
+    },
+    {
+      "path": "apps/web/src/features/workspace/task-comments-panel.tsx",
+      "base_git_blob_sha1": "e283d95fd0f54956d5d7b489b0ebb5728c663192",
+      "base_sha256": "7e07ac5b7db9368a7a1e2a58f874be3d3ab90a93bf7178c9da7ab6abc44b4b6d",
+      "patched_sha256": "ba3e6397692a5240c4586360598c15ecb9ea07b84292aa965b33eb9928672e2c"
+    },
+    {
+      "path": "apps/web/src/features/workspace/task-files-panel.tsx",
+      "base_git_blob_sha1": "51159f2fb1974dc52c1164342982df6b4b734a46",
+      "base_sha256": "ac7cf64bd8d14e6b2913e2f9592905ad6161d158ea0779041810af47549993a7",
+      "patched_sha256": "a24f706795510a921d4850089d7e06156cb79fc9ae479b26ac18eaa6d4a932f2"
+    }
+  ],
+  "new_files": [
+    {
+      "path": "PATCH_01_DIALOGS_FA.md",
+      "sha256": "97f860a913e9d4b36e99f713fd47950cb3d2ef08c0b6e4b8cda1122079d7bb0d"
+    },
+    {
+      "path": "apps/web/src/features/workspace/record-dialog.css",
+      "sha256": "3e23ff512a9b0544e59966644a5e075dce05b760c40b343a76ad8d3c7f0cad19"
+    },
+    {
+      "path": "apps/web/src/features/workspace/record-dialog.tsx",
+      "sha256": "bc8a0421aea68cf7ba9bc071d64452a7956b67462184fd3e5fe4560728792411"
+    },
+    {
+      "path": "tests/foundation/table-dialogs.test.mjs",
+      "sha256": "463fdb0735eb0a38e6680dac537cf669e1b0daf89017ed97275f144ac17fe92a"
+    }
+  ],
+  "requires_dependency_install": false,
+  "requires_database_migration": false,
+  "deleted_files": [],
+  "validation": {
+    "original_git_blobs": "all 3 matched",
+    "isolated_tests": {
+      "passed": 22,
+      "failed": 0,
+      "note": "React, HeroUI, hooks and API are mocked; includes 4 TSX syntax/transpile tests"
+    },
+    "css_parse": "passed",
+    "full_application_typecheck": "not run",
+    "full_application_build": "not run",
+    "real_browser_and_database_tests": "not run"
+  }
+}

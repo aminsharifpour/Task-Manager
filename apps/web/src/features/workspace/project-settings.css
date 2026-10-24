@@ -1,0 +1,494 @@
+.project-settings-page {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  color: #203d35;
+}
+.project-settings-page * {
+  box-sizing: border-box;
+}
+.project-settings-hero {
+  padding: 30px 34px;
+  border-radius: 22px;
+  background: linear-gradient(115deg, #173f34 0%, #23614d 62%, #388464 100%);
+  color: white;
+  position: relative;
+  overflow: hidden;
+}
+.project-settings-hero:after {
+  content: "";
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border: 1px solid #ffffff2e;
+  border-radius: 50%;
+  left: -55px;
+  top: -90px;
+  box-shadow:
+    0 0 0 38px #ffffff09,
+    0 0 0 78px #ffffff08;
+  pointer-events: none;
+}
+.project-settings-eyebrow {
+  display: inline-block;
+  padding: 5px 11px;
+  border: 1px solid #ffffff55;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #d9f6e7;
+}
+.project-settings-hero h2 {
+  font-size: 25px;
+  line-height: 1.6;
+  margin: 10px 0 4px;
+}
+.project-settings-hero p {
+  font-size: 13px;
+  line-height: 1.9;
+  color: #e4f2eb;
+  margin: 0;
+  max-width: 720px;
+}
+.project-settings-picker,
+.project-settings-card {
+  background: #fff;
+  border: 1px solid #dce9df;
+  border-radius: 18px;
+  box-shadow: 0 8px 30px #18463509;
+}
+.project-settings-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 24px;
+}
+.project-settings-picker > div:first-child strong {
+  font-size: 14px;
+}
+.project-settings-picker p {
+  font-size: 12px;
+  color: #6a8278;
+  margin: 4px 0 0;
+}
+.project-settings-picker > div:last-child {
+  min-width: min(300px, 100%);
+}
+.project-settings-form {
+  display: grid;
+  gap: 20px;
+}
+.project-settings-card {
+  padding: 26px;
+}
+.project-settings-card-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.project-settings-card-title > span {
+  display: grid;
+  place-items: center;
+  min-width: 42px;
+  height: 42px;
+  background: #edf6ef;
+  color: #205a49;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 800;
+}
+.project-settings-card-title h3 {
+  font-size: 17px;
+  line-height: 1.5;
+  margin: 0 0 4px;
+}
+.project-settings-card-title p {
+  font-size: 12px;
+  color: #6a8278;
+  line-height: 1.8;
+  margin: 0;
+}
+.project-settings-card .module-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: end;
+}
+.project-settings-card label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #355348;
+  min-width: 0;
+}
+.project-settings-card select,
+.project-settings-card textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid #d8e5dc;
+  border-radius: 10px;
+  background: #fff;
+  color: #203d35;
+  font: inherit;
+  outline: 0;
+}
+.project-settings-card textarea {
+  min-height: 95px;
+  resize: vertical;
+}
+.project-settings-card input:not([type="checkbox"]) {
+  min-height: 42px;
+}
+.project-settings-card select:focus-visible,
+.project-settings-card textarea:focus-visible {
+  border-color: #347f61;
+  box-shadow: 0 0 0 3px #347f6126;
+}
+.project-settings-field-wide {
+  grid-column: 1/-1;
+}
+.project-workflow-note {
+  background: #f0f8f3;
+  border: 1px solid #d7ebdd;
+  border-radius: 13px;
+  padding: 14px 17px;
+  margin-bottom: 18px;
+}
+.project-workflow-note strong {
+  font-size: 13px;
+}
+.project-workflow-note p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 3px 0 0;
+  color: #4a6758;
+}
+.project-workflow-guide {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0;
+  margin: 0 0 22px;
+}
+.project-workflow-guide li {
+  display: flex;
+  gap: 10px;
+  padding: 13px;
+  border-radius: 12px;
+  background: #f8faf7;
+  border: 1px solid #e7eee8;
+}
+.project-workflow-guide li > span {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: #dceee1;
+  color: #205a49;
+  font-weight: 700;
+  font-size: 12px;
+}
+.project-workflow-guide strong,
+.project-workflow-guide small {
+  display: block;
+  line-height: 1.7;
+}
+.project-workflow-guide strong {
+  font-size: 12px;
+}
+.project-workflow-guide small {
+  font-size: 11px;
+  color: #71867a;
+}
+.project-workflow-preview {
+  background: #f9fbfa;
+  border: 1px dashed #c9ddcf;
+  border-radius: 14px;
+  padding: 17px;
+  margin-bottom: 22px;
+}
+.project-workflow-preview-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.project-workflow-preview h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.project-workflow-preview-heading span {
+  background: #e5f1e9;
+  color: #286349;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+.project-workflow-preview > p {
+  font-size: 12px;
+  color: #647d70;
+  line-height: 1.8;
+  margin: 13px 0 0;
+}
+.project-workflow-preview ol {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 11px;
+}
+.project-workflow-preview li {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 11px 13px;
+  border: 1px solid #dce9df;
+  background: #fff;
+  border-radius: 11px;
+  min-width: 150px;
+  max-width: 100%;
+}
+.project-workflow-preview li:not(:last-child):after {
+  content: "←";
+  position: absolute;
+  left: -13px;
+  top: 14px;
+  color: #729b80;
+  z-index: 1;
+}
+.project-workflow-preview-number,
+.project-workflow-step-number {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 27px;
+  height: 27px;
+  background: #205a49;
+  color: #fff;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.project-workflow-preview strong,
+.project-workflow-preview small {
+  display: block;
+  line-height: 1.7;
+}
+.project-workflow-preview strong {
+  font-size: 12px;
+}
+.project-workflow-preview small {
+  font-size: 11px;
+  color: #6a8278;
+}
+.project-workflow-steps {
+  display: grid;
+  gap: 15px;
+  margin-bottom: 17px;
+}
+.project-workflow-step {
+  border: 1px solid #dce9df;
+  border-radius: 15px;
+  padding: 19px;
+  background: #fff;
+}
+.project-workflow-step > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding-bottom: 16px;
+  margin-bottom: 17px;
+  border-bottom: 1px solid #edf2ee;
+}
+.project-workflow-step > header > div {
+  flex: 1;
+  min-width: 0;
+}
+.project-workflow-step > header strong {
+  font-size: 14px;
+}
+.project-workflow-step > header p {
+  font-size: 11px;
+  color: #71867a;
+  line-height: 1.7;
+  margin: 2px 0 0;
+}
+.project-workflow-step .module-checkbox,
+.project-custom-field .module-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+}
+.project-workflow-step .module-checkbox input,
+.project-custom-field .module-checkbox input {
+  accent-color: #205a49;
+}
+.project-workflow-approval {
+  background: #f7faf8;
+  border: 1px solid #e0ece3;
+  border-radius: 12px;
+  padding: 17px;
+  margin-top: 18px;
+}
+.project-workflow-approval > div:first-child {
+  margin-bottom: 14px;
+}
+.project-workflow-approval strong {
+  font-size: 13px;
+}
+.project-workflow-approval p,
+.project-workflow-route-summary {
+  font-size: 11px;
+  color: #60796b;
+  line-height: 1.8;
+  margin: 3px 0 0;
+}
+.project-workflow-route-summary {
+  padding-top: 13px;
+  margin-top: 15px;
+  border-top: 1px solid #dfebe2;
+}
+.project-settings-empty-inline,
+.project-settings-empty,
+.project-settings-loading {
+  font-size: 12px;
+  line-height: 1.9;
+  color: #60796b;
+}
+.project-settings-empty,
+.project-settings-loading {
+  background: #fff;
+  border: 1px dashed #c9ddcf;
+  border-radius: 15px;
+  padding: 30px;
+  text-align: center;
+}
+.project-custom-field {
+  background: #f9fbfa;
+  border: 1px solid #e4eee7;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 0 0 13px;
+}
+.project-settings-save {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 15px 18px;
+  background: #e8f3ecf5;
+  border: 1px solid #c9e2d1;
+  border-radius: 14px;
+  box-shadow: 0 9px 28px #183f3421;
+}
+.project-settings-save span {
+  font-size: 12px;
+  color: #3d5e4e;
+}
+.project-settings-warning {
+  color: #9b481c;
+  background: #fff5e8;
+  border: 1px solid #f2d1a8;
+  border-radius: 10px;
+  padding: 12px 15px;
+  font-size: 12px;
+}
+.project-settings-access .workspace-caption {
+  line-height: 1.9;
+}
+.project-settings-grant {
+  display: flex;
+  align-items: end;
+  gap: 13px;
+  margin: 17px 0;
+}
+.project-settings-grant > div {
+  min-width: 260px;
+  max-width: 420px;
+  flex: 1;
+}
+.project-settings-members {
+  border-top: 1px solid #edf1ee;
+}
+.project-settings-members > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid #edf1ee;
+  font-size: 12px;
+}
+.project-settings-members > p {
+  font-size: 12px;
+  color: #71867a;
+}
+.project-settings-page .button {
+  font-family: inherit;
+}
+.project-settings-page :focus-visible {
+  outline: 2px solid #347f61;
+  outline-offset: 2px;
+}
+@media (max-width: 850px) {
+  .project-workflow-guide {
+    grid-template-columns: 1fr;
+  }
+  .project-settings-card {
+    padding: 21px;
+  }
+}
+@media (max-width: 600px) {
+  .project-settings-hero {
+    padding: 23px;
+  }
+  .project-settings-hero h2 {
+    font-size: 21px;
+  }
+  .project-settings-picker {
+    display: grid;
+    padding: 18px;
+  }
+  .project-settings-card {
+    padding: 17px;
+  }
+  .project-settings-card .module-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .project-settings-field-wide {
+    grid-column: auto;
+  }
+  .project-workflow-step > header {
+    flex-wrap: wrap;
+  }
+  .project-workflow-step > header .button {
+    margin-inline-start: auto;
+  }
+  .project-settings-save {
+    bottom: 0;
+    border-radius: 12px;
+    flex-wrap: wrap;
+  }
+  .project-settings-grant {
+    display: grid;
+  }
+  .project-settings-grant > div {
+    min-width: 0;
+    width: 100%;
+  }
+}
+.shekof-workspace .project-settings-hero p {
+  color: #e4f2eb;
+}

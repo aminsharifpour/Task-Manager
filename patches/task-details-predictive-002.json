@@ -1,0 +1,180 @@
+{
+  "patch": "002-task-readonly-predictive",
+  "base_repository": "aminsharifpour/Task-Manager",
+  "base_commit": "5d54e6c39cdf2298ae2a69051bbad10754f701d7",
+  "cumulative_with_patch_001": true,
+  "requires_database_migration": false,
+  "requires_dependency_install": false,
+  "requires_api_restart": true,
+  "remote_repository_writes": false,
+  "validation": {
+    "isolated_tests_passed": 74,
+    "real_browser_tested": false,
+    "full_typecheck_run": false,
+    "full_build_run": false,
+    "real_postgres_integration_tested": false,
+    "node_syntax": "passed",
+    "css_parse": "passed"
+  },
+  "files": [
+    {
+      "path": "apps/api/src/modules/tasks/core-router.js",
+      "sha256": "8ba1a053c1d13ddaf27d0a10eb1048e7f9d5e923e379981dd7ecd86d26af78b7",
+      "status_vs_main": "modified",
+      "base_git_blob": "c2e3b96f79216d3628b5035dc678afb0059b04f7",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/api/src/modules/tasks/record-reader.js",
+      "sha256": "fe78ea78925fd4ee4e6f77c27d2a7412b5e4f7d409f915f692ffae6f9cd8d9da",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/hero-task-fields.tsx",
+      "sha256": "f885769ecb946db0aa80ba198430515378b2ca94d1326bb79062782b0a344e90",
+      "status_vs_main": "modified",
+      "base_git_blob": "be9e6f26e40bfeabe58e1f39c09fefdfdd4d4ed4",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/member-picker.tsx",
+      "sha256": "f0f74f26390af291c0fd516acc8cd8f630694cc71cd012f425fcf972776b873f",
+      "status_vs_main": "modified",
+      "base_git_blob": "05892bb79bee43e11e5e635c2abe531eaea91042",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/predictive-picker.css",
+      "sha256": "1feeae77b4255af07ea815acb5f02cfc216da10aa60508c3519d48ae507e9e44",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/predictive-picker.tsx",
+      "sha256": "2082f3e580fc179983056cf1719ddb2048c79a2400235797d416706ad69dcc32",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/projects-panel.tsx",
+      "sha256": "aec1a397d3beb7f3d66ea29235a544a95883ecae1c48f1462513036f24c1bb98",
+      "status_vs_main": "modified",
+      "base_git_blob": "071990b895f70633a9ac08284c335ffd89c8ea9f",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/readonly-timeline.ts",
+      "sha256": "7ffaf416c907db464a5388cb3dbf8713779229b3bbd24b79ec09cf6e39a7a934",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/record-dialog.css",
+      "sha256": "3e23ff512a9b0544e59966644a5e075dce05b760c40b343a76ad8d3c7f0cad19",
+      "status_vs_main": "added",
+      "existed_in_patch001": true
+    },
+    {
+      "path": "apps/web/src/features/workspace/record-dialog.tsx",
+      "sha256": "bc8a0421aea68cf7ba9bc071d64452a7956b67462184fd3e5fe4560728792411",
+      "status_vs_main": "added",
+      "existed_in_patch001": true
+    },
+    {
+      "path": "apps/web/src/features/workspace/resource-picker.tsx",
+      "sha256": "1106dae391144e68cfbc2f3d2a79fb8e368a537171514507c5192d2b2e7162a6",
+      "status_vs_main": "modified",
+      "base_git_blob": "d9de957373e53cad9f44e86fdf2610c047ae381d",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/task-comments-panel.tsx",
+      "sha256": "ba3e6397692a5240c4586360598c15ecb9ea07b84292aa965b33eb9928672e2c",
+      "status_vs_main": "modified",
+      "base_git_blob": "e283d95fd0f54956d5d7b489b0ebb5728c663192",
+      "existed_in_patch001": true
+    },
+    {
+      "path": "apps/web/src/features/workspace/task-custom-fields.tsx",
+      "sha256": "162375552df96329bf742e771634db88df15ee958983ef36902877faac696f9f",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/task-details-panel.tsx",
+      "sha256": "df3504f8f2345aefb78a39c002e07334ee37bd9bb8c0e26d613813cd29b151e4",
+      "status_vs_main": "modified",
+      "base_git_blob": "c4ae4876cecf2e4a25eef5a1507dd4cc48faca97",
+      "existed_in_patch001": true
+    },
+    {
+      "path": "apps/web/src/features/workspace/task-edit-panel.tsx",
+      "sha256": "1932a0365e8b0869c02b79fb08c620aa6782fb7c28d25474a6a7d2c16b828a11",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/task-files-panel.tsx",
+      "sha256": "0907902f535e60d7a533a3e18accf2d98f4b9549e60a9b3da688cee4e27a7c9c",
+      "status_vs_main": "modified",
+      "base_git_blob": "51159f2fb1974dc52c1164342982df6b4b734a46",
+      "existed_in_patch001": true
+    },
+    {
+      "path": "apps/web/src/features/workspace/task-readonly-sections.tsx",
+      "sha256": "9bca10ef61c4288bfd478b912e7fdde50853bbb927ad5039053c22813bad646d",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/task-record-types.ts",
+      "sha256": "e99c31f592844276a148291eeaecce4a835bacfa7622f13eca9d7741f7d01d42",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/task-record.css",
+      "sha256": "d8c5bbc3d4517371a3705b54e4f5931f68a2f8044fec8fb173471e207e24caba",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "apps/web/src/features/workspace/tasks-panel.tsx",
+      "sha256": "91cad2d1551f56b79f77e05e05ae77f252351bcdb0b47f58e47375aa3b369090",
+      "status_vs_main": "modified",
+      "base_git_blob": "fc43c66a4b79efea28f6e6bbbae8d1380afe6e97",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "tests/foundation/table-dialogs.test.mjs",
+      "sha256": "9074f86d5a8d4609f175606414cdd1875db30f992b060f7515f50d94728cf574",
+      "status_vs_main": "added",
+      "existed_in_patch001": true
+    },
+    {
+      "path": "tests/foundation/task-readonly-predictive.test.mjs",
+      "sha256": "75cb06ef175d25305374e8f3fa610194ad3122eb96499ea03abab8f7e99b05e4",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "tests/foundation/task-record-reader.test.mjs",
+      "sha256": "f7c68b4faef4ec77eee205030fbafe36b50c77a6ee979bae40eb8a0b320a0dd9",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "tests/helpers/task-ui-harness.mjs",
+      "sha256": "5f88053a36fe13b6001a39bc0c62650df625546bd7901fb158963f8522e4d62f",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    },
+    {
+      "path": "PATCH_02_TASK_READONLY_PREDICTIVE_FA.md",
+      "sha256": "4e69e32b697eb25da5bbe1a4fddf021753a57303512f3fe78c7a6bcad9156d8d",
+      "status_vs_main": "added",
+      "existed_in_patch001": false
+    }
+  ]
+}

@@ -358,9 +358,12 @@ model MeetingMinute {
   summary    String
   decisions  String?
   followUps  String?
+  content    Json?
+  archivedAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   @@index([organizationId])
+  @@index([organizationId, archivedAt, date])
   @@unique([organizationId, id])
 }
 

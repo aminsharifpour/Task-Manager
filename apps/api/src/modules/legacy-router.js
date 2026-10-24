@@ -60,6 +60,7 @@ export function legacyModulesRouter(){
   r.get("/minutes/:id",wrap((c,q)=>minutes.detail(c,q.params.id)));
   r.post("/minutes",wrap((c,q)=>minutes.save(c,null,q.body),201));
   r.patch("/minutes/:id",wrap((c,q)=>minutes.save(c,q.params.id,q.body)));
+  r.patch("/minutes/:id/archive",wrap((c,q)=>minutes.archive(c,q.params.id,q.body)));
   r.delete("/minutes/:id",wrap((c,q)=>minutes.remove(c,q.params.id)));
   r.get("/hr/report",wrap((c,q)=>hr.report(c,q.query)));
   r.get("/accounting/report",wrap((c,q)=>accounting.report(c,q.query)));

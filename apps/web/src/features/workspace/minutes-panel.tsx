@@ -1,42 +1,694 @@
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  Button,
+  Card,
+  Chip,
+  Description,
+  Input,
+  Label,
+  Modal,
+  Spinner,
+  Table,
+  Text,
+  TextField,
+} from "@heroui/react";
+import {
+  Archive,
+  ArchiveRestore,
+  CalendarDays,
+  Eye,
+  FileText,
+  Paperclip,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import JalaliDateField from "./jalali-date-field";
 import TableAction from "./table-action";
-import {useEffect,useRef,useState} from "react";
-import {Button,Card,Chip,Description,FieldError,Form,Input,Label,Modal,Spinner,Table,Text,TextArea,TextField} from "@heroui/react";
-import {Eye,FileText,Paperclip,Pencil,Plus,RefreshCw,Trash2} from "lucide-react";
-import {emptyPage,useModule} from "./use-module";
-import type {Request,Permissions} from "./use-module";
-import {displayDate,workspaceToday} from "./dates";
-import {TaskMessage} from "./hero-task-fields";
 import MinuteFiles from "./minute-files";
+import { emptyPage, useModule } from "./use-module";
+import type { Request, Permissions } from "./use-module";
+import type { Minute } from "./minute-types";
+import { displayDate, workspaceToday } from "./dates";
+import { TaskMessage } from "./hero-task-fields";
 import "./minutes-panel.css";
-type Minute={id:string;title:string;date:string;summary:string;attendees:string|null;decisions:string|null;followUps:string|null;_count?:{attachments:number}};
-const number=(value:number)=>new Intl.NumberFormat("fa").format(value);
-export default function MinutesPanel({api,permissions,initialMinuteId=""}:{api:Request;permissions:Permissions;initialMinuteId?:string}){
- const [search,setSearch]=useState(""),[query,setQuery]=useState(""),[from,setFrom]=useState(""),[to,setTo]=useState(""),[page,setPage]=useState(1),[editor,setEditor]=useState<Minute|null|undefined>(),[detail,setDetail]=useState(initialMinuteId),[files,setFiles]=useState<{id:string;title:string}>(),[removing,setRemoving]=useState<Minute>(),[notice,setNotice]=useState("");
- useEffect(()=>{const timer=window.setTimeout(()=>{setQuery(search);setPage(1);},250);return()=>clearTimeout(timer);},[search]);useEffect(()=>{if(initialMinuteId)setDetail(initialMinuteId);},[initialMinuteId]);
- const state=useModule(api,"/minutes?page="+page+"&pageSize=25&search="+encodeURIComponent(query)+(from?"&from="+from:"")+(to?"&to="+to:""),emptyPage<Minute>());
- useEffect(()=>{const last=Math.max(1,Math.ceil(state.data.total/25));if(!state.loading&&page>last)setPage(last);},[page,state.loading,state.data.total]);
- const manager=["owner","admin","project_manager"].includes(permissions.role);
- return <section className="minutes-page"><div className="minutes-toolbar"><div><Text className="minutes-section-label">صورت‌جلسه‌های سازمان</Text><Description>تصمیم‌ها، یادداشت‌ها و اقدام‌های بعدی در یک نگاه</Description></div><div className="minutes-toolbar-actions"><Button variant="outline" isIconOnly aria-label="تازه‌سازی صورت‌جلسه‌ها" isDisabled={state.loading} onPress={state.refresh}><RefreshCw size={16}/></Button>{manager&&<Button onPress={()=>setEditor(null)}><Plus size={17}/>صورت‌جلسه جدید</Button>}</div></div>{state.error&&<TaskMessage error message={state.error}/>} {notice&&<TaskMessage message={notice}/>}
- <Card className="minutes-list-card"><Card.Header className="minutes-list-header"><div><Card.Title>فهرست صورت‌جلسه‌ها</Card.Title><Card.Description>{state.loading?"در حال دریافت…":number(state.data.total)+" صورت‌جلسه"}</Card.Description></div><Chip data-tone="amber" size="sm" variant="soft" color="accent">جلسات و تصمیم‌ها</Chip></Card.Header><Card.Content className="minutes-list-content"><div className="minutes-filters"><TextField fullWidth type="search" value={search} onChange={setSearch}><Label>جستجوی صورت‌جلسه</Label><Input maxLength={200} placeholder="عنوان جلسه را جستجو کنید…"/></TextField><JalaliDateField label="از تاریخ جلسه (شمسی)" value={from} onChange={value=>{setFrom(value);setPage(1);}} max={to||undefined}/><JalaliDateField label="تا تاریخ جلسه (شمسی)" value={to} onChange={value=>{setTo(value);setPage(1);}} min={from||undefined}/></div>{(search||from||to)&&<Button className="minutes-clear" variant="ghost" size="sm" onPress={()=>{setSearch("");setQuery("");setFrom("");setTo("");setPage(1);}}>پاک کردن فیلترها</Button>}{state.loading&&<div className="minutes-loading" role="status"><Spinner size="sm"/><Text>در حال دریافت صورت‌جلسه‌ها…</Text></div>}
- <Table variant="secondary" className="workspace-data-table minutes-table"><Table.ScrollContainer><Table.Content aria-label="جدول صورت‌جلسه‌ها"><Table.Header><Table.Column id="title" isRowHeader>صورت‌جلسه</Table.Column><Table.Column id="date">تاریخ جلسه</Table.Column><Table.Column id="summary">خلاصه</Table.Column><Table.Column id="attendees">حاضران</Table.Column><Table.Column id="files">پیوست‌ها</Table.Column><Table.Column id="actions">عملیات</Table.Column></Table.Header><Table.Body items={state.data.items} renderEmptyState={()=><div className="minutes-empty"><FileText size={32}/><Text>{state.loading?"در حال دریافت…":state.error?"دریافت صورت‌جلسه‌ها انجام نشد":query||from||to?"صورت‌جلسه‌ای با این فیلتر پیدا نشد":"هنوز صورت‌جلسه‌ای ثبت نشده است"}</Text><Description>تصمیم‌ها و اقدام‌های جلسه را در یک صورت‌جلسه ثبت کنید.</Description>{manager&&!state.loading&&!state.error&&<TableAction label="ثبت صورت‌جلسه" variant="primary" onPress={()=>setEditor(null)}><Plus size={18}/></TableAction>}</div>}>{row=><Table.Row id={row.id} textValue={row.title}><Table.Cell><div className="minute-title-button"><FileText size={18}/><strong>{row.title}</strong></div></Table.Cell><Table.Cell>{displayDate(row.date)}</Table.Cell><Table.Cell><Text className="minute-preview">{row.summary}</Text></Table.Cell><Table.Cell><Text className="minute-attendees">{row.attendees||"ثبت نشده"}</Text></Table.Cell><Table.Cell><div className="workspace-table-actions"><TableAction label={"پیوست‌های "+row.title} onPress={()=>setFiles({id:row.id,title:row.title})}><Paperclip size={18}/></TableAction><Chip size="sm" variant="soft">{number(row._count?.attachments||0)}</Chip></div></Table.Cell><Table.Cell><div className="minute-row-actions"><TableAction label={"مشاهده صورت‌جلسه "+row.title} onPress={()=>setDetail(row.id)}><Eye size={18}/></TableAction>{manager&&<><TableAction label={"ویرایش "+row.title} onPress={()=>setEditor(row)}><Pencil size={18}/></TableAction><TableAction label={"حذف "+row.title} onPress={()=>setRemoving(row)} variant="danger-soft"><Trash2 size={18}/></TableAction></>}</div></Table.Cell></Table.Row>}</Table.Body></Table.Content></Table.ScrollContainer><Table.Footer className="minutes-table-footer"><Text>{state.data.total?number((page-1)*25+1)+" تا "+number(Math.min(page*25,state.data.total))+" از "+number(state.data.total)+" صورت‌جلسه":"۰ صورت‌جلسه"}</Text><div className="minutes-paging"><Button size="sm" variant="outline" isDisabled={page<=1||state.loading} onPress={()=>setPage(value=>value-1)}>قبلی</Button><Text>صفحه {number(page)} از {number(Math.max(1,Math.ceil(state.data.total/25)))}</Text><Button size="sm" variant="outline" isDisabled={page*25>=state.data.total||state.loading} onPress={()=>setPage(value=>value+1)}>بعدی</Button></div></Table.Footer></Table>
- </Card.Content></Card>
- {editor!==undefined&&<MinuteEditor key={editor?.id||"new"} api={api} minute={editor} onClose={()=>setEditor(undefined)} onDone={row=>{setEditor(undefined);setNotice("صورت‌جلسه «"+row.title+"» ذخیره شد.");state.refresh();}}/>}
- {detail&&<MinuteDetail key={detail} api={api} id={detail} manager={manager} onClose={()=>setDetail("")} onEdit={row=>{setDetail("");setEditor(row);}} onFiles={row=>{setDetail("");setFiles({id:row.id,title:row.title});}}/>}
- {files&&<Modal.Backdrop isOpen onOpenChange={open=>{if(!open)setFiles(undefined);}}><Modal.Container scroll="inside"><Modal.Dialog className="minute-modal" dir="rtl"><Modal.CloseTrigger aria-label="بستن پیوست‌ها"/><Modal.Header><Modal.Heading>پیوست‌های صورت‌جلسه</Modal.Heading><Description>{files.title}</Description></Modal.Header><Modal.Body><MinuteFiles api={api} minuteId={files.id}/></Modal.Body><Modal.Footer><Button variant="outline" onPress={()=>setFiles(undefined)}>بستن</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop>}
- {removing&&<DeleteMinute api={api} minute={removing} onClose={()=>setRemoving(undefined)} onDone={()=>{setRemoving(undefined);setNotice("صورت‌جلسه حذف شد.");state.refresh();}}/>}
- </section>;
+
+const number = (value: number) => new Intl.NumberFormat("fa").format(value);
+const MinuteEditorDialog = lazy(() => import("./minute-editor-dialog"));
+const MinuteDetailDialog = lazy(() => import("./minute-detail-dialog"));
+type View = "active" | "archived";
+type DateMode = "exact" | "range";
+
+export default function MinutesPanel({
+  api,
+  permissions,
+  initialMinuteId = "",
+}: {
+  api: Request;
+  permissions: Permissions;
+  initialMinuteId?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [dateMode, setDateMode] = useState<DateMode>("exact");
+  const [exactDate, setExactDate] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [view, setView] = useState<View>("active");
+  const [page, setPage] = useState(1);
+  const [editor, setEditor] = useState<Minute | null | undefined>();
+  const [detail, setDetail] = useState(initialMinuteId);
+  const [files, setFiles] = useState<{ id: string; title: string }>();
+  const [removing, setRemoving] = useState<Minute>();
+  const [archiveBusy, setArchiveBusy] = useState("");
+  const [notice, setNotice] = useState("");
+  const [actionError, setActionError] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setQuery(search);
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+  useEffect(() => {
+    if (initialMinuteId) setDetail(initialMinuteId);
+  }, [initialMinuteId]);
+  const dateFrom = dateMode === "exact" ? exactDate : from;
+  const dateTo = dateMode === "exact" ? exactDate : to;
+  const state = useModule(
+    api,
+    "/minutes?page=" +
+      page +
+      "&pageSize=25&view=" +
+      view +
+      "&search=" +
+      encodeURIComponent(query) +
+      (dateFrom ? "&from=" + dateFrom : "") +
+      (dateTo ? "&to=" + dateTo : ""),
+    emptyPage<Minute>(),
+  );
+  useEffect(() => {
+    const last = Math.max(1, Math.ceil(state.data.total / 25));
+    if (!state.loading && page > last) setPage(last);
+  }, [page, state.loading, state.data.total]);
+  const manager = ["owner", "admin", "project_manager"].includes(
+    permissions.role,
+  );
+  const clearFilters = () => {
+    setSearch("");
+    setQuery("");
+    setExactDate("");
+    setFrom("");
+    setTo("");
+    setPage(1);
+  };
+  const toggleArchive = async (minute: Minute) => {
+    if (archiveBusy) return;
+    setArchiveBusy(minute.id);
+    setActionError("");
+    setNotice("");
+    try {
+      await api("/minutes/" + encodeURIComponent(minute.id) + "/archive", {
+        method: "PATCH",
+        body: JSON.stringify({ archived: !minute.archivedAt }),
+      });
+      setDetail("");
+      setNotice(
+        minute.archivedAt
+          ? "صورت‌جلسه از آرشیو بازگردانده شد."
+          : "صورت‌جلسه به آرشیو منتقل شد.",
+      );
+      state.refresh();
+    } catch (reason) {
+      setActionError(
+        reason instanceof Error
+          ? reason.message
+          : "تغییر وضعیت آرشیو انجام نشد.",
+      );
+    } finally {
+      setArchiveBusy("");
+    }
+  };
+  const hasFilters = Boolean(search || dateFrom || dateTo);
+  return (
+    <section className="minutes-page">
+      <header className="minutes-intro">
+        <div>
+          <span className="minutes-eyebrow">ثبت و پیگیری جلسات</span>
+          <h2>هر جلسه، یک سند قابل پیگیری</h2>
+          <p>
+            گفتگوها، تصمیم‌ها و اقدام‌های بعدی را در یک صورت‌جلسه کامل ثبت کنید؛
+            بعداً آن را با تاریخ یا عنوان پیدا کنید.
+          </p>
+        </div>
+        {manager && (
+          <Button onPress={() => setEditor(null)}>
+            <Plus size={17} />
+            صورت‌جلسه جدید
+          </Button>
+        )}
+      </header>
+      <div className="minutes-steps" aria-label="روند کار صورت‌جلسه">
+        <div>
+          <span>۱</span>
+          <strong>مشخصات جلسه</strong>
+          <small>عنوان، تاریخ و حاضران</small>
+        </div>
+        <div>
+          <span>۲</span>
+          <strong>متن و تصمیم‌ها</strong>
+          <small>ویرایشگر کامل با جدول و فهرست</small>
+        </div>
+        <div>
+          <span>۳</span>
+          <strong>نگهداری و بازیابی</strong>
+          <small>جست‌وجوی تاریخ و آرشیو</small>
+        </div>
+      </div>
+      <div className="minutes-toolbar">
+        <div>
+          <Text className="minutes-section-label">صورت‌جلسه‌های سازمان</Text>
+          <Description>
+            جلسه‌های جاری و آرشیوشده را جداگانه مرور کنید.
+          </Description>
+        </div>
+        <div className="minutes-toolbar-actions">
+          <Button
+            variant="outline"
+            isIconOnly
+            aria-label="تازه‌سازی صورت‌جلسه‌ها"
+            isDisabled={state.loading}
+            onPress={state.refresh}
+          >
+            <RefreshCw size={16} />
+          </Button>
+        </div>
+      </div>
+      {state.error && <TaskMessage error message={state.error} />}
+      {actionError && <TaskMessage error message={actionError} />}
+      {notice && <TaskMessage message={notice} />}
+      <Card className="minutes-list-card">
+        <Card.Header className="minutes-list-header">
+          <div>
+            <Card.Title>فهرست صورت‌جلسه‌ها</Card.Title>
+            <Card.Description>
+              {state.loading
+                ? "در حال دریافت…"
+                : number(state.data.total) +
+                  (view === "active"
+                    ? " صورت‌جلسه جاری"
+                    : " صورت‌جلسه آرشیوشده")}
+            </Card.Description>
+          </div>
+          <div
+            className="minutes-view-tabs"
+            role="group"
+            aria-label="نمای صورت‌جلسه‌ها"
+          >
+            <Button
+              size="sm"
+              variant={view === "active" ? "primary" : "ghost"}
+              aria-pressed={view === "active"}
+              onPress={() => {
+                setView("active");
+                setPage(1);
+              }}
+            >
+              <FileText size={15} />
+              جاری
+            </Button>
+            <Button
+              size="sm"
+              variant={view === "archived" ? "primary" : "ghost"}
+              aria-pressed={view === "archived"}
+              onPress={() => {
+                setView("archived");
+                setPage(1);
+              }}
+            >
+              <Archive size={15} />
+              آرشیو
+            </Button>
+          </div>
+        </Card.Header>
+        <Card.Content className="minutes-list-content">
+          <div className="minutes-filter-heading">
+            <div>
+              <CalendarDays size={18} />
+              <strong>پیدا کردن صورت‌جلسه</strong>
+              <span>عنوان یا متن جلسه و تاریخ برگزاری را جست‌وجو کنید.</span>
+            </div>
+            {hasFilters && (
+              <Button
+                className="minutes-clear"
+                variant="ghost"
+                size="sm"
+                onPress={clearFilters}
+              >
+                پاک کردن فیلترها
+              </Button>
+            )}
+          </div>
+          <div className="minutes-filters">
+            <TextField
+              fullWidth
+              type="search"
+              value={search}
+              onChange={setSearch}
+            >
+              <Label>جست‌وجو در عنوان و متن</Label>
+              <Input maxLength={200} placeholder="مثلاً برنامه‌ریزی محصول…" />
+            </TextField>
+            <div className="minutes-date-filter">
+              <div
+                className="minutes-date-switch"
+                role="group"
+                aria-label="نوع جست‌وجوی تاریخ"
+              >
+                <button
+                  type="button"
+                  aria-pressed={dateMode === "exact"}
+                  onClick={() => {
+                    setDateMode("exact");
+                    setPage(1);
+                  }}
+                >
+                  تاریخ دقیق
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={dateMode === "range"}
+                  onClick={() => {
+                    setDateMode("range");
+                    setPage(1);
+                  }}
+                >
+                  بازهٔ تاریخ
+                </button>
+              </div>
+              {dateMode === "exact" ? (
+                <div className="minutes-exact-date">
+                  <JalaliDateField
+                    label="تاریخ جلسه (شمسی)"
+                    value={exactDate}
+                    onChange={(value) => {
+                      setExactDate(value);
+                      setPage(1);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onPress={() => {
+                      setExactDate(workspaceToday());
+                      setPage(1);
+                    }}
+                  >
+                    امروز
+                  </Button>
+                </div>
+              ) : (
+                <div className="minutes-date-range">
+                  <JalaliDateField
+                    label="از تاریخ جلسه (شمسی)"
+                    value={from}
+                    onChange={(value) => {
+                      setFrom(value);
+                      setPage(1);
+                    }}
+                    max={to || undefined}
+                  />
+                  <JalaliDateField
+                    label="تا تاریخ جلسه (شمسی)"
+                    value={to}
+                    onChange={(value) => {
+                      setTo(value);
+                      setPage(1);
+                    }}
+                    min={from || undefined}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+          {state.loading && (
+            <div className="minutes-loading" role="status">
+              <Spinner size="sm" />
+              <Text>در حال دریافت صورت‌جلسه‌ها…</Text>
+            </div>
+          )}
+          <Table
+            variant="secondary"
+            className="workspace-data-table minutes-table"
+          >
+            <Table.ScrollContainer>
+              <Table.Content
+                aria-label={
+                  view === "active"
+                    ? "جدول صورت‌جلسه‌های جاری"
+                    : "جدول آرشیو صورت‌جلسه‌ها"
+                }
+                aria-busy={state.loading}
+              >
+                <Table.Header>
+                  <Table.Column id="title" isRowHeader>
+                    صورت‌جلسه
+                  </Table.Column>
+                  <Table.Column id="date">تاریخ جلسه</Table.Column>
+                  <Table.Column id="summary">بخشی از متن</Table.Column>
+                  <Table.Column id="attendees">حاضران</Table.Column>
+                  <Table.Column id="files">پیوست‌ها</Table.Column>
+                  <Table.Column id="actions">عملیات</Table.Column>
+                </Table.Header>
+                <Table.Body
+                  items={state.data.items}
+                  renderEmptyState={() => (
+                    <div className="minutes-empty">
+                      <FileText size={32} />
+                      <Text>
+                        {state.loading
+                          ? "در حال دریافت…"
+                          : state.error
+                            ? "دریافت صورت‌جلسه‌ها انجام نشد"
+                            : hasFilters
+                              ? "صورت‌جلسه‌ای با این جست‌وجو پیدا نشد"
+                              : view === "archived"
+                                ? "آرشیو خالی است"
+                                : "هنوز صورت‌جلسه‌ای ثبت نشده است"}
+                      </Text>
+                      <Description>
+                        {hasFilters
+                          ? "تاریخ یا عبارت جست‌وجو را تغییر دهید."
+                          : view === "archived"
+                            ? "صورت‌جلسه‌های بایگانی‌شده اینجا نمایش داده می‌شوند."
+                            : "جلسه را با متن و تصمیم‌های آن ثبت کنید."}
+                      </Description>
+                      {manager &&
+                        view === "active" &&
+                        !hasFilters &&
+                        !state.loading &&
+                        !state.error && (
+                          <TableAction
+                            label="ثبت صورت‌جلسه"
+                            variant="primary"
+                            onPress={() => setEditor(null)}
+                          >
+                            <Plus size={18} />
+                          </TableAction>
+                        )}
+                    </div>
+                  )}
+                >
+                  {(row) => (
+                    <Table.Row id={row.id} textValue={row.title}>
+                      <Table.Cell>
+                        <button
+                          type="button"
+                          className="minute-title-button"
+                          aria-label={"جزئیات صورت‌جلسه " + row.title}
+                          onClick={() => setDetail(row.id)}
+                        >
+                          <FileText size={18} />
+                          <span>
+                            <strong>{row.title}</strong>
+                            {row.archivedAt && <small>آرشیوشده</small>}
+                          </span>
+                        </button>
+                      </Table.Cell>
+                      <Table.Cell>{displayDate(row.date)}</Table.Cell>
+                      <Table.Cell>
+                        <Text className="minute-preview">{row.summary}</Text>
+                      </Table.Cell>
+                      <Table.Cell>
+                        <Text className="minute-attendees">
+                          {row.attendees || "ثبت نشده"}
+                        </Text>
+                      </Table.Cell>
+                      <Table.Cell>
+                        <div className="workspace-table-actions">
+                          <TableAction
+                            label={"پیوست‌های " + row.title}
+                            onPress={() =>
+                              setFiles({ id: row.id, title: row.title })
+                            }
+                          >
+                            <Paperclip size={18} />
+                          </TableAction>
+                          <Chip size="sm" variant="soft">
+                            {number(row._count?.attachments || 0)}
+                          </Chip>
+                        </div>
+                      </Table.Cell>
+                      <Table.Cell>
+                        <div className="minute-row-actions">
+                          <TableAction
+                            label={"مشاهده صورت‌جلسه " + row.title}
+                            onPress={() => setDetail(row.id)}
+                          >
+                            <Eye size={18} />
+                          </TableAction>
+                          {manager && (
+                            <>
+                              <TableAction
+                                label={"ویرایش " + row.title}
+                                onPress={() => setEditor(row)}
+                              >
+                                <Pencil size={18} />
+                              </TableAction>
+                              <TableAction
+                                label={
+                                  (row.archivedAt
+                                    ? "بازگردانی از آرشیو "
+                                    : "آرشیو ") + row.title
+                                }
+                                onPress={() => void toggleArchive(row)}
+                              >
+                                {row.archivedAt ? (
+                                  <ArchiveRestore size={18} />
+                                ) : (
+                                  <Archive size={18} />
+                                )}
+                              </TableAction>
+                              {view === "archived" && (
+                                <TableAction
+                                  label={"حذف " + row.title}
+                                  onPress={() => setRemoving(row)}
+                                  variant="danger-soft"
+                                >
+                                  <Trash2 size={18} />
+                                </TableAction>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </Table.Cell>
+                    </Table.Row>
+                  )}
+                </Table.Body>
+              </Table.Content>
+            </Table.ScrollContainer>
+            <Table.Footer className="minutes-table-footer">
+              <Text>
+                {state.data.total
+                  ? number((page - 1) * 25 + 1) +
+                    " تا " +
+                    number(Math.min(page * 25, state.data.total)) +
+                    " از " +
+                    number(state.data.total) +
+                    " صورت‌جلسه"
+                  : "۰ صورت‌جلسه"}
+              </Text>
+              <div className="minutes-paging">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  isDisabled={page <= 1 || state.loading}
+                  onPress={() => setPage((value) => value - 1)}
+                >
+                  قبلی
+                </Button>
+                <Text>
+                  صفحه {number(page)} از{" "}
+                  {number(Math.max(1, Math.ceil(state.data.total / 25)))}
+                </Text>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  isDisabled={page * 25 >= state.data.total || state.loading}
+                  onPress={() => setPage((value) => value + 1)}
+                >
+                  بعدی
+                </Button>
+              </div>
+            </Table.Footer>
+          </Table>
+        </Card.Content>
+      </Card>
+      {editor !== undefined && (
+        <Suspense
+          fallback={
+            <p role="status" className="minutes-loading">
+              در حال آماده‌سازی ویرایشگر…
+            </p>
+          }
+        >
+          <MinuteEditorDialog
+            key={editor?.id || "new"}
+            api={api}
+            minute={editor}
+            onClose={() => setEditor(undefined)}
+            onDone={(row) => {
+              setEditor(undefined);
+              setNotice("صورت‌جلسه «" + row.title + "» ذخیره شد.");
+              state.refresh();
+            }}
+          />
+        </Suspense>
+      )}
+      {detail && (
+        <Suspense
+          fallback={
+            <p role="status" className="minutes-loading">
+              در حال باز کردن صورت‌جلسه…
+            </p>
+          }
+        >
+          <MinuteDetailDialog
+            key={detail}
+            api={api}
+            id={detail}
+            manager={manager}
+            onClose={() => setDetail("")}
+            onEdit={(row) => {
+              setDetail("");
+              setEditor(row);
+            }}
+            onFiles={(row) => {
+              setDetail("");
+              setFiles({ id: row.id, title: row.title });
+            }}
+            onArchive={(row) => void toggleArchive(row)}
+          />
+        </Suspense>
+      )}
+      {files && (
+        <Modal.Backdrop
+          isOpen
+          onOpenChange={(open) => {
+            if (!open) setFiles(undefined);
+          }}
+        >
+          <Modal.Container scroll="inside">
+            <Modal.Dialog className="minute-modal" dir="rtl">
+              <Modal.CloseTrigger aria-label="بستن پیوست‌ها" />
+              <Modal.Header>
+                <Modal.Heading>پیوست‌های صورت‌جلسه</Modal.Heading>
+                <Description>{files.title}</Description>
+              </Modal.Header>
+              <Modal.Body>
+                <MinuteFiles api={api} minuteId={files.id} />
+              </Modal.Body>
+              <Modal.Footer>
+                <Button variant="outline" onPress={() => setFiles(undefined)}>
+                  بستن
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      )}
+      {removing && (
+        <DeleteMinute
+          api={api}
+          minute={removing}
+          onClose={() => setRemoving(undefined)}
+          onDone={() => {
+            setRemoving(undefined);
+            setNotice("صورت‌جلسه حذف شد.");
+            state.refresh();
+          }}
+        />
+      )}
+    </section>
+  );
 }
-function MinuteEditor({api,minute,onClose,onDone}:{api:Request;minute:Minute|null;onClose:()=>void;onDone:(row:Minute)=>void}){
- const [form,setForm]=useState({title:minute?.title||"",date:minute?.date.slice(0,10)||workspaceToday(),summary:minute?.summary||"",attendees:minute?.attendees||"",decisions:minute?.decisions||"",followUps:minute?.followUps||""}),[error,setError]=useState(""),[busy,setBusy]=useState(false);const lock=useRef(false),mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
- const change=(key:keyof typeof form,value:string)=>setForm(row=>({...row,[key]:value}));
- return <Modal.Backdrop isOpen isDismissable={!busy} isKeyboardDismissDisabled={busy} onOpenChange={open=>{if(!open&&!lock.current)onClose();}}><Modal.Container size="lg" scroll="inside"><Modal.Dialog className="minute-modal" dir="rtl"><Modal.CloseTrigger aria-label="بستن فرم صورت‌جلسه" isDisabled={busy}/><Modal.Header><Modal.Icon><FileText size={23}/></Modal.Icon><Modal.Heading>{minute?"ویرایش صورت‌جلسه":"صورت‌جلسه جدید"}</Modal.Heading><Description>عنوان، تاریخ و خلاصه جلسه لازم هستند؛ تصمیم‌ها و پیگیری‌ها را هم می‌توانید ثبت کنید.</Description></Modal.Header><Form className="minute-create-form" onSubmit={event=>{event.preventDefault();if(lock.current)return;if(!form.title.trim()||!form.summary.trim()){setError("عنوان و خلاصه جلسه را تکمیل کنید.");return;}lock.current=true;setBusy(true);setError("");void api<Minute>("/minutes"+(minute?"/"+minute.id:""),{method:minute?"PATCH":"POST",body:JSON.stringify({...form,title:form.title.trim(),summary:form.summary.trim(),attendees:form.attendees.trim(),decisions:form.decisions.trim(),followUps:form.followUps.trim()})}).then(row=>{if(mounted.current)onDone(row);}).catch(error=>{if(mounted.current)setError(error instanceof Error?error.message:"ذخیره صورت‌جلسه انجام نشد.");}).finally(()=>{lock.current=false;if(mounted.current)setBusy(false);});}}><Modal.Body>{error&&<TaskMessage error message={error}/>}<TextField fullWidth name="title" isRequired isDisabled={busy} value={form.title} onChange={value=>change("title",value)} autoFocus><Label>عنوان صورت‌جلسه</Label><Input maxLength={200} placeholder="مثلاً جلسه برنامه‌ریزی هفته"/><FieldError/></TextField><div className="minute-form-grid"><JalaliDateField label="تاریخ جلسه (شمسی)" required disabled={busy} value={form.date} onChange={value=>change("date",value)}/><TextField fullWidth isDisabled={busy} value={form.attendees} onChange={value=>change("attendees",value)}><Label>حاضران</Label><Input maxLength={5000} placeholder="نام حاضران جلسه…"/></TextField></div>{([{key:"summary",label:"خلاصه صورت‌جلسه",required:true,placeholder:"موضوع‌ها و نکات مطرح‌شده در جلسه…"},{key:"decisions",label:"تصمیم‌ها",required:false,placeholder:"تصمیم‌های نهایی و موارد توافق‌شده…"},{key:"followUps",label:"پیگیری‌ها و اقدام‌های بعدی",required:false,placeholder:"اقدام‌ها، مسئول هر اقدام و موعد پیگیری…"}] as const).map(field=><TextField fullWidth key={field.key} isRequired={field.required} isDisabled={busy} name={field.key} value={form[field.key]} onChange={value=>change(field.key,value)}><Label>{field.label}</Label><TextArea rows={3} maxLength={10000} placeholder={field.placeholder}/><FieldError/></TextField>)}<Description>پیوست‌ها پس از ثبت صورت‌جلسه از جدول یا بخش جزئیات قابل اضافه‌کردن هستند.</Description></Modal.Body><Modal.Footer><Button type="button" variant="outline" isDisabled={busy} onPress={onClose}>انصراف</Button><Button type="submit" isDisabled={busy||!form.title.trim()||!form.summary.trim()||!form.date} isPending={busy}><Plus size={16}/>{busy?"در حال ذخیره…":minute?"ذخیره تغییرات":"ثبت صورت‌جلسه"}</Button></Modal.Footer></Form></Modal.Dialog></Modal.Container></Modal.Backdrop>;
-}
-function MinuteDetail({api,id,manager,onClose,onEdit,onFiles}:{api:Request;id:string;manager:boolean;onClose:()=>void;onEdit:(row:Minute)=>void;onFiles:(row:Minute)=>void}){
- const state=useModule<Minute|null>(api,"/minutes/"+encodeURIComponent(id),null);
- return <Modal.Backdrop isOpen onOpenChange={open=>{if(!open)onClose();}}><Modal.Container scroll="inside"><Modal.Dialog className="minute-modal" dir="rtl"><Modal.CloseTrigger aria-label="بستن جزئیات صورت‌جلسه"/><Modal.Header><Modal.Heading>{state.data?.title||"جزئیات صورت‌جلسه"}</Modal.Heading>{state.data&&<Description>{displayDate(state.data.date)}</Description>}</Modal.Header><Modal.Body>{state.error?<TaskMessage error message={state.error}/>:state.loading?<Spinner size="sm"/>:state.data&&<>{[["حاضران",state.data.attendees],["خلاصه جلسه",state.data.summary],["تصمیم‌ها",state.data.decisions],["پیگیری‌ها",state.data.followUps]].map(([label,value])=><Card className="minute-detail-card" key={label}><Card.Header><Card.Title>{label}</Card.Title></Card.Header><Card.Content><Text>{value||"ثبت نشده"}</Text></Card.Content></Card>)}</>}</Modal.Body><Modal.Footer><Button variant="outline" onPress={onClose}>بستن</Button>{state.data&&<><Button variant="outline" onPress={()=>onFiles(state.data!)}><Paperclip size={16}/>پیوست‌ها</Button>{manager&&<Button onPress={()=>onEdit(state.data!)}><Pencil size={16}/>ویرایش</Button>}</>}</Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop>;
-}
-function DeleteMinute({api,minute,onClose,onDone}:{api:Request;minute:Minute;onClose:()=>void;onDone:()=>void}){
- const [busy,setBusy]=useState(false),[error,setError]=useState("");const lock=useRef(false);
- return <Modal.Backdrop isOpen isDismissable={!busy} isKeyboardDismissDisabled={busy} onOpenChange={open=>{if(!open&&!lock.current)onClose();}}><Modal.Container><Modal.Dialog className="minute-modal minute-delete-modal" dir="rtl"><Modal.CloseTrigger isDisabled={busy} aria-label="بستن حذف صورت‌جلسه"/><Modal.Header><Modal.Heading>حذف صورت‌جلسه</Modal.Heading></Modal.Header><Modal.Body>{error&&<TaskMessage error message={error}/>}<Text>صورت‌جلسه «{minute.title}» حذف شود؟</Text><Description>این عمل برگشت‌پذیر نیست. صورت‌جلسه دارای پیوست قابل حذف نیست.</Description></Modal.Body><Modal.Footer><Button variant="outline" isDisabled={busy} onPress={onClose}>انصراف</Button><Button variant="danger" isDisabled={busy||Boolean(minute._count?.attachments)} isPending={busy} onPress={()=>{if(lock.current)return;lock.current=true;setBusy(true);setError("");void api("/minutes/"+minute.id,{method:"DELETE"}).then(onDone).catch(error=>setError(error.message)).finally(()=>{lock.current=false;setBusy(false);});}}>حذف صورت‌جلسه</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop>;
+
+function DeleteMinute({
+  api,
+  minute,
+  onClose,
+  onDone,
+}: {
+  api: Request;
+  minute: Minute;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const lock = useRef(false);
+  return (
+    <Modal.Backdrop
+      isOpen
+      isDismissable={!busy}
+      isKeyboardDismissDisabled={busy}
+      onOpenChange={(open) => {
+        if (!open && !lock.current) onClose();
+      }}
+    >
+      <Modal.Container>
+        <Modal.Dialog className="minute-modal minute-delete-modal" dir="rtl">
+          <Modal.CloseTrigger
+            isDisabled={busy}
+            aria-label="بستن حذف صورت‌جلسه"
+          />
+          <Modal.Header>
+            <Modal.Heading>حذف صورت‌جلسه</Modal.Heading>
+          </Modal.Header>
+          <Modal.Body>
+            {error && <TaskMessage error message={error} />}
+            <Text>صورت‌جلسه «{minute.title}» حذف شود؟</Text>
+            <Description>
+              این عمل برگشت‌پذیر نیست. صورت‌جلسه دارای پیوست قابل حذف نیست.
+            </Description>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="outline" isDisabled={busy} onPress={onClose}>
+              انصراف
+            </Button>
+            <Button
+              variant="danger"
+              isDisabled={busy || Boolean(minute._count?.attachments)}
+              isPending={busy}
+              onPress={() => {
+                if (lock.current) return;
+                lock.current = true;
+                setBusy(true);
+                setError("");
+                void api("/minutes/" + encodeURIComponent(minute.id), {
+                  method: "DELETE",
+                })
+                  .then(onDone)
+                  .catch((reason) =>
+                    setError(
+                      reason instanceof Error
+                        ? reason.message
+                        : "حذف صورت‌جلسه انجام نشد.",
+                    ),
+                  )
+                  .finally(() => {
+                    lock.current = false;
+                    setBusy(false);
+                  });
+              }}
+            >
+              حذف صورت‌جلسه
+            </Button>
+          </Modal.Footer>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
+  );
 }

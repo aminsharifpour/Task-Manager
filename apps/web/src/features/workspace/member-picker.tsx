@@ -1,6 +1,10 @@
-import {useEffect,useId,useState} from "react";
-import {Button} from "@heroui/react";
-import {Input} from "@/components/ui/input";
-import {useModule,emptyPage} from "./use-module";
-import type {Request,Member} from "./use-module";
-export default function MemberPicker({api,label,value,onChange,includeGuests=false,excludeUserId,required=false,disabled=false,currentLabel="عضو انتخاب‌شده"}:{api:Request;label:string;value:string;onChange:(value:string)=>void;includeGuests?:boolean;excludeUserId?:string;required?:boolean;disabled?:boolean;currentLabel?:string}){const id=useId(),[search,setSearch]=useState(""),[query,setQuery]=useState(""),[page,setPage]=useState(1);useEffect(()=>{const timer=window.setTimeout(()=>{setQuery(search);setPage(1);},250);return()=>window.clearTimeout(timer);},[search]);const state=useModule(api,"/members?pageSize=25&page="+page+"&search="+encodeURIComponent(query),emptyPage<Member>()),items=state.data.items.filter(member=>(includeGuests||member.role!=="guest")&&member.userId!==excludeUserId);return <div className="module-member-picker"><label htmlFor={id+"-search"}>جستجوی {label}<Input id={id+"-search"} type="search" maxLength={200} value={search} disabled={disabled} onChange={e=>setSearch(e.target.value)}/></label><label htmlFor={id}>{label}<select id={id} aria-label={label} required={required} disabled={disabled||state.loading} value={value} onChange={e=>onChange(e.target.value)}><option value="">انتخاب عضو</option>{value&&!items.some(member=>member.userId===value)&&<option value={value}>{currentLabel}</option>}{items.map(member=><option key={member.userId} value={member.userId}>{member.user.fullName}</option>)}</select></label>{state.error&&<p role="alert">{state.error}</p>}{state.data.total>25&&<div className="module-actions"><Button type="button" variant="ghost" size="sm" aria-label={"اعضای قبلی برای "+label} isDisabled={page<=1||state.loading} onPress={()=>setPage(page-1)}>قبلی</Button><span>{page}</span><Button type="button" variant="ghost" size="sm" aria-label={"اعضای بعدی برای "+label} isDisabled={page*25>=state.data.total||state.loading} onPress={()=>setPage(page+1)}>بعدی</Button></div>}</div>;}
+import PredictivePicker from "./predictive-picker";
+import type { Request } from "./use-module";
+export default function MemberPicker({ api, label, value, onChange, includeGuests = false,
+  excludeUserId, required = false, disabled = false, currentLabel = "عضو انتخاب‌شده",
+}: { api: Request; label: string; value: string; onChange: (value: string) => void;
+  includeGuests?: boolean; excludeUserId?: string; required?: boolean; disabled?: boolean; currentLabel?: string }) {
+  return <PredictivePicker api={api} resource="members" label={label} value={value}
+    onChange={onChange} includeGuests={includeGuests} excludeId={excludeUserId}
+    required={required} disabled={disabled} currentLabel={currentLabel}/>;
+}

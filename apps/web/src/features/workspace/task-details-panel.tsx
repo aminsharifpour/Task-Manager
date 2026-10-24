@@ -1,29 +1,149 @@
-import JalaliDateField from "./jalali-date-field";
-import {jalaliDate} from "./jalali-timeline";
-import {workspaceToday} from "./dates";
-import ResourcePicker from "./resource-picker";
+import { useState } from "react";
+import { Button } from "@heroui/react";
+import RecordDialog from "./record-dialog";
+import TaskEditor from "./task-edit-panel";
+import { useModule } from "./use-module";
+import type { Request, Permissions } from "./use-module";
+import type { TaskDetail, WorkflowStep } from "./task-record-types";
+import { taskStatuses, taskPriorities, taskPerson } from "./task-record-types";
+import { ReadonlySection, ReadonlyComments, ReadonlyFiles, ReadonlyTime, ReadonlyActivity, ReadonlyChildren } from "./task-readonly-sections";
+import { displayDate } from "./dates";
+import { jalaliDate } from "./jalali-timeline";
+import "./task-record.css";
 
-import {useEffect,useState} from "react";
-import {Button,Form} from "@heroui/react";
-import {Input} from "@/components/ui/input";
-import {useModule,emptyPage} from "./use-module";
-import type {Request,Permissions} from "./use-module";
-export type FieldDefinition={id:string;label:string;type:string;required:boolean;options?:string[]};
-export function CustomFields({fields,values,onChange}:{fields:FieldDefinition[];values:Record<string,string>;onChange:(value:Record<string,string>)=>void}){return <>{fields.map(field=>field.type==="date"?<JalaliDateField key={field.id} label={field.label} required={field.required} value={values[field.id]||""} onChange={value=>onChange({...values,[field.id]:value})}/>:<label key={field.id}>{field.label}{field.type==="select"?<select aria-label={field.label} required={field.required} value={values[field.id]||""} onChange={e=>onChange({...values,[field.id]:e.target.value})}><option value="">انتخاب</option>{field.options?.map(value=><option key={value}>{value}</option>)}</select>:<Input aria-label={field.label} required={field.required} type="text" inputMode={field.type==="number"?"decimal":undefined} maxLength={2000} value={values[field.id]||""} onChange={e=>onChange({...values,[field.id]:e.target.value})}/>}</label>)}</>;}
-type TaskDetail={task:{id:string;title:string;description:string|null;priority:string;startDate:string|null;executionDate:string|null;estimateMinutes:number|null;parentTaskId:string|null;customFields:Record<string,string>|null;version:number;project:{id:string;customFieldDefinitions:FieldDefinition[]}|null};canEdit:boolean;checklist:{id:string;text:string;isDone:boolean}[];dependencies:{dependsOn:{id:string;title:string;status:string}}[]};
-export default function TaskDetails({api,id,permissions,onClose,onChanged}:{api:Request;id:string;permissions:Permissions;onClose:()=>void;onChanged:()=>void}){
- const state=useModule<TaskDetail|undefined>(api,`/tasks/${id}/details`,undefined,false),time=useModule(api,`/tasks/${id}/time`,emptyPage<{id:string;userId:string;spentMinutes:number;workDate:string;version:number;note:string|null}>());
- const [checkPending,setCheckPending]=useState<Record<string,boolean>>({});
- useEffect(()=>{setCheckPending(pending=>Object.fromEntries(Object.entries(pending).filter(([id,value])=>!state.error&&state.data?.checklist.find(item=>item.id===id)?.isDone!==value)));},[state.data,state.error]);
- const [check,setCheck]=useState(""),[target,setTarget]=useState(""),[spent,setSpent]=useState(""),[workDate,setWorkDate]=useState(workspaceToday),[note,setNote]=useState(""),[form,setForm]=useState({title:"",description:"",priority:"normal",startDate:"",executionDate:"",estimateMinutes:"",parentTaskId:"",customFields:{} as Record<string,string>});
- useEffect(()=>{const task=state.data?.task;if(task)setForm({title:task.title,description:task.description||"",priority:task.priority,startDate:task.startDate?.slice(0,10)||"",executionDate:task.executionDate?.slice(0,10)||"",estimateMinutes:task.estimateMinutes==null?"":String(task.estimateMinutes),parentTaskId:task.parentTaskId||"",customFields:task.customFields||{}});},[state.data]);
- const task=state.data?.task;const act=(fn:()=>Promise<void>,message?:string)=>state.act(async()=>{await fn();onChanged();},message);
- if(!task)return <section className="workspace-panel module-create"><Button variant="outline" onPress={onClose}>بستن جزئیات</Button><p role={state.error?"alert":"status"}>{state.error||"در حال دریافت جزئیات…"}</p></section>;
+export type { FieldDefinition } from "./task-record-types";
+export { CustomFields } from "./task-custom-fields";
+const formatNumber = (value: number) => new Intl.NumberFormat("fa").format(value);
+const roles: Record<string, string> = { owner: "مالک", admin: "مدیر سازمان", project_manager: "مدیر پروژه", member: "عضو", guest: "مهمان" };
+const assignees: Record<string, string> = {
+  task_assignee_primary: "مسئول اصلی تسک", task_assignee_secondary: "مسئول دوم تسک",
+  task_assigner: "ایجادکننده تسک", project_owner: "مسئول پروژه",
+  project_members: "اعضای پروژه", all_participants: "همه مشارکت‌کنندگان",
+};
+function assignment(detail: TaskDetail, step: WorkflowStep, approval = false) {
+  const type = (approval ? step.approvalAssigneeType : step.assigneeType) || "";
+  if (type === "member") return taskPerson(detail, approval ? step.approvalAssigneeMemberId : step.assigneeMemberId);
+  if (type === "role") return roles[(approval ? step.approvalAssigneeRole : step.assigneeRole) || ""] || "نقش ثبت‌شده";
+  return assignees[type] || type || "تعیین نشده";
+}
+function routeName(value: string | undefined, steps: WorkflowStep[]) {
+  return ({ next: "مرحله بعد", previous: "مرحله قبل", stay: "همین مرحله", done: "پایان گردش‌کار" } as Record<string, string>)[value || ""]
+    || steps.find(step => step.id === value)?.title || "تعیین نشده";
+}
+function DisplayGrid({ fields }: { fields: [string, string][] }) {
+  return <dl className="record-readonly-grid">{fields.map(([label, value]) =>
+    <div key={label}><dt>{label}</dt><dd dir="auto">{value}</dd></div>)}</dl>;
+}
 
- return <section className="workspace-panel module-create" aria-label={"جزئیات "+task.title}><div className="module-toolbar"><h2>{task.title}</h2><Button variant="outline" onPress={onClose}>بستن جزئیات</Button></div>{state.error&&<p role="alert" className="workspace-error">{state.error}</p>}{state.notice&&<p role="status" className="workspace-success">{state.notice}</p>}
- {state.data?.canEdit&&<Form onSubmit={e=>{e.preventDefault();void act(async()=>{await api(`/tasks/${id}`,{method:"PATCH",body:JSON.stringify({...form,estimateMinutes:form.estimateMinutes?Number(form.estimateMinutes):null,expectedVersion:task.version})});},"جزئیات ذخیره شد.");}}><div className="module-form-grid"><label>عنوان<Input required value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></label><label>اولویت<select aria-label="اولویت جزئیات" value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}>{Object.entries({low:"کم",normal:"عادی",high:"زیاد",urgent:"فوری"}).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><JalaliDateField label="شروع (شمسی)" value={form.startDate} onChange={value=>setForm({...form,startDate:value})} disabled={state.busy}/><JalaliDateField label="موعد (شمسی)" value={form.executionDate} onChange={value=>setForm({...form,executionDate:value})} disabled={state.busy} min={form.startDate||undefined}/><label>تخمین دقیقه<Input type="number" min={1} max={1008000} value={form.estimateMinutes} onChange={e=>setForm({...form,estimateMinutes:e.target.value})}/></label><ResourcePicker api={api} resource="tasks" projectId={task.project?.id} label="والد تسک" value={form.parentTaskId} onChange={value=>setForm({...form,parentTaskId:value})} excludeId={id}/><label>توضیح<textarea maxLength={5000} value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label><CustomFields fields={task.project?.customFieldDefinitions||[]} values={form.customFields} onChange={customFields=>setForm({...form,customFields})}/></div><Button type="submit" isDisabled={state.busy}>ذخیره جزئیات تسک</Button></Form>}
- <h3 className="module-create">چک‌لیست</h3>{state.data?.checklist.map(item=><label className="module-checkbox" key={item.id}><input type="checkbox" checked={checkPending[item.id]??item.isDone} disabled={!state.data?.canEdit||state.busy} onChange={e=>{const isDone=e.target.checked;setCheckPending(pending=>({...pending,[item.id]:isDone}));void act(async()=>{await api(`/tasks/${id}/checklist/${item.id}`,{method:"PATCH",body:JSON.stringify({isDone,expectedVersion:task.version})});});}}/>{item.text}</label>)}{state.data?.canEdit&&<Form onSubmit={e=>{e.preventDefault();void act(async()=>{await api(`/tasks/${id}/checklist`,{method:"POST",body:JSON.stringify({text:check,expectedVersion:task.version})});setCheck("");});}}><label>مورد چک‌لیست<Input required maxLength={500} value={check} onChange={e=>setCheck(e.target.value)}/></label><Button type="submit" isDisabled={state.busy}>افزودن به چک‌لیست</Button></Form>}
- <h3 className="module-create">پیش‌نیازها</h3>{state.data?.dependencies.map(({dependsOn})=><div className="module-actions" key={dependsOn.id}><span>{dependsOn.title} · {dependsOn.status==="done"?"تکمیل‌شده":"باز"}</span>{state.data?.canEdit&&<Button size="sm" variant="outline" isDisabled={state.busy} onPress={()=>void act(async()=>{await api(`/tasks/${id}/dependencies/${dependsOn.id}`,{method:"DELETE",body:JSON.stringify({expectedVersion:task.version})});})}>برداشتن پیش‌نیاز</Button>}</div>)}{state.data?.canEdit&&<Form onSubmit={e=>{e.preventDefault();void act(async()=>{await api(`/tasks/${id}/dependencies/${target}`,{method:"POST",body:JSON.stringify({expectedVersion:task.version})});});}}><ResourcePicker api={api} resource="tasks" projectId={task.project?.id} label="انتخاب پیش‌نیاز" required value={target} onChange={setTarget} excludeId={id}/><Button type="submit" isDisabled={state.busy}>افزودن پیش‌نیاز</Button></Form>}
- {permissions.role!=="guest"&&<><h3 className="module-create">زمان صرف‌شده</h3>{time.error&&<p role="alert">{time.error}</p>}{time.data.items.map(entry=><div className="module-actions" key={entry.id}><span>{entry.spentMinutes} دقیقه · {jalaliDate(entry.workDate)} · {entry.note}</span>{entry.userId===permissions.userId&&<Button variant="outline" size="sm" isDisabled={state.busy} onPress={()=>void act(async()=>{await api(`/tasks/${id}/time/${entry.id}`,{method:"DELETE",body:JSON.stringify({expectedVersion:entry.version})});time.refresh();})}>حذف ثبت زمان</Button>}</div>)}<Form onSubmit={e=>{e.preventDefault();void act(async()=>{await api(`/tasks/${id}/time`,{method:"POST",body:JSON.stringify({spentMinutes:Number(spent),workDate,note})});setSpent("");setNote("");time.refresh();},"زمان ثبت شد.");}}><div className="module-form-grid"><label>دقیقه صرف‌شده<Input type="number" required min={1} max={10080} value={spent} onChange={e=>setSpent(e.target.value)}/></label><JalaliDateField label="روز کار (شمسی)" required value={workDate} onChange={setWorkDate} disabled={state.busy}/><label>توضیح زمان<Input maxLength={2000} value={note} onChange={e=>setNote(e.target.value)}/></label></div><Button type="submit" isDisabled={state.busy}>ثبت زمان کار</Button></Form></>}
- </section>;
+/** The default view contains no editable field and never sends a mutation. */
+export default function TaskDetails({ api, id, permissions, onClose, onChanged, initialMode = "view" }: {
+  api: Request; id: string; permissions: Permissions; onClose: () => void;
+  onChanged: () => void; initialMode?: "view" | "edit";
+}) {
+  const state = useModule<TaskDetail | undefined>(api, `/tasks/${id}/details`, undefined);
+  const [editing, setEditing] = useState(initialMode === "edit");
+  const [revision, setRevision] = useState(0);
+  const changed = () => { state.refresh(); setRevision(value => value + 1); onChanged(); };
+  if (editing) return <TaskEditor api={api} id={id} permissions={permissions} onChanged={changed}
+    onClose={() => { if (initialMode === "edit") onClose(); else { setEditing(false); state.refresh(); } }}/>;
+
+  const detail = state.data, task = detail?.task;
+  if (!task || !detail) return <RecordDialog title="جزئیات تسک" onClose={onClose} closeLabel="بستن جزئیات">
+    <p role={state.error ? "alert" : "status"}>{state.error || "در حال دریافت جزئیات…"}</p>
+    {state.error && <Button type="button" variant="outline" onPress={state.refresh}>تلاش دوباره</Button>}
+  </RecordDialog>;
+  const steps = task.workflowSteps || [];
+  const definitions = task.project?.customFieldDefinitions || [];
+  const customFields = task.customFields || {};
+  const customKeys = [...new Set([...definitions.map(field => field.id), ...Object.keys(customFields)])];
+  const date = (value?: string | null, time = false) => value ? displayDate(value, time) : "تعیین نشده";
+  const checklistDone = detail.checklist.filter(item => item.isDone).length;
+  const sectionId = (name: string) => `task-${id}-${name}`;
+  const jumpTo = (name: string) => document.getElementById(sectionId(name))?.scrollIntoView({ block: "start" });
+  return <RecordDialog title="جزئیات تسک" description={task.project?.name || "فضای کار"}
+    variant="task" onClose={onClose} closeLabel="بستن جزئیات">
+    <div className="task-record-hero">
+      <div className="task-record-hero-top"><span className="task-record-eyebrow">نمای کامل تسک</span><span className="task-record-readonly-label">فقط خواندنی</span></div>
+      <h2 dir="auto">{task.title}</h2>
+      <div className="task-record-tags"><span className={`task-record-tag task-record-tag--${task.status}`}>{taskStatuses[task.status] || task.status}</span><span className="task-record-tag task-record-tag--neutral">{taskPriorities[task.priority] || task.priority}</span><span className="task-record-tag task-record-tag--neutral">{task.project?.name || "بدون پروژه"}</span></div>
+      <div className="task-record-highlights">
+        <div><span>مسئول اصلی</span><strong>{taskPerson(detail, task.assigneePrimaryId)}</strong></div>
+        <div><span>موعد انجام</span><strong>{date(task.executionDate)}</strong></div>
+        <div><span>پیشرفت چک‌لیست</span><strong>{formatNumber(checklistDone)} از {formatNumber(detail.checklist.length)}</strong></div>
+      </div>
+    </div>
+    <div className="task-record-toolbar">
+      <nav className="task-record-nav" aria-label="دسترسی سریع به بخش‌های تسک">
+        <Button type="button" size="sm" variant="ghost" onPress={() => jumpTo("overview")}>نمای کلی</Button>
+        <Button type="button" size="sm" variant="ghost" onPress={() => jumpTo("schedule")}>زمان‌بندی</Button>
+        <Button type="button" size="sm" variant="ghost" onPress={() => jumpTo("workflow")}>گردش‌کار</Button>
+        <Button type="button" size="sm" variant="ghost" onPress={() => jumpTo("comments")}>همکاری</Button>
+      </nav>
+      <div className="task-record-toolbar-actions"><Button type="button" variant="outline" onPress={() => { state.refresh(); setRevision(value => value + 1); }}>تازه‌سازی اطلاعات</Button><Button type="button" variant="primary" onPress={() => setEditing(true)}>ویرایش تسک</Button></div>
+    </div>
+    {state.error && <p role="alert" className="workspace-error">{state.error}</p>}
+    <div className="task-record-sections">
+    <ReadonlySection id={sectionId("overview")} className="task-record-card--wide" title="شرح و اطلاعات اصلی">
+      <p className="record-description" dir="auto">{task.description || "توضیحی ثبت نشده است."}</p>
+      {task.blockedReason && <div className="task-record-callout"><strong>دلیل توقف</strong><p dir="auto">{task.blockedReason}</p></div>}
+      <DisplayGrid fields={[
+        ["عنوان", task.title],
+        ["پروژه", task.project?.name || "بدون پروژه"],
+        ["وضعیت", taskStatuses[task.status] || task.status || "تعیین نشده"],
+        ["اولویت", taskPriorities[task.priority] || task.priority],
+        ["ایجادکننده", taskPerson(detail, task.assignerId)],
+        ["مسئول اصلی", taskPerson(detail, task.assigneePrimaryId)],
+        ["مسئول دوم", taskPerson(detail, task.assigneeSecondaryId)],
+        ["تسک والد", detail.parent?.title || (task.parentTaskId ? "تسک والد خارج از دسترسی شماست" : "بدون تسک والد")],
+        ["تخمین زمان", task.estimateMinutes == null ? "تعیین نشده" : formatNumber(task.estimateMinutes) + " دقیقه"],
+        ["شناسه تسک", task.id],
+      ]}/>
+    </ReadonlySection>
+    <ReadonlySection id={sectionId("schedule")} title="زمان‌بندی">
+      <DisplayGrid fields={[["شروع", date(task.startDate)], ["تاریخ اعلام", date(task.announceDate)], ["موعد انجام", date(task.executionDate)], ["تاریخ ایجاد", date(task.createdAt, true)], ["آخرین به‌روزرسانی", date(task.updatedAt, true)], ["آخرین تغییر وضعیت", date(task.lastStatusChangedAt, true)]]}/>
+    </ReadonlySection>
+    <ReadonlySection title="فیلدهای سفارشی">
+      {customKeys.length ? <DisplayGrid fields={customKeys.map(key => {
+        const field = definitions.find(row => row.id === key), raw = customFields[key];
+        const text = raw == null || raw === "" ? "ثبت نشده"
+          : field?.type === "date" && /^\d{4}-\d{2}-\d{2}/.test(String(raw)) ? jalaliDate(String(raw))
+          : typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+        return [field?.label || key, text] as [string, string];
+      })}/> : <p className="workspace-caption">فیلد سفارشی ثبت نشده است.</p>}
+    </ReadonlySection>
+    <ReadonlySection title="چک‌لیست">
+      {detail.checklist.length ? <ul className="task-readonly-list">{detail.checklist.map(item =>
+        <li key={item.id}><span aria-label={item.isDone ? "انجام‌شده" : "انجام‌نشده"}>{item.isDone ? "✓" : "○"}</span><span dir="auto">{item.text}</span></li>)}</ul>
+        : <p className="workspace-caption">چک‌لیستی ثبت نشده است.</p>}
+    </ReadonlySection>
+    <ReadonlySection title="پیش‌نیازها">
+      {detail.dependencies.length ? <ul className="task-readonly-list">{detail.dependencies.map(({ dependsOn }) =>
+        <li key={dependsOn.id}><strong>{dependsOn.title}</strong><span>{taskStatuses[dependsOn.status] || dependsOn.status}</span></li>)}</ul>
+        : <p className="workspace-caption">پیش‌نیاز قابل مشاهده‌ای ثبت نشده است.</p>}
+    </ReadonlySection>
+    <ReadonlySection id={sectionId("workflow")} className="task-record-card--wide" title="گردش‌کار">
+      {steps.length ? <><DisplayGrid fields={[
+        ["مرحله جاری", task.workflowCompletedAt ? "گردش‌کار تکمیل شده" : steps[task.workflowCurrentStep]?.title || "تعیین نشده"],
+        ["مسئولان مرحله جاری", (task.workflowPendingAssigneeIds || []).map(id => taskPerson(detail, id)).join("، ") || "ندارد"],
+        ["زمان تکمیل گردش‌کار", date(task.workflowCompletedAt, true)],
+      ]}/><ol className="task-workflow-readonly">{steps.map((step, index) => <li key={step.id}>
+        <h4>{formatNumber(index + 1)}. {step.title}{!task.workflowCompletedAt && index === task.workflowCurrentStep ? " · مرحله جاری" : ""}</h4>
+        <DisplayGrid fields={[
+          ["مسئول اجرا", assignment(detail, step)], ["موعد مرحله", date(step.dueDate)],
+          ["نیاز به تأیید", step.requiresApproval ? "بله" : "خیر"],
+          ...(step.requiresApproval ? [
+            ["مسئول تأیید", assignment(detail, step, true)], ["موعد تأیید", date(step.approvalDeadline)],
+            ["پس از تأیید", routeName(step.onApprove, steps)], ["پس از رد", routeName(step.onReject, steps)],
+          ] as [string, string][] : []),
+        ]}/></li>)}</ol></> : <p className="workspace-caption">این تسک گردش‌کار ندارد.</p>}
+    </ReadonlySection>
+    <div id={sectionId("comments")} className="task-record-related">
+      <ReadonlyComments key={"comments-" + revision} api={api} task={task}/>
+      <ReadonlyFiles key={"files-" + revision} api={api} task={task}/>
+    </div>
+    {permissions.role !== "guest" && <ReadonlyTime key={"time-" + revision} api={api} id={id}/>}
+    <ReadonlyChildren key={"children-" + revision} api={api} id={id}/>
+    <div className="task-record-card--wide"><ReadonlyActivity key={"activity-" + revision} api={api} task={task}/></div>
+    </div>
+  </RecordDialog>;
 }
