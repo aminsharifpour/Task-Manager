@@ -48,6 +48,7 @@
     "test:marketing": "node tests/integration/marketing-postgres.mjs",
     "test:operations": "node tests/integration/operations-postgres.mjs",
     "test:browser-marketing": "node tests/browser/marketing.mjs",
+    "test:landing": "node tests/browser/landing-preview.mjs",
     "test:release": "node tests/integration/release-compose.mjs",
     "backup:compose": "node scripts/compose-backup.mjs",
     "restore:compose": "node scripts/compose-restore.mjs",
